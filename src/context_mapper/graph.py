@@ -21,11 +21,14 @@ def normalize(model, styles=None):
     type_styles = styles.get("types") or {}
     group_styles = styles.get("groups") or {}
     errors = []
-    domains, contexts = [], []
+    domains, contexts, pending = [], [], []
 
-    for section in ("types", "domains"):
+    for section in ("types", "context-map"):
         if not (model or {}).get(section):
-            errors.append(f"context-map.yml: `{section}` is missing or empty")
+            if section == "context-map" and "domains" in (model or {}):
+                errors.append("context-map.yml: `domains` is now `context-map`")
+            else:
+                errors.append(f"context-map.yml: `{section}` is missing or empty")
     if errors:
         return {"types": {}, "groups": [], "domains": [], "contexts": [], "edges": []}, errors
 
@@ -72,49 +75,55 @@ def normalize(model, styles=None):
         if group is not None and group not in group_ids:
             errors.append(f"{kind} '{item_id}': unknown group '{group}'")
 
-    raw_domains = model.get("domains") or {}
+    raw_domains = model.get("context-map") or {}
     if isinstance(raw_domains, list):
-        errors.append("context-map.yml: `domains` is now a map keyed by domain id")
+        errors.append("context-map.yml: `context-map` is now a map keyed by domain id")
         raw_domains = {}
     for domain_id, d in raw_domains.items():
-        # A domain maps to its name and type, the group it belongs to, and its
-        # bounded contexts. A context maps to its name, or to a map with
-        # `name`, `type` and `group` when it overrides its domain's.
+        # A domain maps to its name and type, the group it belongs to, its
+        # bounded contexts, and `downstreams`: who depends on it, and why. A
+        # context maps to its name, or to a map with `name`, `type`, `group`
+        # and `downstreams` when it has more to say.
         if not isinstance(d, dict):
-            errors.append(f"domains.{domain_id}: needs a map with `name` and `type`")
+            errors.append(f"context-map.{domain_id}: needs a map with `name` and `type`")
             continue
         for key in d:
-            if key not in ("name", "type", "group", "contexts"):
-                errors.append(f"domains.{domain_id}.{key}: unknown option. Known: "
-                              f"{', '.join(sorted(('name', 'type', 'group', 'contexts')))}")
+            if key not in ("name", "type", "group", "contexts", "downstreams"):
+                errors.append(f"context-map.{domain_id}.{key}: unknown option. Known: "
+                              f"{', '.join(sorted(('name', 'type', 'group', 'contexts', 'downstreams')))}")
         dtype, group = d.get("type"), d.get("group")
         check_group("domain", domain_id, group)
         if dtype is None:
-            errors.append(f"domains.{domain_id}: needs a type")
+            errors.append(f"context-map.{domain_id}: needs a type")
         elif dtype not in types:
-            errors.append(f"domains.{domain_id}: unknown type '{dtype}'")
+            errors.append(f"context-map.{domain_id}: unknown type '{dtype}'")
         if not d.get("name"):
-            errors.append(f"domains.{domain_id}: needs a name")
+            errors.append(f"context-map.{domain_id}: needs a name")
+        if "downstreams" in d:
+            pending.append((domain_id, f"context-map.{domain_id}", d["downstreams"]))
         raw_contexts = d.get("contexts")
         if raw_contexts is not None and not isinstance(raw_contexts, dict):
             hint = "is now a map keyed by context id" if isinstance(raw_contexts, list) \
                 else "must be a map from context id to name"
-            errors.append(f"domains.{domain_id}.contexts: {hint}")
+            errors.append(f"context-map.{domain_id}.contexts: {hint}")
             raw_contexts = None
         if raw_contexts == {}:
-            errors.append(f"domains.{domain_id}.contexts: is empty")
+            errors.append(f"context-map.{domain_id}.contexts: is empty")
         ids = []
         for context_id, c in (raw_contexts or {}).items():
             if isinstance(c, dict):
                 for key in c:
-                    if key not in ("name", "type", "group"):
-                        errors.append(f"domains.{domain_id}.contexts.{context_id}.{key}: unknown option. "
-                                      f"Known: {', '.join(sorted(('name', 'type', 'group')))}")
+                    if key not in ("name", "type", "group", "downstreams"):
+                        errors.append(f"context-map.{domain_id}.contexts.{context_id}.{key}: unknown option. "
+                                      f"Known: {', '.join(sorted(('name', 'type', 'group', 'downstreams')))}")
                 cname, ctype, cgroup = c.get("name"), c.get("type", dtype), c.get("group", group)
+                if "downstreams" in c:
+                    pending.append((context_id, f"context-map.{domain_id}.contexts.{context_id}",
+                                    c["downstreams"]))
             else:
                 cname, ctype, cgroup = c, dtype, group
             if not cname:
-                errors.append(f"domains.{domain_id}.contexts.{context_id}: needs a name")
+                errors.append(f"context-map.{domain_id}.contexts.{context_id}: needs a name")
             if ctype not in types:
                 errors.append(f"context '{context_id}': unknown type '{ctype}'")
             check_group("context", context_id, cgroup)
@@ -138,44 +147,38 @@ def normalize(model, styles=None):
         seen.add(item["id"])
 
     edges, pairs = [], set()
-    if "dependencies" in model:
-        errors.append("context-map.yml: `dependencies` is now `upstreams`, keyed by upstream "
-                      "with a `downstreams` map")
-    for upstream, entry in (model.get("upstreams") or {}).items():
+    for section in ("dependencies", "upstreams"):
+        if section in model:
+            errors.append(f"context-map.yml: `{section}` is now `downstreams`, under the domain "
+                          "or context it belongs to")
+    for owner, where, raw in pending:
         # An edge points from the downstream (the one that depends) to the upstream.
         # A downstream maps to why it depends on the upstream (the tooltip), or to
         # {comment, style} when the edge also carries a style, or to nothing at all.
-        if not isinstance(entry, dict) or "downstreams" not in entry:
-            errors.append(f"upstreams.{upstream}: needs a `downstreams` map")
+        if not isinstance(raw, dict):
+            errors.append(f"{where}: `downstreams` must be a map from downstream to comment")
             continue
-        for key in entry:
-            if key != "downstreams":
-                errors.append(f"upstreams.{upstream}.{key}: unknown option. Known: downstreams")
-        downstreams = entry["downstreams"]
-        if not isinstance(downstreams, dict):
-            errors.append(f"upstreams.{upstream}: `downstreams` must be a map from downstream to comment")
+        if not raw:
+            errors.append(f"{where}: `downstreams` is empty")
             continue
-        if not downstreams:
-            errors.append(f"upstreams.{upstream}: `downstreams` is empty")
-            continue
-        for downstream, value in downstreams.items():
+        for downstream, value in raw.items():
             comment, style = value, "solid"
             if isinstance(value, dict):
                 for key in value:
                     if key not in ("comment", "style"):
-                        errors.append(f"upstreams.{upstream}.downstreams.{downstream}.{key}: "
+                        errors.append(f"{where}.downstreams.{downstream}.{key}: "
                                       "unknown option. Known: comment, style")
                 comment, style = value.get("comment"), value.get("style") or "solid"
             elif value is not None and not isinstance(value, str):
-                errors.append(f"upstreams.{upstream}.downstreams.{downstream}: must be a comment "
+                errors.append(f"{where}.downstreams.{downstream}: must be a comment "
                               "string, or a map with `comment` and `style`")
-            for end in (upstream, downstream):
+            for end in (owner, downstream):
                 if end not in seen:
-                    errors.append(f"unknown domain or context '{end}' in upstreams")
-            if (downstream, upstream) in pairs:
-                errors.append(f"duplicate dependency {downstream} -> {upstream}")
-            pairs.add((downstream, upstream))
-            edges.append({"from": downstream, "to": upstream, "style": style, "comment": comment})
+                    errors.append(f"unknown domain or context '{end}' in {where}.downstreams")
+            if (downstream, owner) in pairs:
+                errors.append(f"duplicate dependency {downstream} -> {owner}")
+            pairs.add((downstream, owner))
+            edges.append({"from": downstream, "to": owner, "style": style, "comment": comment})
 
     data = {"types": types, "groups": groups, "domains": domains, "contexts": contexts, "edges": edges}
     if not errors:

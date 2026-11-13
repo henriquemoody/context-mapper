@@ -15,7 +15,7 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git@v0.5.0
+pip install git+https://github.com/henriquemoody/context-mapper.git@v0.6.0
 ```
 
 Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
@@ -30,35 +30,36 @@ context-mapper --model context-map.yml --diagrams context-map.style.yml --out pu
 
 ```yaml
 types:
-  core:       { label: Core }                                 # the colors live in context-map.style.yml
+  core:       { label: Core }                     # the colors live in context-map.style.yml
   supporting: { label: Supporting }
   generic:    { label: Generic }
 
 groups:
-  foundations: Shared Foundations             # views can show, hide or fold a group into one box
+  foundations: Shared Foundations                 # views can show, hide or fold a group into one box
 
-domains:                                       # keyed by domain id
-  payments: { name: Payments, type: generic, group: foundations }  # no `contexts`: one bounded context, same name
+context-map:                                      # keyed by domain id
+  payments:                                       # no `contexts`: one bounded context, same name
+    name: Payments
+    type: generic
+    group: foundations
+    downstreams:                                 # who depends on it, and why
+      checkout: Charges the payment method and signals whether it went through.   # a tooltip on the arrow
+      fulfillment:                               # a bare key: no comment yet
   orders:
     name: Orders
-    type: core                                # contexts inherit type and group
-    contexts:                                 # keyed by context id
-      checkout: Checkout                      # a bare string: the name is all it needs
+    type: core                                   # contexts inherit type and group
+    contexts:                                   # keyed by context id
+      checkout: Checkout                         # a bare string: the name is all it needs
       fulfillment: { name: Fulfillment, type: supporting }   # a map, when it overrides something
-
-upstreams:                                                   # keyed by the upstream
-  payments:
-    downstreams:                                             # everything under it depends on payments
-      checkout: Charges the payment method and signals whether it went through.   # shows as a tooltip on the arrow
-      fulfillment:                                           # a bare key: depends on it, no comment yet
-  catalog:                                                   # a dependency can point at a whole domain
-    downstreams:
-      checkout:                                              # or a map, for a styled edge
-        comment: Reads prices and availability at checkout time.
-        style: dotted
+    downstreams:                                 # a dependency can point at a whole domain
+      crm:
+        comment: Reads orders to sync them into the ticket system.
+        style: dotted                             # or a map, for a styled edge
 ```
 
 A group is any set of domains or contexts you want to treat together, such as shared foundations. A context takes its domain's `group` unless it sets its own.
+
+Every domain and context can carry a `downstreams` map. A context can also be an upstream: put its `downstreams` on the context itself, under `contexts`.
 
 At domain level, context dependencies are lifted to their domains and merged, and dependencies inside a domain disappear.
 
@@ -140,7 +141,7 @@ Keep only the model in your repository and let CI install this tool. Pin a tag s
 pages:
   image: python:3.12-slim
   script:
-    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.5.0.tar.gz
+    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.6.0.tar.gz
     - context-mapper
   artifacts:
     paths:

@@ -1,12 +1,13 @@
 # Source of truth for the context map.
 #
-# Domains group bounded contexts. `upstreams` maps each upstream to the
-# `downstreams` that depend on it, and each downstream carries the reason,
-# which the interactive page shows as a tooltip when you hover over that arrow:
+# The `context-map` section maps each domain id to the domain: its name, type,
+# group, its bounded contexts, and `downstreams`: who depends on it, and why.
+# The interactive page shows the reason as a tooltip when you hover over that arrow:
 #
-#   payments:
+#   billing:
 #     downstreams:
-#       checkout: Charges the payment method and signals whether it went through.
+#       packaging: Charges for Packages and Subscriptions
+#       pro-account: Charges the monthly subscription
 #
 # A domain without `contexts` is a single bounded context with the same name.
 # A dependency can point at a domain when we don't know yet which of its
@@ -24,10 +25,22 @@ groups:
   foundations: Shared Foundations
 
 # A context takes its domain's `type` and `group` unless it sets its own.
-domains:
+context-map:
   # Shared foundations: used by most domains.
-  identity:       { name: Identity, type: generic, group: foundations }
-  payments:       { name: Payments, type: generic, group: foundations }
+  identity:
+    name: Identity
+    type: generic
+    group: foundations
+    downstreams:
+      checkout: Creates an account for guests who check out.
+      crm:                                          # a bare key: depends on it, no comment yet
+  payments:
+    name: Payments
+    type: generic
+    group: foundations
+    downstreams:
+      checkout: Charges the payment method and signals whether it went through.
+      fulfillment: Captures the payment once the order ships, and refunds returns.
 
   catalog:
     name: Catalog
@@ -35,6 +48,10 @@ domains:
     contexts:
       browsing: Browsing
       search:   Search
+    downstreams:                                    # the whole catalog: we don't know which context yet
+      checkout:
+        comment: Reads prices and availability at checkout time.
+        style: dotted                               # a styled edge: colors live in context-map.style.yml
 
   orders:
     name: Orders
@@ -42,23 +59,9 @@ domains:
     contexts:
       checkout:    Checkout
       fulfillment: { name: Fulfillment, type: supporting }   # a context can override its type
-
-  crm:            { name: CRM, type: supporting }
-
-upstreams:
-  identity:
-    downstreams:
-      checkout: Creates an account for guests who check out.
-      crm:                                          # a bare key: depends on it, no comment yet
-  payments:
-    downstreams:
-      checkout: Charges the payment method and signals whether it went through.
-      fulfillment: Captures the payment once the order ships, and refunds returns.
-  catalog:                                         # the whole catalog: we don't know which context yet
-    downstreams:
-      checkout:
-        comment: Reads prices and availability at checkout time.
-        style: dotted                              # a styled edge: colors live in context-map.style.yml
-  orders:                                         # a dependency pointing at a whole domain
-    downstreams:
+    downstreams:                                    # a dependency pointing at a whole domain
       crm: Reads orders to sync them into the ticket system.
+
+  crm:
+    name: CRM
+    type: supporting
