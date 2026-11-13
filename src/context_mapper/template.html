@@ -401,7 +401,7 @@ function bindEdgeHover(svg, tips) {
 // An arrow can stand for several dependencies, so every entry names its own.
 const tipEntry = dep => ({ title: `${nameOf(dep.from)} → ${nameOf(dep.to)}`, text: dep.comment });
 
-// A small box that follows the cursor. Comments come from model.yml, so they go in as text, never as HTML.
+// A small box that follows the cursor. Comments come from context-map.yml, so they go in as text, never as HTML.
 const tip = document.createElement("div");
 tip.id = "tip";
 document.body.appendChild(tip);

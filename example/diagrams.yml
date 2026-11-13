@@ -1,16 +1,16 @@
-# How the context map looks. What it describes lives in model.yml.
+# How the context map looks. What it describes lives in context-map.yml.
 #
 # Output: public/index.html, public/mermaid/*.html and public/markdown/*.md.
 # Unknown keys fail the build.
 
-# Box colors per type, keyed by the type ids in model.yml.
+# Box colors per type, keyed by the type ids in context-map.yml.
 # A type can also take `mermaid_style` to override its Mermaid classDef.
 types:
   core:       { color: "#dedaff", border: "#6631d7" }
   supporting: { color: "#c6dcff", border: "#305bab" }
   generic:    { color: "#adf0c7", border: "#067429" }
 
-# Group boxes, keyed by the group ids in model.yml. `mermaid_style` overrides the box style.
+# Group boxes, keyed by the group ids in context-map.yml. `mermaid_style` overrides the box style.
 groups:
   foundations:
     mermaid_style: "fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a"

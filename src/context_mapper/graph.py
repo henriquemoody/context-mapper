@@ -2,7 +2,7 @@
 
 Two levels:
 - context: nodes are bounded contexts, plus multi-context domains (for dependencies
-  that point at a domain as a whole). Edges are as written in model.yml.
+  that point at a domain as a whole). Edges are as written in context-map.yml.
 - domain: nodes are domains. Edges are lifted from contexts to their domains,
   merged, and edges inside a domain are dropped.
 """
@@ -13,7 +13,7 @@ GROUP_STYLE_KEYS = {"mermaid_style"}
 
 
 def normalize(model, styles=None):
-    """Turn model.yml and diagrams.yml into {types, groups, domains, contexts, edges} plus a list of errors.
+    """Turn context-map.yml and diagrams.yml into {types, groups, domains, contexts, edges} plus a list of errors.
 
     `styles` is the parsed diagrams.yml. Its `types` and `groups` are merged onto the ones in the model.
     """
@@ -34,7 +34,7 @@ def normalize(model, styles=None):
         types[type_id] = {**t, **style}
     for type_id in type_styles:
         if type_id not in model["types"]:
-            errors.append(f"diagrams.yml: types.{type_id}: unknown type, it is not in model.yml")
+            errors.append(f"diagrams.yml: types.{type_id}: unknown type, it is not in context-map.yml")
 
     groups = []
     for g in model.get("groups") or []:
@@ -48,7 +48,7 @@ def normalize(model, styles=None):
     group_ids = {g["id"] for g in groups}
     for group_id in group_styles:
         if group_id not in group_ids:
-            errors.append(f"diagrams.yml: groups.{group_id}: unknown group, it is not in model.yml")
+            errors.append(f"diagrams.yml: groups.{group_id}: unknown group, it is not in context-map.yml")
 
     def check_group(kind, item_id, group):
         if group is not None and group not in group_ids:

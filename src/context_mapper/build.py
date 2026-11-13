@@ -27,7 +27,7 @@ def parse_args(argv=None):
         prog="context-mapper",
         description="Build a context map site from a model file (what it describes) "
                     "and a diagrams file (how it looks).")
-    parser.add_argument("--model", type=Path, default=Path("model.yml"),
+    parser.add_argument("--model", type=Path, default=Path("context-map.yml"),
                         help="the model file (default: %(default)s)")
     parser.add_argument("--diagrams", type=Path, default=Path("diagrams.yml"),
                         help="the diagram settings file (default: %(default)s)")

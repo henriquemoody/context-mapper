@@ -1,6 +1,6 @@
 # Context Mapper
 
-Builds a context map: an interactive page plus static Mermaid diagrams of your domains, bounded contexts, and the dependencies between them, from two YAML files. `model.yml` says what the map describes; `diagrams.yml` says how it looks.
+Builds a context map: an interactive page plus static Mermaid diagrams of your domains, bounded contexts, and the dependencies between them, from two YAML files. `context-map.yml` says what the map describes; `diagrams.yml` says how it looks.
 
 The build fails on unknown ids, duplicates, dependency cycles between bounded contexts, and unknown or invalid `diagrams.yml` options, so a bad change breaks the build instead of the picture. It warns when two domains depend on each other.
 
@@ -15,15 +15,15 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git@v0.1.0
+pip install git+https://github.com/henriquemoody/context-mapper.git@v0.2.0
 ```
 
 Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
 
-Run `context-mapper` in a directory that has a `model.yml` and a `diagrams.yml`. The paths are flags:
+Run `context-mapper` in a directory that has a `context-map.yml` and a `diagrams.yml`. The paths are flags:
 
 ```sh
-context-mapper --model model.yml --diagrams diagrams.yml --out public
+context-mapper --model context-map.yml --diagrams diagrams.yml --out public
 ```
 
 ## The model
@@ -76,7 +76,7 @@ open public/index.html
 
 ## Customize the diagrams
 
-`diagrams.yml` holds all of it. Type and group styles are keyed by the ids in `model.yml`, and the build fails if one points at an id that doesn't exist or a type has no colors.
+`diagrams.yml` holds all of it. Type and group styles are keyed by the ids in `context-map.yml`, and the build fails if one points at an id that doesn't exist or a type has no colors.
 
 ```yaml
 types:
@@ -133,7 +133,7 @@ Keep only the model in your repository and let CI install this tool. Pin a tag s
 pages:
   image: python:3.12-slim
   script:
-    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.1.0.tar.gz
+    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.2.0.tar.gz
     - context-mapper
   artifacts:
     paths:

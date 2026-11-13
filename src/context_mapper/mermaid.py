@@ -473,7 +473,7 @@ def build(data, config, out):
         index_rows.append(("Pages" if v.get("page") else "Views", title, v["id"]))
 
     sections = []
-    md = ["# Domain diagrams", "", "Generated from `model.yml` and `diagrams.yml` by `build.py`. Do not edit by hand.", ""]
+    md = ["# Domain diagrams", "", "Generated from `context-map.yml` and `diagrams.yml` by `context-mapper`. Do not edit by hand.", ""]
     for group in ("Views", "Pages"):
         rows = sorted((t, i) for g, t, i in index_rows if g == group)
         if rows:
