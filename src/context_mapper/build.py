@@ -1,4 +1,4 @@
-"""Build the context map from a model file (what it describes) and a diagrams file (how it looks).
+"""Build the context map from a model file (what it describes) and a style file (how it looks).
 
 Writes an interactive page (index.html), one static Mermaid page per view
 (mermaid/*.html) and the same diagrams as Markdown (markdown/*.md), all under
@@ -26,11 +26,11 @@ def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         prog="context-mapper",
         description="Build a context map site from a model file (what it describes) "
-                    "and a diagrams file (how it looks).")
+                    "and a style file (how it looks).")
     parser.add_argument("--model", type=Path, default=Path("context-map.yml"),
                         help="the model file (default: %(default)s)")
-    parser.add_argument("--diagrams", type=Path, default=Path("diagrams.yml"),
-                        help="the diagram settings file (default: %(default)s)")
+    parser.add_argument("--diagrams", type=Path, default=Path("context-map.style.yml"),
+                        help="the style file (default: %(default)s)")
     parser.add_argument("--out", type=Path, default=Path("public"),
                         help="the directory to build into (default: %(default)s)")
     return parser.parse_args(argv)
@@ -43,7 +43,7 @@ def load(model_path, diagrams_path):
 
     for key in diagrams:
         if key not in DIAGRAMS_KEYS:
-            errors.append(f"diagrams.yml: {key}: unknown section. Known: {', '.join(sorted(DIAGRAMS_KEYS))}")
+            errors.append(f"context-map.style.yml: {key}: unknown section. Known: {', '.join(sorted(DIAGRAMS_KEYS))}")
 
     mermaid_cfg, mermaid_errors = mermaid.settings(diagrams.get("mermaid"))
     errors += mermaid_errors

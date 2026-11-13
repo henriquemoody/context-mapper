@@ -1,6 +1,6 @@
 """Render the domain model as Mermaid flowcharts.
 
-The `mermaid` section of diagrams.yml controls how diagrams look. See the comments
+The `mermaid` section of context-map.style.yml controls how diagrams look. See the comments
 there and the README for every option. build.py calls `build(data, config, out)`.
 """
 import html
@@ -473,7 +473,7 @@ def build(data, config, out):
         index_rows.append(("Pages" if v.get("page") else "Views", title, v["id"]))
 
     sections = []
-    md = ["# Domain diagrams", "", "Generated from `context-map.yml` and `diagrams.yml` by `context-mapper`. Do not edit by hand.", ""]
+    md = ["# Domain diagrams", "", "Generated from `context-map.yml` and `context-map.style.yml` by `context-mapper`. Do not edit by hand.", ""]
     for group in ("Views", "Pages"):
         rows = sorted((t, i) for g, t, i in index_rows if g == group)
         if rows:

@@ -13,9 +13,9 @@ GROUP_STYLE_KEYS = {"mermaid_style"}
 
 
 def normalize(model, styles=None):
-    """Turn context-map.yml and diagrams.yml into {types, groups, domains, contexts, edges} plus a list of errors.
+    """Turn context-map.yml and context-map.style.yml into {types, groups, domains, contexts, edges} plus a list of errors.
 
-    `styles` is the parsed diagrams.yml. Its `types` and `groups` are merged onto the ones in the model.
+    `styles` is the parsed context-map.style.yml. Its `types` and `groups` are merged onto the ones in the model.
     """
     styles = styles or {}
     type_styles = styles.get("types") or {}
@@ -28,13 +28,13 @@ def normalize(model, styles=None):
         style = type_styles.get(type_id) or {}
         for key in style:
             if key not in TYPE_STYLE_KEYS:
-                errors.append(f"diagrams.yml: types.{type_id}.{key}: unknown option. Known: {', '.join(sorted(TYPE_STYLE_KEYS))}")
+                errors.append(f"context-map.style.yml: types.{type_id}.{key}: unknown option. Known: {', '.join(sorted(TYPE_STYLE_KEYS))}")
         if "mermaid_style" not in style and not {"color", "border"} <= style.keys():
-            errors.append(f"diagrams.yml: types.{type_id} needs `color` and `border` (or `mermaid_style`)")
+            errors.append(f"context-map.style.yml: types.{type_id} needs `color` and `border` (or `mermaid_style`)")
         types[type_id] = {**t, **style}
     for type_id in type_styles:
         if type_id not in model["types"]:
-            errors.append(f"diagrams.yml: types.{type_id}: unknown type, it is not in context-map.yml")
+            errors.append(f"context-map.style.yml: types.{type_id}: unknown type, it is not in context-map.yml")
 
     groups = []
     for g in model.get("groups") or []:
@@ -43,12 +43,12 @@ def normalize(model, styles=None):
         style = group_styles.get(g["id"]) or {}
         for key in style:
             if key not in GROUP_STYLE_KEYS:
-                errors.append(f"diagrams.yml: groups.{g['id']}.{key}: unknown option. Known: {', '.join(sorted(GROUP_STYLE_KEYS))}")
+                errors.append(f"context-map.style.yml: groups.{g['id']}.{key}: unknown option. Known: {', '.join(sorted(GROUP_STYLE_KEYS))}")
         groups.append({"id": g["id"], "name": g["name"], "mermaid_style": style.get("mermaid_style")})
     group_ids = {g["id"] for g in groups}
     for group_id in group_styles:
         if group_id not in group_ids:
-            errors.append(f"diagrams.yml: groups.{group_id}: unknown group, it is not in context-map.yml")
+            errors.append(f"context-map.style.yml: groups.{group_id}: unknown group, it is not in context-map.yml")
 
     def check_group(kind, item_id, group):
         if group is not None and group not in group_ids:

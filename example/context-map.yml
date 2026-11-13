@@ -9,7 +9,7 @@
 # A dependency can point at a domain when we don't know yet which of its
 # contexts is involved. Move it to the right context once we know.
 #
-# How it looks (colors, layout, views) lives in diagrams.yml.
+# How it looks (colors, layout, views) lives in context-map.style.yml.
 
 types:
   core:       { label: Core }
