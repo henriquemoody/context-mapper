@@ -71,7 +71,7 @@
       <option value="down">Used by (downstream)</option>
     </select>
   </label>
-  <span id="groups"></span>
+  <span id="display"></span>
   <button id="reset">Reset</button>
 </header>
 <main>
@@ -94,13 +94,14 @@ const descriptionOf = id => (contextById[id] || domainById[id]).description;
 const isMulti = id => domainById[id] && !domainById[id].single;
 
 // Same graphs as graph.py: context level as written, domain level lifted and merged.
+// childOf says which container a node renders inside: a context inside its domain, a member inside its group.
 function levelGraph(level) {
+  const childOf = {};
+  MODEL.domains.filter(d => d.group).forEach(d => childOf[d.id] = d.group);
   if (level === "context") {
     const nodes = new Set([...MODEL.contexts.map(c => c.id), ...MODEL.domains.filter(d => !d.single).map(d => d.id)]);
-    const groups = {};
-    MODEL.contexts.filter(c => c.group).forEach(c => groups[c.id] = c.group);
-    MODEL.domains.filter(d => !d.single && d.group).forEach(d => groups[d.id] = d.group);
-    return { nodes, groups, edges: MODEL.edges.map(e => ({ from: e.from, to: e.to, styles: new Set([e.style]), via: [e] })) };
+    MODEL.contexts.filter(c => !domainById[c.domain].single).forEach(c => childOf[c.id] = c.domain);
+    return { nodes, childOf, edges: MODEL.edges.map(e => ({ from: e.from, to: e.to, styles: new Set([e.style]), via: [e] })) };
   }
   const merged = new Map();
   MODEL.edges.forEach(e => {
@@ -111,22 +112,35 @@ function levelGraph(level) {
     merged.get(key).styles.add(e.style);
     merged.get(key).via.push(e);
   });
-  const groups = {};
-  MODEL.domains.filter(d => d.group).forEach(d => groups[d.id] = d.group);
-  return { nodes: new Set(MODEL.domains.map(d => d.id)), groups,
+  return { nodes: new Set(MODEL.domains.map(d => d.id)), childOf,
            edges: [...merged.values()] };
 }
 const GRAPHS = { context: levelGraph("context"), domain: levelGraph("domain") };
 
+// A container and everything rendered inside it.
+function descendants(g, ids) {
+  const kids = {};
+  Object.entries(g.childOf).forEach(([c, p]) => (kids[p] = kids[p] || []).push(c));
+  const out = new Set();
+  const stack = [...ids];
+  while (stack.length) {
+    const n = stack.pop();
+    if (out.has(n)) continue;
+    out.add(n);
+    stack.push(...(kids[n] || []));
+  }
+  return out;
+}
+
 function focusSet(level, focus) {
   if (!focus) return new Set();
-  if (level === "domain") return new Set([owner[focus]]);
-  if (isMulti(focus)) return new Set([focus, ...domainById[focus].contexts]);
+  if (level === "domain") return new Set([owner[focus], ...domainById[owner[focus]].members]);
+  if (isMulti(focus)) return new Set([focus, ...domainById[focus].contexts, ...domainById[focus].members]);
   return new Set([focus]);
 }
 
-function walk(g, starts, depth, dir, hiddenGroups) {
-  const allowed = n => starts.has(n) || !hiddenGroups.has(g.groups[n]);
+function walk(g, starts, depth, dir, hidden) {
+  const allowed = n => starts.has(n) || !hidden.has(n);
   if (!starts.size) return new Set([...g.nodes].filter(allowed));
   const up = {}, down = {};
   g.nodes.forEach(n => { up[n] = []; down[n] = []; });
@@ -171,21 +185,26 @@ const levelSel = $("level"), focusSel = $("focus"), depthSel = $("depth"), dirSe
 
 const DIAGRAM = MODEL.mermaid;
 
-// `groups` in the settings is one mode for every group, or a map by group id. Same as mermaid.py's group_mode().
-const defaultMode = id => typeof DIAGRAM.groups === "object" ? (DIAGRAM.groups[id] || "collapse") : DIAGRAM.groups;
-const MODES = [["collapse", "Collapsed"], ["show", "Shown"], ["hide", "Hidden"]];
-const groupSels = {};
-MODEL.groups.forEach(gr => {
+// A container first renders as the view says, else as its type says, else expanded.
+const defaultDisplayOf = id => MODEL.types[domainById[id].type].defaultDisplay || "expanded";
+const defaultMode = id => {
+  const d = DIAGRAM.display;
+  if (d === null || d === undefined) return defaultDisplayOf(id);
+  return typeof d === "object" ? (d[id] || defaultDisplayOf(id)) : d;
+};
+const MODES = [["expanded", "Expanded"], ["collapsed", "Collapsed"], ["contents", "Contents"], ["hidden", "Hidden"]];
+const displaySels = {};
+MODEL.domains.filter(d => !d.single).forEach(d => {
   const label = document.createElement("label");
-  label.append(gr.name + " ");
+  label.append(d.name + " ");
   const sel = document.createElement("select");
   MODES.forEach(([value, text]) => sel.appendChild(new Option(text, value)));
   label.appendChild(sel);
-  $("groups").appendChild(label);
-  $("groups").append(" ");
-  groupSels[gr.id] = sel;
+  $("display").appendChild(label);
+  $("display").append(" ");
+  displaySels[d.id] = sel;
 });
-const groupModes = () => Object.fromEntries(Object.entries(groupSels).map(([id, sel]) => [id, sel.value]));
+const displayModes = () => Object.fromEntries(Object.entries(displaySels).map(([id, sel]) => [id, sel.value]));
 if (DIAGRAM.elk) {
   const { default: elkLayouts } = await import("https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs");
   mermaid.registerLayoutLoaders(elkLayouts);
@@ -193,7 +212,7 @@ if (DIAGRAM.elk) {
 mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
 
 function state() {
-  return { level: levelSel.value, focus: focusSel.value, depth: Number(depthSel.value), dir: dirSel.value, groups: groupModes() };
+  return { level: levelSel.value, focus: focusSel.value, depth: Number(depthSel.value), dir: dirSel.value, display: displayModes() };
 }
 
 function readHash() {
@@ -202,8 +221,8 @@ function readHash() {
   focusSel.value = p.has("focus") && owner[p.get("focus")] ? p.get("focus") : "";
   depthSel.value = p.get("depth") || "1";
   dirSel.value = p.get("dir") || "both";
-  Object.entries(groupSels).forEach(([id, sel]) => {
-    const m = p.get("group." + id);
+  Object.entries(displaySels).forEach(([id, sel]) => {
+    const m = p.get("display." + id);
     sel.value = MODES.some(([value]) => value === m) ? m : defaultMode(id);
   });
 }
@@ -214,96 +233,121 @@ function hashFor(s) {
   if (s.focus) p.set("focus", s.focus);
   if (s.depth !== 1) p.set("depth", s.depth);
   if (s.dir !== "both") p.set("dir", s.dir);
-  Object.entries(s.groups).forEach(([id, mode]) => { if (mode !== defaultMode(id)) p.set("group." + id, mode); });
+  Object.entries(s.display).forEach(([id, mode]) => { if (mode !== defaultMode(id)) p.set("display." + id, mode); });
   const h = p.toString();
   return h ? "#" + h : "";
 }
 
 // Same diagram as mermaid.py's render(): keep the two in step.
 const nodeId = id => id.replace(/\W/g, "_");
-const groupNodeId = id => nodeId("group_" + id);
 const quote = value => value.replaceAll('"', "#quot;");
 
 function mermaidSource(s) {
   const g = GRAPHS[s.level];
   const starts = focusSet(s.level, s.focus);
-  const hiddenGroups = new Set(Object.entries(s.groups).filter(([, m]) => m === "hide").map(([id]) => id));
-  const visible = walk(g, starts, s.depth, s.dir, hiddenGroups);
-  const collapsed = new Set();
-  visible.forEach(n => { if (s.groups[g.groups[n]] === "collapse" && !starts.has(n)) collapsed.add(n); });
-  const groupBoxes = new Set(MODEL.groups.map(gr => groupNodeId(gr.id)));
-  const target = n => collapsed.has(n) ? groupNodeId(g.groups[n]) : nodeId(n);
+  const containers = MODEL.domains.filter(d => !d.single);
+  const state = {};
+  containers.forEach(d => state[d.id] = starts.has(d.id) ? "expanded" : (s.display[d.id] || defaultMode(d.id)));
+  const hidden = descendants(g, containers.filter(d => state[d.id] === "hidden").map(d => d.id));
+  const visible = walk(g, starts, s.depth, s.dir, hidden);
+
+  const kidsOf = {};
+  Object.entries(g.childOf).forEach(([c, p]) => (kidsOf[p] = kidsOf[p] || []).push(c));
+  const held = d => (s.level === "context" ? d.contexts.filter(c => c !== d.id) : []).concat(d.members.filter(m => m !== d.id));
+  const folded = {};  // node -> the collapsed container it folded into
+  const fold = (cid, into) => (kidsOf[cid] || []).forEach(child => {
+    if (starts.has(child)) return;
+    if (visible.has(child)) folded[child] = into;
+    fold(child, into);
+  });
+  const collapsedAncestor = cid => {
+    let p = g.childOf[cid];
+    while (p) { if (state[p] === "collapsed") return true; p = g.childOf[p]; }
+    return false;
+  };
+  containers.filter(d => state[d.id] === "collapsed" && !collapsedAncestor(d.id)).forEach(d => fold(d.id, d.id));
 
   const lines = ["---", JSON.stringify({ config: DIAGRAM.config }), "---", `flowchart ${DIAGRAM.direction}`];
   Object.entries(MODEL.types).forEach(([id, t]) =>
     lines.push(`  classDef ${id} ${t.mermaid_style}`));
   lines.push(`  classDef focus ${DIAGRAM.focus_style}`);
-  MODEL.groups.forEach(gr => lines.push(`  classDef ${groupNodeId(gr.id)} ${gr.mermaid_style}`));
 
   const plainNodes = [];
-  const box = (id, label, type, indent) => { plainNodes.push(id); return `${indent}${nodeId(id)}["${label}"]:::${type}`; };
+  const drawn = new Set();
+  const box = (id, label, type, indent) => { plainNodes.push(id); drawn.add(id); return `${indent}${nodeId(id)}["${label}"]:::${type}`; };
 
-  const drawDomain = (d, indent) => {
-    const hidden = !visible.has(d.id) || collapsed.has(d.id);
-    if (s.level === "domain") {
-      if (hidden) return [];
-      let label = quote(d.name);
-      if (!d.single && DIAGRAM.context_labels) label = `<b>${label}</b><br/>` + d.contexts.map(c => quote(contextById[c].name)).join("<br/>");
-      const out = [box(d.id, label, d.type, indent)];
-      if (d.mermaid_style) out.push(`${indent}style ${nodeId(d.id)} ${d.mermaid_style}`);
-      return out;
+  const drawChild = (c, indent) =>
+    contextById[c] ? [box(c, quote(contextById[c].name), contextById[c].type, indent)] : drawEntry(domainById[c], indent);
+
+  function drawEntry(d, indent) {
+    if (folded[d.id]) return [];
+    const kids = held(d);
+    const foldedKids = kids.filter(c => folded[c] === d.id);
+    if (!visible.has(d.id) && !foldedKids.length) return [];
+    const st = state[d.id] || "expanded";
+    if (st === "contents") return kids.filter(c => visible.has(c) && !folded[c]).flatMap(c => drawChild(c, indent));
+    if (st === "expanded" && kids.length && (visible.has(d.id) || foldedKids.length)) {
+      let inside = kids.filter(c => visible.has(c) && !folded[c]);
+      if (!inside.length) inside = kids.filter(c => !folded[c]);  // reached as a whole: show what is inside
+      if (inside.length) {
+        drawn.add(d.id);
+        const out = [`${indent}subgraph ${nodeId(d.id)}["${quote(d.name)}"]`];
+        inside.forEach(c => out.push(...drawChild(c, indent + "  ")));
+        out.push(`${indent}end`);
+        let style = d.mermaid_style || DIAGRAM.domain_style;
+        if (d.id === s.focus) style += "," + DIAGRAM.focus_style;
+        out.push(`${indent}style ${nodeId(d.id)} ${style}`);
+        return out;
+      }
     }
-    if (d.single) {
-      if (hidden) return [];
-      const out = [box(d.id, quote(d.name), d.type, indent)];
-      if (d.mermaid_style) out.push(`${indent}style ${nodeId(d.id)} ${d.mermaid_style}`);
-      return out;
+    let label = quote(d.name);
+    if (DIAGRAM.child_labels && !d.single) {
+      const named = d.contexts.filter(c => c !== d.id).map(nameOf)
+        .concat(d.members.filter(m => folded[m] === d.id).map(nameOf)).sort();
+      if (named.length) label = `<b>${label}</b><br/>${quote(named.join(", "))}`;
     }
-    let shown = d.contexts.filter(c => visible.has(c) && !collapsed.has(c));
-    if (!hidden && !shown.length) shown = d.contexts.filter(c => !collapsed.has(c));  // reached as a whole: show what is inside
-    if (!shown.length) return hidden ? [] : [box(d.id, quote(d.name), d.type, indent)];
-    const out = [`${indent}subgraph ${nodeId(d.id)}["${quote(d.name)}"]`];
-    shown.forEach(c => out.push(box(c, quote(contextById[c].name), contextById[c].type, indent + "  ")));
-    out.push(`${indent}end`);
-    out.push(`${indent}style ${nodeId(d.id)} ${d.mermaid_style || DIAGRAM.domain_style}${d.id === s.focus ? "," + DIAGRAM.focus_style : ""}`);
+    const out = [box(d.id, label, d.type, indent)];
+    if (d.mermaid_style) out.push(`${indent}style ${nodeId(d.id)} ${d.mermaid_style}`);
     return out;
-  };
+  }
+
+  // A domain drawn inside another container comes from that container's own drawing.
+  const opens = new Set(Object.entries(state).filter(([, st]) => st === "expanded" || st === "contents")
+    .map(([id]) => id).filter(id => visible.has(id) && !folded[id]));
+  const atTop = d => !opens.has(g.childOf[d.id]);
 
   if (DIAGRAM.group_by_type) {
     Object.entries(MODEL.types).forEach(([typeId, t]) => {
-      const block = MODEL.domains.filter(d => d.type === typeId).flatMap(d => drawDomain(d, "    "));
+      const block = MODEL.domains.filter(d => d.type === typeId && atTop(d)).flatMap(d => drawEntry(d, "    "));
       if (block.length) lines.push(`  subgraph type_${typeId}["${quote(t.label)}"]`, ...block, "  end");
     });
   } else {
-    MODEL.domains.forEach(d => lines.push(...drawDomain(d, "  ")));
+    MODEL.domains.filter(atTop).forEach(d => lines.push(...drawEntry(d, "  ")));
   }
 
-  MODEL.groups.forEach(gr => {
-    const members = [...collapsed].filter(n => g.groups[n] === gr.id).map(nameOf).sort();
-    if (members.length) lines.push(`  ${groupNodeId(gr.id)}["<b>${quote(gr.name)}</b><br/>${quote(members.join(", "))}"]:::${groupNodeId(gr.id)}`);
-  });
-
-  // Merge edges that land on the same pair once groups are collapsed.
+  // Merge edges that land on the same pair once containers are collapsed.
+  const target = n => folded[n] || n;
+  const foldedBoxes = new Set(Object.values(folded));
   const merged = new Map();
   g.edges.forEach(e => {
     if (!visible.has(e.from) || !visible.has(e.to)) return;
     const a = target(e.from), b = target(e.to);
-    if (a === b) return;
+    if (a === b || !drawn.has(a) || !drawn.has(b)) return;
     const key = a + "|" + b;
     if (!merged.has(key)) merged.set(key, { a, b, styles: new Set(), names: new Set(), via: [] });
     const entry = merged.get(key);
     e.styles.forEach(x => entry.styles.add(x));
     entry.via.push(...e.via);
-    if (groupBoxes.has(b)) entry.names.add(nameOf(e.to));
-    else if (groupBoxes.has(a)) entry.names.add(nameOf(e.from));
+    if (foldedBoxes.has(b)) entry.names.add(nameOf(e.to));
+    else if (foldedBoxes.has(a)) entry.names.add(nameOf(e.from));
   });
   const byStyle = {};
   // What the tooltip of each arrow says, in the order the arrows are drawn.
   const tips = [...merged.values()].map(entry => entry.via.filter(e => e.comment).map(tipEntry));
   [...merged.values()].forEach((entry, i) => {
     const style = entry.styles.has("solid") ? "solid" : [...entry.styles].sort()[0];
-    const label = entry.names.size && DIAGRAM.group_labels ? `|"${quote([...entry.names].sort().join(", "))}"|` : "";
-    lines.push(`  ${entry.a} ${style === "dotted" ? "-.->" : "-->"}${label} ${entry.b}`);
+    const label = entry.names.size && DIAGRAM.child_labels ? `|"${quote([...entry.names].sort().join(", "))}"|` : "";
+    lines.push(`  ${nodeId(entry.a)} ${style === "dotted" ? "-.->" : "-->"}${label} ${nodeId(entry.b)}`);
     (byStyle[style] = byStyle[style] || []).push(i);
   });
   Object.entries(byStyle).forEach(([style, indexes]) =>
@@ -466,7 +510,7 @@ const chip = type => { const t = MODEL.types[type]; return `<span class="chip" s
 
 function renderInfo(s, visible) {
   const legend = '<div class="legend">' + Object.keys(MODEL.types).map(chip).join("") + "</div>";
-  const howTo = `<h3>How to read</h3><p class="hint">An arrow from A to B means A depends on B. Upstream is at the top. The outer boxes are domains, the coloured boxes inside them are bounded contexts. ${MODEL.groups.length ? "Dashed boxes stand for a group of bounded contexts folded into one, and the header can show or hide them. " : ""}Click a box to focus on it.</p>`;
+  const howTo = `<h3>How to read</h3><p class="hint">An arrow from A to B means A depends on B. Upstream is at the top. The outer boxes are domains, the coloured boxes inside them are bounded contexts. Every container can be expanded (the boxes inside it), collapsed (one box), or hidden; the header has a select for each. Click a box to focus on it.</p>`;
   if (!s.focus) {
     $("info").innerHTML = `<h2>Whole system</h2><p class="hint">${visible.size} items shown. Pick a domain or bounded context to see only what it touches.</p>
       <p><a href="mermaid/index.html">Static diagrams</a></p>${legend}${howTo}`;
@@ -478,7 +522,8 @@ function renderInfo(s, visible) {
     <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>`;
   if (item.description) html += `<p class="hint">${escapeHtml(item.description)}</p>`;
   if (isMulti(id)) {
-    html += `<h3>Bounded contexts</h3>${list(domainById[id].contexts)}`;
+    if (domainById[id].contexts.length) html += `<h3>Bounded contexts</h3>${list(domainById[id].contexts)}`;
+    if (domainById[id].members.length) html += `<h3>Members</h3>${list(domainById[id].members)}`;
   } else if (isMulti(owner[id])) {
     html += `<h3>Domain</h3>${list([owner[id]])}`;
   }
@@ -499,7 +544,7 @@ $("info").addEventListener("click", ev => {
   const go = ev.target.closest("[data-go]");
   if (go) { focusSel.value = go.dataset.go; render(); }
 });
-[levelSel, focusSel, depthSel, dirSel, ...Object.values(groupSels)].forEach(el => el.addEventListener("change", render));
+[levelSel, focusSel, depthSel, dirSel, ...Object.values(displaySels)].forEach(el => el.addEventListener("change", render));
 $("reset").addEventListener("click", () => { history.replaceState(null, "", location.pathname); readHash(); render(); });
 window.addEventListener("hashchange", () => { readHash(); render(); });
 

@@ -2,8 +2,11 @@
 #
 # The `context-map` section maps each id to what it is, so nothing can be
 # described twice: an entry with a `domain:` key is a bounded context of that
-# domain, an entry of a type context-map.style.yml marks `collapsible` is a
-# group, and anything else is a domain. Every entry can carry `downstreams`, who
+# domain, and any other entry is a domain. A domain holds bounded contexts
+# (theirs `domain:` points at it) and members (theirs `group:` points at it);
+# how it first renders — expanded, collapsed, contents or hidden — comes from
+# its type's `defaultDisplay` in context-map.style.yml. Every entry can carry
+# `downstreams`, who
 # depends on it and why, and the interactive page shows the reason as a tooltip
 # when you hover over that arrow:
 #
@@ -29,8 +32,9 @@ types:
 
 # A context takes its domain's `type` and `group` unless it sets its own.
 context-map:
-  # A group: an entry of a collapsible type, which its members join with
-  # `group:`. Views can show, hide, or fold its members into one box.
+  # A container: its members join it with `group:`. How it first renders comes
+  # from its type's `defaultDisplay` in context-map.style.yml; the header and
+  # views can change it.
   foundations:
     name: Shared Foundations
     type: group

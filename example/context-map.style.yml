@@ -4,18 +4,15 @@
 # Unknown keys fail the build.
 
 # Box styles, keyed by the ids in context-map.yml. The keys are Mermaid's own
-# classDef attributes (fill, stroke, stroke-width, ...), plus `collapsible:
-# true` on a type whose entries are groups. The build checks them all, so a
-# typo fails the build instead of drawing nothing.
+# classDef attributes (fill, stroke, stroke-width, ...), plus `defaultDisplay`
+# on a type whose entries hold others: expanded, collapsed, contents or hidden.
+# The build checks them all, so a typo fails the build instead of drawing
+# nothing.
 types:
   core:       { fill: "#dedaff", stroke: "#6631d7" }
   supporting: { fill: "#c6dcff", stroke: "#305bab" }
   generic:    { fill: "#adf0c7", stroke: "#067429" }
-  group:      { fill: "#eaf9ef", stroke: "#067429", collapsible: true }
-
-# One group can override its type's look; the dashed stroke is built in.
-groups:
-  foundations: { fill: "#eaf9ef", stroke: "#067429" }
+  group:      { fill: "#eaf9ef", stroke: "#067429", stroke-dasharray: "4 3", defaultDisplay: collapsed }
 
 # A domain takes any attributes; it overrides `mermaid.domain_style` below and,
 # when the domain is drawn as one box, its type colors.
@@ -46,9 +43,8 @@ mermaid:
     level: context         # context (bounded contexts inside domain boxes) or domain (one box per domain)
     depth: 1               # Hops out from the focus. 99 means everything.
     dir: both              # both, up (depends on), down (used by)
-    groups: collapse       # show, hide, collapse (one box per group). Or a map: { foundations: collapse }
-    group_labels: true     # With collapse: label each arrow with the members of the group it uses
-    context_labels: true   # With level: domain, list the contexts inside each domain box
+    display: {}            # How containers first render: expanded, collapsed, contents, hidden — or a map by id
+    child_labels: true     # A collapsed container names what it holds, in the box and on each arrow
     group_by_type: false   # Wrap Core, Supporting, Generic in their own boxes
 
   focus_style: "stroke-width:4px,font-weight:bold"

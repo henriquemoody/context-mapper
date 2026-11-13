@@ -14,9 +14,8 @@ VIEW_DEFAULTS = {
     "level": "context",
     "depth": 1,
     "dir": "both",
-    "groups": "collapse",
-    "group_labels": True,
-    "context_labels": True,
+    "display": None,
+    "child_labels": True,
     "group_by_type": False,
 }
 
@@ -47,8 +46,16 @@ ALLOWED = {
               "monotoneY", "natural", "step", "stepAfter", "stepBefore"},
     "level": {"context", "domain"},
     "dir": {"both", "up", "down"},
-    "groups": {"show", "hide", "collapse"},
+    "display": set(graph.DISPLAY_STATES),
 }
+
+# What old style files and views called things.
+OLD_VIEW_OPTIONS = {
+    "groups": "`groups` is now `display`, with expanded, collapsed, contents or hidden",
+    "group_labels": "`group_labels` is now `child_labels`",
+    "context_labels": "`context_labels` is now `child_labels`",
+}
+OLD_DISPLAY_VALUES = {"show": "contents", "hide": "hidden", "collapse": "collapsed"}
 
 def settings(config):
     """Fill in defaults and check every key and value. Returns (settings, errors)."""
@@ -66,7 +73,9 @@ def settings(config):
 
     for key in cfg["defaults"]:
         if key not in VIEW_DEFAULTS:
-            errors.append(f"mermaid.defaults.{key}: unknown option. Known: {', '.join(sorted(VIEW_DEFAULTS))}")
+            hint = OLD_VIEW_OPTIONS.get(key)
+            errors.append(f"mermaid.defaults.{key}: {hint}" if hint else
+                          f"mermaid.defaults.{key}: unknown option. Known: {', '.join(sorted(VIEW_DEFAULTS))}")
     for view in [cfg["defaults"], *cfg["views"]]:
         name = "defaults" if view is cfg["defaults"] else f"views.{view.get('id', '?')}"
         if view is not cfg["defaults"]:
@@ -74,22 +83,32 @@ def settings(config):
                 errors.append("mermaid.views: every view needs an id")
             for key in view:
                 if key not in VIEW_DEFAULTS and key not in VIEW_ONLY:
-                    errors.append(f"mermaid.{name}.{key}: unknown option. Known: "
+                    hint = OLD_VIEW_OPTIONS.get(key)
+                    errors.append(f"mermaid.{name}.{key}: {hint}" if hint else
+                                  f"mermaid.{name}.{key}: unknown option. Known: "
                                   f"{', '.join(sorted({*VIEW_DEFAULTS, *VIEW_ONLY}))}")
         for key in ("level", "dir", "direction"):
             if key in view and view[key] not in ALLOWED[key]:
                 errors.append(f"mermaid.{name}.{key} must be one of: {', '.join(sorted(ALLOWED[key]))}")
-        modes = view["groups"].values() if isinstance(view.get("groups"), dict) else [view.get("groups", "collapse")]
-        if any(m not in ALLOWED["groups"] for m in modes):
-            errors.append(f"mermaid.{name}.groups must be one of {', '.join(sorted(ALLOWED['groups']))}, "
-                          "or a map from group id to one of those")
+        display = view.get("display")
+        for mode in (display.values() if isinstance(display, dict) else [display]):
+            if mode is None:
+                continue
+            if mode in OLD_DISPLAY_VALUES:
+                errors.append(f"mermaid.{name}.display: 'show' is now 'contents', "
+                              "'hide' is now 'hidden', 'collapse' is now 'collapsed'")
+            elif mode not in ALLOWED["display"]:
+                errors.append(f"mermaid.{name}.display must be one of {', '.join(sorted(ALLOWED['display']))}, "
+                              "or a map from domain id to one of those")
     return cfg, errors
 
 
-def group_mode(view, group_id):
-    """How a view treats one group: show, hide or collapse. `groups` is one mode for all, or a map by id."""
-    value = view["groups"]
-    return value.get(group_id, VIEW_DEFAULTS["groups"]) if isinstance(value, dict) else value
+def display_mode(view, types, domain):
+    """How a container first renders: the view's `display`, else its type's
+    `defaultDisplay`, else expanded. The type never matters, only the display."""
+    display = view["display"]
+    mode = display.get(domain["id"]) if isinstance(display, dict) else display
+    return mode or types[domain["type"]].get("defaultDisplay") or "expanded"
 
 
 def deep_merge(base, extra):
@@ -127,19 +146,14 @@ def client_settings(cfg):
         "focus_style": cfg["focus_style"],
         "domain_style": cfg["domain_style"],
         "edge_styles": cfg["edge_styles"],
-        "groups": d["groups"],
-        "group_labels": d["group_labels"],
-        "context_labels": d["context_labels"],
+        "display": d["display"],
+        "child_labels": d["child_labels"],
         "group_by_type": d["group_by_type"],
     }
 
 
 def node_id(item_id):
     return re.sub(r"\W", "_", item_id)
-
-
-def group_node_id(group_id):
-    return node_id("group_" + group_id)
 
 
 def text(value):
@@ -154,94 +168,141 @@ def render(data, cfg, view, links=None, markdown=False):
     level = view["level"]
     g = graph.level_graph(data, level)
     starts = graph.focus_set(data, level, view.get("focus"))
-    group_names = {gr["id"]: gr["name"] for gr in data["groups"]}
-    modes = {gid: group_mode(view, gid) for gid in group_names}
-    visible = graph.walk(g, starts, view["depth"], view["dir"], {gid for gid, m in modes.items() if m == "hide"})
 
-    # Nodes folded into a group box, by group.
-    collapsed = {n for n in visible if modes.get(g["groups"].get(n)) == "collapse" and n not in starts}
-    group_boxes = {group_node_id(gid) for gid in group_names}
-    target = lambda n: group_node_id(g["groups"][n]) if n in collapsed else node_id(n)
+    # A container is a domain that holds others. Its display comes from the
+    # view, its type, or expanded; a focused container opens up.
+    containers = {d["id"]: d for d in data["domains"] if not d["single"]}
+    state = {cid: ("expanded" if cid in starts else display_mode(view, types, containers[cid]))
+             for cid in containers}
+    hidden = graph.descendants(g, {cid for cid, s in state.items() if s == "hidden"})
+    visible = graph.walk(g, starts, view["depth"], view["dir"], hidden)
+
+    # What a container holds at this level, and what folded into a collapsed one.
+    kids_of = {}
+    for child, parent in g["child_of"].items():
+        kids_of.setdefault(parent, []).append(child)
+
+    def held(d):
+        """A container's children that are nodes at this level: its bounded
+        contexts there, and its members anywhere."""
+        inside = [c for c in d["contexts"] if c != d["id"]] if level == "context" else []
+        return inside + [m for m in d["members"] if m != d["id"]]
+
+    folded = {}  # node -> the collapsed container it folded into
+
+    def fold(cid, into):
+        for child in kids_of.get(cid, []):
+            if child in starts:
+                continue
+            if child in visible:
+                folded[child] = into
+            fold(child, into)
+
+    def collapsed_ancestor(cid):
+        parent = g["child_of"].get(cid)
+        while parent:
+            if state.get(parent) == "collapsed":
+                return True
+            parent = g["child_of"].get(parent)
+        return False
+
+    for cid, s in state.items():
+        if s == "collapsed" and not collapsed_ancestor(cid):
+            fold(cid, cid)
 
     config_yaml = json.dumps({"config": mermaid_config(cfg, markdown)})
     lines = ["---", config_yaml, "---", f"flowchart {view.get('direction', cfg['direction'])}"]
     for type_id, t in types.items():
         lines.append(f"  classDef {type_id} {t['mermaid_style']}")
     lines.append(f"  classDef focus {cfg['focus_style']}")
-    for gr in data["groups"]:
-        lines.append(f"  classDef {group_node_id(gr['id'])} {gr['mermaid_style']}")
 
     plain_nodes = []  # ids drawn as plain boxes, for focus and click lines
+    drawn = set()     # ids drawn at all: a box, or a wrapper around others
 
     def box(item_id, label, type_id, indent):
         plain_nodes.append(item_id)
+        drawn.add(item_id)
         return f'{indent}{node_id(item_id)}["{label}"]:::{type_id}'
 
-    def draw_domain(d, indent):
-        """Lines for one domain at the current level."""
-        if level == "domain":
-            if d["id"] not in visible or d["id"] in collapsed:
-                return []
-            label = text(d["name"])
-            if not d["single"] and view["context_labels"]:
-                label = f"<b>{label}</b><br/>" + "<br/>".join(text(contexts[c]["name"]) for c in d["contexts"])
-            out = [box(d["id"], label, d["type"], indent)]
-            if d.get("mermaid_style"):
-                out.append(f"{indent}style {node_id(d['id'])} {d['mermaid_style']}")
-            return out
+    def draw_child(child, indent):
+        """One child of a container: a bounded context is a box; a domain may hold others."""
+        if child in contexts:
+            return [box(child, text(contexts[child]["name"]), contexts[child]["type"], indent)]
+        return draw_entry(domains[child], indent)
 
-        if d["single"]:
-            if d["id"] not in visible or d["id"] in collapsed:
-                return []
-            out = [box(d["id"], text(d["name"]), d["type"], indent)]
-            if d.get("mermaid_style"):
-                out.append(f"{indent}style {node_id(d['id'])} {d['mermaid_style']}")
-            return out
-
-        shown = [c for c in d["contexts"] if c in visible and c not in collapsed]
-        domain_shown = d["id"] in visible and d["id"] not in collapsed
-        if domain_shown and not shown:
-            # The domain is reached as a whole, so show what is inside it.
-            shown = [c for c in d["contexts"] if c not in collapsed]
-        if not shown:
-            return [box(d["id"], text(d["name"]), d["type"], indent)] if domain_shown else []
-        out = [f'{indent}subgraph {node_id(d["id"])}["{text(d["name"])}"]']
-        out += [box(c, text(contexts[c]["name"]), contexts[c]["type"], indent + "  ") for c in shown]
-        out.append(f"{indent}end")
-        style = d.get("mermaid_style") or cfg["domain_style"]
-        if d["id"] == view.get("focus"):
-            style += "," + cfg["focus_style"]
-        out.append(f"{indent}style {node_id(d['id'])} {style}")
+    def draw_entry(d, indent):
+        """Lines for one domain: a plain box, a wrapper with the boxes inside it,
+        the boxes inside it without a wrapper of its own, or nothing."""
+        did = d["id"]
+        if did in folded:
+            return []
+        kids = held(d)
+        folded_kids = [c for c in kids if folded.get(c) == did]
+        if did not in visible and not folded_kids:
+            return []
+        st = state.get(did, "expanded")
+        if st == "contents":
+            return [line for c in kids if c in visible and c not in folded for line in draw_child(c, indent)]
+        if st == "expanded" and kids and (did in visible or folded_kids):
+            inside = [c for c in kids if c in visible and c not in folded]
+            if not inside:
+                # Reached as a whole, so show what is inside it.
+                inside = [c for c in kids if c not in folded]
+            if inside:
+                out = [f'{indent}subgraph {node_id(did)}["{text(d["name"])}"]']
+                for c in inside:
+                    out += draw_child(c, indent + "  ")
+                out.append(f"{indent}end")
+                drawn.add(did)
+                style = d.get("mermaid_style") or cfg["domain_style"]
+                if did == view.get("focus"):
+                    style += "," + cfg["focus_style"]
+                out.append(f"{indent}style {node_id(did)} {style}")
+                return out
+        # A plain box: the domain alone. With `child_labels`, a container that
+        # holds others names them inside.
+        label = text(d["name"])
+        if view["child_labels"] and not d["single"]:
+            named = sorted(names[c] for c in d["contexts"] if c != did)
+            named += sorted(names[m] for m in d["members"] if folded.get(m) == did)
+            if named:
+                label = f"<b>{label}</b><br/>{text(', '.join(named))}"
+        out = [box(did, label, d["type"], indent)]
+        if d.get("mermaid_style"):
+            out.append(f"{indent}style {node_id(did)} {d['mermaid_style']}")
         return out
+
+    # A domain drawn inside another container comes from that container's own drawing.
+    opens = {cid for cid, s in state.items()
+             if s in ("expanded", "contents") and cid in visible and cid not in folded}
+    at_top = lambda d: g["child_of"].get(d["id"]) not in opens
 
     if view["group_by_type"]:
         for type_id, t in types.items():
-            block = [line for d in data["domains"] if d["type"] == type_id for line in draw_domain(d, "    ")]
+            block = [line for d in data["domains"] if d["type"] == type_id and at_top(d)
+                     for line in draw_entry(d, "    ")]
             if block:
                 lines += [f'  subgraph type_{type_id}["{text(t["label"])}"]', *block, "  end"]
     else:
         for d in data["domains"]:
-            lines += draw_domain(d, "  ")
+            if at_top(d):
+                lines += draw_entry(d, "  ")
 
-    for gr in data["groups"]:
-        members = sorted(names[n] for n in collapsed if g["groups"][n] == gr["id"])
-        if members:
-            box_id = group_node_id(gr["id"])
-            lines.append(f'  {box_id}["<b>{text(gr["name"])}</b><br/>{text(", ".join(members))}"]:::{box_id}')
-
-    # Merge edges that land on the same pair once groups are collapsed.
+    # Merge edges that land on the same pair once containers are collapsed.
+    target = lambda n: folded.get(n, n)
+    folded_boxes = set(folded.values())
     merged = {}
     for e in g["edges"]:
         if e["from"] not in visible or e["to"] not in visible:
             continue
         a, b = target(e["from"]), target(e["to"])
-        if a == b:
+        if a == b or a not in drawn or b not in drawn:
             continue
         entry = merged.setdefault((a, b), {"styles": set(), "names": set()})
         entry["styles"] |= e["styles"]
-        if b in group_boxes:
+        if b in folded_boxes:
             entry["names"].add(names[e["to"]])
-        elif a in group_boxes:
+        elif a in folded_boxes:
             entry["names"].add(names[e["from"]])
 
     by_style = {}
@@ -249,9 +310,9 @@ def render(data, cfg, view, links=None, markdown=False):
         style = "solid" if "solid" in entry["styles"] else sorted(entry["styles"])[0]
         arrow = "-.->" if style == "dotted" else "-->"
         label = ""
-        if entry["names"] and view["group_labels"]:
+        if entry["names"] and view["child_labels"]:
             label = f'|"{text(", ".join(sorted(entry["names"])))}"|'
-        lines.append(f"  {a} {arrow}{label} {b}")
+        lines.append(f"  {node_id(a)} {arrow}{label} {node_id(b)}")
         by_style.setdefault(style, []).append(str(i))
 
     # `interpolate` sets the curve per edge, which works even where the config is ignored.
@@ -313,10 +374,10 @@ def check(data, cfg):
         seen.add(v["id"])
         if v.get("focus") and v["focus"] not in names:
             errors.append(f"mermaid view '{v['id']}': unknown focus '{v['focus']}'")
-    group_ids = {gr["id"] for gr in data["groups"]}
+    container_ids = {d["id"] for d in data["domains"] if not d["single"]}
     for name, v in [("defaults", cfg["defaults"]), *((f"views.{v['id']}", v) for v in cfg["views"])]:
-        if isinstance(v.get("groups"), dict):
-            errors += [f"mermaid.{name}.groups: unknown group '{i}'" for i in v["groups"] if i not in group_ids]
+        if isinstance(v.get("display"), dict):
+            errors += [f"mermaid.{name}.display: unknown container '{i}'" for i in v["display"] if i not in container_ids]
     return errors
 
 
@@ -410,7 +471,10 @@ def facts(data, view, link):
     domains, contexts, _, names = graph.index(data)
     out = []
     if focus in domains and not domains[focus]["single"]:
-        out.append(("Bounded contexts", domains[focus]["contexts"]))
+        if domains[focus]["contexts"]:
+            out.append(("Bounded contexts", domains[focus]["contexts"]))
+        if domains[focus]["members"]:
+            out.append(("Members", domains[focus]["members"]))
     elif not domains[contexts[focus]["domain"]]["single"]:
         out.append(("Domain", [contexts[focus]["domain"]]))
     ups, downs = graph.relations(data, focus)

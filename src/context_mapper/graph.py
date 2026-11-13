@@ -5,20 +5,29 @@ Two levels:
   that point at a domain as a whole). Edges are as written in context-map.yml.
 - domain: nodes are domains. Edges are lifted from contexts to their domains,
   merged, and edges inside a domain are dropped.
+
+A domain that holds others is a container: bounded contexts come in through their
+`domain:`, members through their `group:`. How a container first renders comes
+from its type's `defaultDisplay` in the style file — expanded, collapsed,
+contents or hidden. No type name is special: any type can hold, and the build
+never checks for one.
 """
 
 
-# Mermaid classDef attributes a box style may set, in `types`, `groups` and
-# `domains` alike. The build checks them, so a typo fails the build instead of
-# drawing nothing.
+# Mermaid classDef attributes a box style may set, in `types` and `domains`
+# alike. The build checks them, so a typo fails the build instead of drawing
+# nothing.
 BOX_STYLE_KEYS = {"color", "fill", "fill-opacity", "font-family", "font-size",
                   "font-weight", "opacity", "stroke", "stroke-dasharray",
                   "stroke-opacity", "stroke-width"}
 
-# What a style fills in when the entry doesn't say: readable text on a light
-# box, and for a group the dashed stroke that marks it as a set, not a thing.
+# How a container first renders. expanded: the box and the boxes inside it.
+# collapsed: the box alone, the inside hidden. contents: the inside alone, the
+# box hidden. hidden: neither.
+DISPLAY_STATES = ("expanded", "collapsed", "contents", "hidden")
+
+# What a style fills in when the entry doesn't say: readable text on a light box.
 TEXT_DEFAULTS = {"color": "#1a1a1a"}
-GROUP_DEFAULTS = {"stroke-dasharray": "4 3", "color": "#1a1a1a"}
 
 
 def classdef(attrs, defaults=TEXT_DEFAULTS):
@@ -34,6 +43,9 @@ def box_style(section, item_id, style, defaults, required, errors, allowed=None)
     if not style:
         return None
     allowed = allowed or BOX_STYLE_KEYS
+    if "collapsible" in style:
+        errors.append(f"context-map.style.yml: {section}.{item_id}.collapsible: "
+                      "`collapsible` is now `defaultDisplay: collapsed`")
     if "color" in style and "border" in style:
         errors.append(f"context-map.style.yml: {section}.{item_id}: `color`+`border` are now `fill`+`stroke`")
     elif "border" in style:
@@ -41,6 +53,9 @@ def box_style(section, item_id, style, defaults, required, errors, allowed=None)
     if "mermaid_style" in style:
         errors.append(f"context-map.style.yml: {section}.{item_id}.mermaid_style: `mermaid_style` is now "
                       "written as the attributes themselves, e.g. fill: \"#fff\", stroke: \"#000\"")
+    if "defaultDisplay" in style and style["defaultDisplay"] not in DISPLAY_STATES:
+        errors.append(f"context-map.style.yml: {section}.{item_id}.defaultDisplay must be one of "
+                      f"{', '.join(DISPLAY_STATES)}")
     for key in style:
         if key not in allowed:
             errors.append(f"context-map.style.yml: {section}.{item_id}.{key}: unknown option. "
@@ -51,22 +66,21 @@ def box_style(section, item_id, style, defaults, required, errors, allowed=None)
 
 
 def normalize(model, styles=None):
-    """Turn context-map.yml and context-map.style.yml into {types, groups, domains, contexts, edges} plus a list of errors.
+    """Turn context-map.yml and context-map.style.yml into {types, domains, contexts, edges} plus a list of errors.
 
-    `styles` is the parsed context-map.style.yml. Its box styles (types, groups,
-    domains) are keyed by the ids in context-map.yml.
+    `styles` is the parsed context-map.style.yml. Its box styles (types, domains)
+    are keyed by the ids in context-map.yml.
     """
     styles = styles or {}
     type_styles = styles.get("types") or {}
-    group_styles = styles.get("groups") or {}
     domain_styles = styles.get("domains") or {}
     errors = []
     domains, contexts, pending = [], [], []
     model = model or {}
 
     if model.get("groups"):
-        return ({"types": {}, "groups": [], "domains": [], "contexts": [], "edges": []},
-                ["context-map.yml: `groups` is now entries in `context-map`, with just a `name`, "
+        return ({"types": {}, "domains": [], "contexts": [], "edges": []},
+                ["context-map.yml: `groups` is now entries in `context-map`, with a `name` and a `type`, "
                  "pointed at by members' `group`"])
     for section in ("types", "context-map"):
         if not model.get(section):
@@ -75,7 +89,7 @@ def normalize(model, styles=None):
             else:
                 errors.append(f"context-map.yml: `{section}` is missing or empty")
     if errors:
-        return {"types": {}, "groups": [], "domains": [], "contexts": [], "edges": []}, errors
+        return {"types": {}, "domains": [], "contexts": [], "edges": []}, errors
 
     types = {}
     for type_id, t in model["types"].items():
@@ -86,16 +100,11 @@ def normalize(model, styles=None):
             if key != "label":
                 errors.append(f"context-map.yml: types.{type_id}.{key}: unknown option. Known: label")
         style = type_styles.get(type_id) or {}
-        if "collapsible" in style and not isinstance(style["collapsible"], bool):
-            errors.append(f"context-map.style.yml: types.{type_id}.collapsible must be true or false")
         mermaid_style = box_style("types", type_id, style, TEXT_DEFAULTS, ("fill", "stroke"), errors,
-                                  allowed=BOX_STYLE_KEYS | {"collapsible"})
+                                  allowed=BOX_STYLE_KEYS | {"defaultDisplay"})
         if mermaid_style is None:
             errors.append(f"context-map.style.yml: types.{type_id} needs `fill` and `stroke`")
         types[type_id] = {**t, **style, "mermaid_style": mermaid_style}
-    # A type the style file marks `collapsible` turns its entries into groups:
-    # sets that views can fold into one box, not things to depend on.
-    collapsible_types = {type_id for type_id, t in types.items() if t.get("collapsible")}
     for type_id in type_styles:
         if type_id not in model["types"]:
             errors.append(f"context-map.style.yml: types.{type_id}: unknown type, it is not in context-map.yml")
@@ -107,22 +116,16 @@ def normalize(model, styles=None):
     if any(isinstance(e, dict) and "contexts" in e for e in raw_entries.values()):
         errors.append("context-map.yml: contexts now live next to their domains, each with a `domain:` key")
 
-    # An entry with a `domain:` key is a bounded context of that domain; an
-    # entry of a collapsible type is a group; any other entry is a domain.
-    # Every id, domain, context or group, is a key of this one map, so nothing
-    # can be described twice.
-    group_refs = {d.get("group") for d in raw_entries.values()
-                  if isinstance(d, dict) and isinstance(d.get("group"), str)}
-
-    def is_group(entry_id, d):
-        return "domain" not in d and d.get("type") in collapsible_types
-
+    # An entry with a `domain:` key is a bounded context of that domain; any
+    # other entry is a domain. Every id, domain or context, is a key of this
+    # one map, so nothing can be described twice. A domain holds bounded
+    # contexts (theirs `domain:` points at it) and members (theirs `group:`
+    # points at it); how it first renders comes from its type's
+    # `defaultDisplay` in the style file.
     for entry_id in domain_styles:
         entry = raw_entries.get(entry_id)
         if not isinstance(entry, dict) or "domain" in entry:
             errors.append(f"context-map.style.yml: domains.{entry_id}: unknown domain, it is not in context-map.yml")
-        elif is_group(entry_id, entry):
-            errors.append(f"context-map.style.yml: domains.{entry_id}: unknown domain, it is a group")
 
     def check_keys(entry_id, d, allowed):
         for key in d:
@@ -131,76 +134,39 @@ def normalize(model, styles=None):
         if not d.get("name"):
             errors.append(f"context-map.{entry_id}: needs a name")
 
-    def check_group(kind, item_id, group):
-        if group is None:
-            return
-        if not isinstance(group, str):
-            errors.append(f"{kind} '{item_id}': `group` must be an id")
-            return
-        target = raw_entries.get(group)
-        if not isinstance(target, dict) or "domain" in target:
-            detail = ", it is a bounded context" if isinstance(target, dict) else ""
-            errors.append(f"{kind} '{item_id}': unknown group '{group}'{detail}")
-        elif target.get("type") is None:
-            errors.append(f"{kind} '{item_id}': unknown group '{group}'")
-        elif not is_group(group, target):
-            errors.append(f"{kind} '{item_id}': unknown group '{group}', "
-                          f"type '{target.get('type')}' is not collapsible")
-
-    raw_domains, raw_contexts, raw_groups = [], [], []
+    raw_domains, raw_contexts = [], []
+    member_of = {}
     for entry_id, d in raw_entries.items():
         if not isinstance(d, dict):
             errors.append(f"context-map.{entry_id}: needs a map with `name` and `type`")
             continue
         if "domain" in d:
             check_keys(entry_id, d, ("name", "domain", "type", "group", "downstreams", "description"))
-            if d.get("type") in collapsible_types:
-                errors.append(f"context-map.{entry_id}: a bounded context's type can't be collapsible")
+            if d.get("group") is not None:
+                errors.append(f"context-map.{entry_id}: a bounded context is inside its domain "
+                              "already, it can't also be in a group")
             parent = raw_entries.get(d.get("domain"))
             if not isinstance(parent, dict) or "domain" in parent:
                 errors.append(f"context-map.{entry_id}: unknown domain '{d.get('domain')}'")
-            elif is_group(d.get("domain"), parent):
-                errors.append(f"context-map.{entry_id}: unknown domain '{d.get('domain')}', it is a group")
             raw_contexts.append((entry_id, d))
-        elif is_group(entry_id, d):
-            check_keys(entry_id, d, ("name", "type"))
-            if entry_id not in group_refs:
-                errors.append(f"context-map.{entry_id}: a group needs members, no `group:` points at it")
-            raw_groups.append((entry_id, d))
         else:
             check_keys(entry_id, d, ("name", "type", "group", "downstreams", "description"))
-            check_group("domain", entry_id, d.get("group"))
+            group = d.get("group")
+            if group is not None:
+                target = raw_entries.get(group)
+                if not isinstance(target, dict):
+                    errors.append(f"context-map.{entry_id}: unknown group '{group}'")
+                elif "domain" in target:
+                    errors.append(f"context-map.{entry_id}: unknown group '{group}', it is a bounded context")
+                elif group == entry_id:
+                    errors.append(f"context-map.{entry_id}: `group` can't point at itself")
+                else:
+                    member_of[entry_id] = group
             if d.get("type") is None:
                 errors.append(f"context-map.{entry_id}: needs a type")
             elif d.get("type") not in types:
                 errors.append(f"context-map.{entry_id}: unknown type '{d.get('type')}'")
             raw_domains.append((entry_id, d))
-
-    groups = []
-    for group_id, d in raw_groups:
-        override = group_styles.get(group_id) or {}
-        if override:
-            mermaid_style = box_style("groups", group_id, override, GROUP_DEFAULTS, (), errors)
-        else:
-            # A group box takes its type's look, plus the dashed stroke that
-            # marks it as a set rather than a thing.
-            attrs = {key: value for key, value in types[d.get("type")].items() if key in BOX_STYLE_KEYS}
-            mermaid_style = classdef(attrs, GROUP_DEFAULTS)
-        groups.append({"id": group_id, "name": d.get("name"), "mermaid_style": mermaid_style})
-    group_ids = {g["id"] for g in groups}
-    for group_id in group_styles:
-        if group_id in group_ids:
-            continue
-        entry = raw_entries.get(group_id)
-        if not isinstance(entry, dict):
-            detail = "it is not in context-map.yml"
-        elif "domain" in entry:
-            detail = "it is a bounded context"
-        elif entry.get("type") is None:
-            detail = "it is not a group"
-        else:
-            detail = "it is a domain"
-        errors.append(f"context-map.style.yml: groups.{group_id}: unknown group, {detail}")
 
     for domain_id, d in raw_domains:
         dtype, group = d.get("type"), d.get("group")
@@ -209,30 +175,25 @@ def normalize(model, styles=None):
         if "downstreams" in d:
             pending.append((domain_id, f"context-map.{domain_id}", d["downstreams"]))
         ids = []
+        members = [m for m, g in member_of.items() if g == domain_id]
         for context_id, c in raw_contexts:
             if c.get("domain") != domain_id:
                 continue
-            cname, ctype, cgroup = c.get("name"), c.get("type", dtype), c.get("group", group)
+            cname, ctype = c.get("name"), c.get("type", dtype)
             if ctype not in types:
                 errors.append(f"context '{context_id}': unknown type '{ctype}'")
-            check_group("context", context_id, cgroup)
-            contexts.append({
-                "id": context_id, "name": cname, "type": ctype, "domain": domain_id, "group": cgroup,
-                "description": c.get("description"),
-            })
+            contexts.append({"id": context_id, "name": cname, "type": ctype, "domain": domain_id,
+                             "description": c.get("description")})
             ids.append(context_id)
             if "downstreams" in c:
                 pending.append((context_id, f"context-map.{context_id}", c["downstreams"]))
-        if ids:
-            domains.append({"id": domain_id, "name": d.get("name"), "type": dtype, "group": group,
-                            "contexts": ids, "single": False, "mermaid_style": mermaid_style,
-                            "description": d.get("description")})
-        else:
+        single = not ids and not members
+        domains.append({"id": domain_id, "name": d.get("name"), "type": dtype, "group": group,
+                        "contexts": ids, "members": members, "single": single,
+                        "mermaid_style": mermaid_style, "description": d.get("description")})
+        if single:
             contexts.append({"id": domain_id, "name": d.get("name"), "type": dtype, "domain": domain_id,
-                             "group": group, "description": d.get("description")})
-            domains.append({"id": domain_id, "name": d.get("name"), "type": dtype, "group": group,
-                            "contexts": [domain_id], "single": True, "mermaid_style": mermaid_style,
-                            "description": d.get("description")})
+                             "description": d.get("description")})
 
     seen = set(raw_entries)
 
@@ -263,16 +224,14 @@ def normalize(model, styles=None):
                 errors.append(f"{where}.downstreams.{downstream}: must be a comment "
                               "string, or a map with `comment` and `style`")
             for end in (owner, downstream):
-                if end in group_ids:
-                    errors.append(f"a group can't be a dependency: '{end}' in {where}.downstreams")
-                elif end not in seen:
+                if end not in seen:
                     errors.append(f"unknown domain or context '{end}' in {where}.downstreams")
             if (downstream, owner) in pairs:
                 errors.append(f"duplicate dependency {downstream} -> {owner}")
             pairs.add((downstream, owner))
             edges.append({"from": downstream, "to": owner, "style": style, "comment": comment})
 
-    data = {"types": types, "groups": groups, "domains": domains, "contexts": contexts, "edges": edges}
+    data = {"types": types, "domains": domains, "contexts": contexts, "edges": edges}
     if not errors:
         cycle = find_cycle(level_graph(data, "context"))
         if cycle:
@@ -291,14 +250,18 @@ def index(data):
 
 
 def level_graph(data, level):
-    """Return {nodes: set, edges: [{from, to, styles, via}], groups: {node: group id}} for a level."""
+    """Return {nodes: set, edges: [...], child_of: {node: container id}} for a level.
+
+    `child_of` says which container a node renders inside: a bounded context
+    inside its domain, a member inside its group."""
     domains, contexts, owner, _ = index(data)
+    child_of = {d["id"]: d["group"] for d in data["domains"] if d["group"]}
     if level == "context":
         nodes = set(contexts) | {d for d, v in domains.items() if not v["single"]}
-        member = {c: v["group"] for c, v in contexts.items() if v["group"]}
-        member.update({d: v["group"] for d, v in domains.items() if not v["single"] and v["group"]})
+        child_of.update({c: v["domain"] for c, v in contexts.items()
+                         if not domains[v["domain"]]["single"]})
         edges = [{"from": e["from"], "to": e["to"], "styles": {e["style"]}, "via": [e]} for e in data["edges"]]
-        return {"nodes": nodes, "edges": edges, "groups": member}
+        return {"nodes": nodes, "edges": edges, "child_of": child_of}
 
     merged = {}
     for e in data["edges"]:
@@ -311,8 +274,23 @@ def level_graph(data, level):
     return {
         "nodes": set(domains),
         "edges": list(merged.values()),
-        "groups": {d: v["group"] for d, v in domains.items() if v["group"]},
+        "child_of": child_of,
     }
+
+
+def descendants(graph, ids):
+    """Each id and everything rendered inside it, at this level."""
+    kids = {}
+    for child, parent in graph["child_of"].items():
+        kids.setdefault(parent, []).append(child)
+    out, stack = set(), list(ids)
+    while stack:
+        node = stack.pop()
+        if node in out:
+            continue
+        out.add(node)
+        stack += kids.get(node, [])
+    return out
 
 
 def find_cycle(graph):
@@ -344,21 +322,23 @@ def find_cycle(graph):
 
 
 def focus_set(data, level, focus):
-    """The node ids a focus starts from at a level. A domain focus at context level includes its contexts."""
+    """The node ids a focus starts from at a level. A container focus opens it: its
+    bounded contexts and its members are starts too."""
     if not focus:
         return set()
     domains, _, owner, _ = index(data)
     if level == "domain":
-        return {owner[focus]}
+        return {owner[focus], *domains[owner[focus]]["members"]}
     if focus in domains and not domains[focus]["single"]:
-        return {focus, *domains[focus]["contexts"]}
+        return {focus, *domains[focus]["contexts"], *domains[focus]["members"]}
     return {focus}
 
 
-def walk(graph, starts, depth, direction, hidden_groups):
+def walk(graph, starts, depth, direction, hidden):
     """Nodes reachable from `starts` within `depth` hops. Without starts, every node.
-    Members of `hidden_groups` are skipped, unless they are a start."""
-    allowed = lambda n: n in starts or graph["groups"].get(n) not in hidden_groups
+    `hidden` holds what isn't shown: a hidden container and everything inside it.
+    A start is always shown."""
+    allowed = lambda n: n in starts or n not in hidden
     if not starts:
         return {n for n in graph["nodes"] if allowed(n)}
     up = {n: [] for n in graph["nodes"]}

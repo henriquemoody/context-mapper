@@ -15,7 +15,7 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git@v0.11.0
+pip install git+https://github.com/henriquemoody/context-mapper.git@v0.12.0
 ```
 
 Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
@@ -33,12 +33,12 @@ types:
   core:       { label: Core }                     # the colors live in context-map.style.yml
   supporting: { label: Supporting }
   generic:    { label: Generic }
-  group:      { label: Group }                    # its entries are groups (see context-map.style.yml)
+  group:      { label: Group }                    # entries of this type hold others (see context-map.style.yml)
 
 context-map:                                      # every id is a key, exactly once
-  foundations:                                    # a group: an entry of a collapsible type
+  foundations:                                    # a container: its members point at it with `group`
     name: Shared Foundations
-    type: group                                  # views can show, hide or fold it into one box
+    type: group                                  # how it first renders comes from its type
   payments:                                       # no `domain:` key: a domain
     name: Payments
     type: generic
@@ -63,7 +63,7 @@ context-map:                                      # every id is a key, exactly o
     type: supporting                              # a context can override its domain's type
 ```
 
-Every entry has a name and a type. A group is any set of domains or contexts you want to treat together, such as shared foundations: an entry of a type the style file marks `collapsible: true`, whose members join it with `group:`. Nothing can depend on a group, and a group takes just a name and a type. A context takes its domain's `group` unless it sets its own.
+Every entry has a name and a type. An entry with a `domain:` key is a bounded context; any other entry is a domain, which can hold bounded contexts and members. A member joins a domain with `group:` — and a bounded context can't, it is inside its domain already. How a domain that holds others first renders comes from its type's `defaultDisplay`: `expanded` (the box and what it holds), `collapsed` (the box alone), `contents` (what it holds, no box), or `hidden` (neither). No type is special: any type can hold.
 
 Every entry can carry a `description`: the interactive page shows it as a tooltip when you hover over its box, and the item's page shows it under the title.
 
@@ -92,15 +92,12 @@ open public/index.html
 
 ## Customize the diagrams
 
-`context-map.style.yml` holds all of it. Type, group and domain styles are keyed by the ids in `context-map.yml`, and take Mermaid's own classDef attributes as keys (`fill`, `stroke`, `stroke-width`, ...), so what you write is what Mermaid draws — plus `collapsible: true` on a type whose entries are groups. The build fails if one points at an id that doesn't exist, on an attribute Mermaid doesn't know, or on a type without `fill` and `stroke`.
+`context-map.style.yml` holds all of it. Type and domain styles are keyed by the ids in `context-map.yml`, and take Mermaid's own classDef attributes as keys (`fill`, `stroke`, `stroke-width`, ...), so what you write is what Mermaid draws — plus `defaultDisplay` on a type whose entries hold others. The build fails if one points at an id that doesn't exist, on an attribute Mermaid doesn't know, or on a type without `fill` and `stroke`.
 
 ```yaml
 types:
   core: { fill: "#dedaff", stroke: "#6631d7" }                       # types need fill and stroke
-  group: { fill: "#eaf9ef", stroke: "#067429", collapsible: true }   # its entries are groups
-
-groups:
-  foundations: { fill: "#eaf9ef", stroke: "#067429" }                # optional: overrides one group's look
+  group: { fill: "#eaf9ef", stroke: "#067429", stroke-dasharray: "4 3", defaultDisplay: collapsed }
 
 domains:
   orders: { fill: "#eef4ff", stroke: "#305bab" }                     # overrides mermaid.domain_style
@@ -132,9 +129,8 @@ These can be set under `defaults` and overridden per view:
 | `level` | `context`, `domain` | Bounded contexts inside domain boxes, or one box per domain. |
 | `depth` | number, `99` for all | Hops out from the focus. |
 | `dir` | `both`, `up`, `down` | Depends on, used by, or both. |
-| `groups` | `show`, `hide`, `collapse`, or a map from group id to one of those | Draw the members of a group, drop them, or fold them into one box per group. A single value applies to every group. In a map, groups left out are collapsed. |
-| `group_labels` | `true`, `false` | With `collapse`, label each arrow with the members of the group it stands for. |
-| `context_labels` | `true`, `false` | With `level: domain`, list the bounded contexts inside each domain box. |
+| `display` | `expanded`, `collapsed`, `contents`, `hidden`, or a map from domain id to one of those | How containers first render. A single value applies to every container; a map leaves the rest to their types. |
+| `child_labels` | `true`, `false` | A collapsed container names what it holds, in the box and on each arrow that reaches it. |
 | `group_by_type` | `true`, `false` | Wrap Core, Supporting and Generic in their own boxes. |
 
 A view can also set `id`, `title`, `focus` (a domain or context id), `description` and `direction`:
@@ -143,7 +139,7 @@ A view can also set `id`, `title`, `focus` (a domain or context id), `descriptio
     - id: catalog-detail
       title: Catalog in detail
       focus: catalog
-      groups: show                       # or { foundations: show }
+      display: contents                # or { foundations: contents }
       direction: LR
 ```
 
@@ -155,7 +151,7 @@ Keep only the model in your repository and let CI install this tool. Pin a tag s
 pages:
   image: python:3.12-slim
   script:
-    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.11.0.tar.gz
+    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.12.0.tar.gz
     - context-mapper
   artifacts:
     paths:
@@ -168,6 +164,6 @@ pages:
 
 - `index.html#focus=checkout`: interactive, Checkout and its direct neighbors
 - `index.html#level=domain&focus=orders`: interactive, the Orders domain and its neighbors
-- Other hash options: `depth=1|2|99`, `dir=both|up|down`, `group.<group id>=collapse|show|hide`
+- Other hash options: `depth=1|2|99`, `dir=both|up|down`, `display.<domain id>=expanded|collapsed|contents|hidden`
 - `mermaid/checkout.html`: static diagram for Checkout
 - `mermaid/index.html`: all static diagrams
