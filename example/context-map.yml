@@ -11,6 +11,9 @@
 #       packaging: Charges for Packages and Subscriptions
 #       pro-account: Charges the monthly subscription
 #
+# Every entry can also carry a `description`: the interactive page shows it as
+# a tooltip when you hover over its box, and the item's page shows it in text.
+#
 # A domain no context points at is a single bounded context with the same name.
 # A dependency can point at a domain when we don't know yet which of its
 # contexts is involved. Move it to the right context once we know.
@@ -33,6 +36,7 @@ context-map:
     name: Identity
     type: generic
     group: foundations
+    description: Accounts and logins. Everyone signs in here.
     downstreams:
       checkout: Creates an account for guests who check out.
       crm:                                          # a bare key: depends on it, no comment yet
@@ -47,6 +51,7 @@ context-map:
   catalog:
     name: Catalog
     type: core
+    description: Everything that can be bought, with its prices and availability.
     downstreams:                                    # the whole catalog: we don't know which context yet
       checkout:
         comment: Reads prices and availability at checkout time.
@@ -66,6 +71,7 @@ context-map:
   checkout:
     name: Checkout
     domain: orders
+    description: Takes a cart and turns it into a paid order.
   fulfillment:
     name: Fulfillment
     domain: orders

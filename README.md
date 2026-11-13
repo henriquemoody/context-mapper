@@ -15,7 +15,7 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git@v0.8.0
+pip install git+https://github.com/henriquemoody/context-mapper.git@v0.9.0
 ```
 
 Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
@@ -55,6 +55,7 @@ context-map:                                      # every id is a key, exactly o
   checkout:                                      # a `domain:` key makes an entry a bounded context
     name: Checkout
     domain: orders
+    description: Takes a cart and turns it into a paid order.   # shows as a tooltip on the box
   fulfillment:
     name: Fulfillment
     domain: orders
@@ -62,6 +63,8 @@ context-map:                                      # every id is a key, exactly o
 ```
 
 A group is any set of domains or contexts you want to treat together, such as shared foundations. A context takes its domain's `group` unless it sets its own.
+
+Every entry can carry a `description`: the interactive page shows it as a tooltip when you hover over its box, and the item's page shows it under the title.
 
 A domain no context points at is a single bounded context with the same name.
 
@@ -71,7 +74,7 @@ At domain level, context dependencies are lifted to their domains and merged, an
 
 | Output | What it is |
 | --- | --- |
-| `<out>/index.html` | Interactive view. Switch between bounded contexts and domains, click anything to focus on it. |
+| `<out>/index.html` | Interactive view. Switch between bounded contexts and domains, click anything to focus on it, hover a box or an arrow for the details. |
 | `<out>/mermaid/*.html` | One static Mermaid page per domain, per bounded context, and per named view. Click a box to jump to its page. |
 | `<out>/markdown/*.md` | The same diagrams as Markdown. GitLab renders them natively, and they can go to Confluence. |
 
@@ -148,7 +151,7 @@ Keep only the model in your repository and let CI install this tool. Pin a tag s
 pages:
   image: python:3.12-slim
   script:
-    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.8.0.tar.gz
+    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.9.0.tar.gz
     - context-mapper
   artifacts:
     paths:

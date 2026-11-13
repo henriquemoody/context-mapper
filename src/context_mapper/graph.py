@@ -104,13 +104,13 @@ def normalize(model, styles=None):
             errors.append(f"context-map.{entry_id}: needs a map with `name` and `type`")
             continue
         if "domain" in d:
-            check_keys(entry_id, d, ("name", "domain", "type", "group", "downstreams"))
+            check_keys(entry_id, d, ("name", "domain", "type", "group", "downstreams", "description"))
             parent = raw_entries.get(d.get("domain"))
             if not isinstance(parent, dict) or "domain" in parent:
                 errors.append(f"context-map.{entry_id}: unknown domain '{d.get('domain')}'")
             raw_contexts.append((entry_id, d))
         else:
-            check_keys(entry_id, d, ("name", "type", "group", "downstreams"))
+            check_keys(entry_id, d, ("name", "type", "group", "downstreams", "description"))
             check_group("domain", entry_id, d.get("group"))
             if d.get("type") is None:
                 errors.append(f"context-map.{entry_id}: needs a type")
@@ -142,18 +142,21 @@ def normalize(model, styles=None):
             check_group("context", context_id, cgroup)
             contexts.append({
                 "id": context_id, "name": cname, "type": ctype, "domain": domain_id, "group": cgroup,
+                "description": c.get("description"),
             })
             ids.append(context_id)
             if "downstreams" in c:
                 pending.append((context_id, f"context-map.{context_id}", c["downstreams"]))
         if ids:
             domains.append({"id": domain_id, "name": d.get("name"), "type": dtype, "group": group,
-                            "contexts": ids, "single": False, "mermaid_style": mermaid_style})
+                            "contexts": ids, "single": False, "mermaid_style": mermaid_style,
+                            "description": d.get("description")})
         else:
             contexts.append({"id": domain_id, "name": d.get("name"), "type": dtype, "domain": domain_id,
-                             "group": group})
+                             "group": group, "description": d.get("description")})
             domains.append({"id": domain_id, "name": d.get("name"), "type": dtype, "group": group,
-                            "contexts": [domain_id], "single": True, "mermaid_style": mermaid_style})
+                            "contexts": [domain_id], "single": True, "mermaid_style": mermaid_style,
+                            "description": d.get("description")})
 
     seen = set(raw_entries)
 

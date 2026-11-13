@@ -353,6 +353,7 @@ PAGE = """<!doctype html>
 <nav><a href="index.html">All diagrams</a><a href="../{interactive}">Interactive view</a></nav>
 <main>
 <h1>{title}</h1>
+{about}
 <p class="hint">{description}</p>
 {body}
 </main>
@@ -396,6 +397,16 @@ def describe(data, view):
     if focus in contexts and not domains[contexts[focus]["domain"]]["single"]:
         where = f", in the {names[contexts[focus]['domain']]} domain"
     return f"{names[focus]}{where}: {what}, {hops}. {reading}"
+
+
+def item_description(data, view):
+    """The description of the view's focus item, when it has one."""
+    focus = view.get("focus")
+    if not focus:
+        return None
+    domains, contexts, _, _ = graph.index(data)
+    item = domains.get(focus) or contexts.get(focus)
+    return (item or {}).get("description")
 
 
 def facts(data, view, link):
@@ -450,6 +461,7 @@ def build(data, config, out):
     for v in all_views:
         title = v.get("title", v["id"])
         desc = v.get("description") or describe(data, v)
+        about = item_description(data, v)
         interactive = "index.html" + (f"#focus={v['focus']}" if v.get("focus") else "")
         if v["level"] == "domain":
             interactive += ("&" if v.get("focus") else "#") + "level=domain"
@@ -468,10 +480,15 @@ def build(data, config, out):
             elk=ELK if uses_elk(cfg) else "",
         )
         (html_dir / f"{v['id']}.html").write_text(PAGE.format(
-            title=html.escape(title), description=html.escape(desc), interactive=interactive, body=body))
+            title=html.escape(title),
+            about=f'<p class="hint">{html.escape(about)}</p>' if about else "",
+            description=html.escape(desc), interactive=interactive, body=body))
 
         md_link = lambda i: f"[{names[i]}]({i}.md)" if i in pages else names[i]
-        md = [f"# {title}", "", desc, "", "```mermaid", render(data, cfg, v, markdown=True).rstrip(), "```", ""]
+        md = [f"# {title}", ""]
+        if about:
+            md += [about, ""]
+        md += [desc, "", "```mermaid", render(data, cfg, v, markdown=True).rstrip(), "```", ""]
         for h, ids in facts(data, v, md_link):
             md += [f"**{h}:** " + (", ".join(md_link(i) for i in ids) or "None"), ""]
         (md_dir / f"{v['id']}.md").write_text("\n".join(md))
@@ -487,7 +504,8 @@ def build(data, config, out):
                 f"<li><a href='{i}.html'>{html.escape(t)}</a></li>" for t, i in rows) + "</ul>")
             md += [f"## {group}", ""] + [f"- [{t}]({i}.md)" for t, i in rows] + [""]
     (html_dir / "index.html").write_text(PAGE.format(
-        title="All diagrams", description="Static Mermaid diagrams generated from the context map.",
+        title="All diagrams", about="",
+        description="Static Mermaid diagrams generated from the context map.",
         interactive="index.html", body="".join(sections)))
     (md_dir / "README.md").write_text("\n".join(md))
     return len(all_views)

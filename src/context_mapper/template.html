@@ -90,6 +90,7 @@ const owner = {};
 MODEL.contexts.forEach(c => owner[c.id] = c.domain);
 MODEL.domains.forEach(d => owner[d.id] = d.id);
 const nameOf = id => (contextById[id] || domainById[id]).name;
+const descriptionOf = id => (contextById[id] || domainById[id]).description;
 const isMulti = id => domainById[id] && !domainById[id].single;
 
 // Same graphs as graph.py: context level as written, domain level lifted and merged.
@@ -327,18 +328,16 @@ async function render() {
     if (run !== renderCount) return;  // a newer render took over
     $("graph").innerHTML = svg;
     bindFunctions?.($("graph"));
-    bindEdgeHover($("graph").querySelector("svg"), tips);
+    const svgEl = $("graph").querySelector("svg");
+    bindEdgeHover(svgEl, tips);
+    bindBoxTips(svgEl);
   } catch (err) {
     if (run === renderCount) $("graph").textContent = "Could not render this diagram: " + err.message;
   }
 }
 
-// Hovering an arrow highlights it, its arrowhead and the two boxes it joins, and shows its comments.
-function bindEdgeHover(svg, tips) {
-  if (!svg) return;
-  const paths = [...svg.querySelectorAll("path.flowchart-link")];
-  const labels = [...svg.querySelectorAll(".edgeLabel")];
-  // Boxes are g elements whose id holds our node id: "<svg>-flowchart-<id>-<n>", or "<svg>-<id>" for a domain.
+// Boxes are g elements whose id holds our node id: "<svg>-flowchart-<id>-<n>", or "<svg>-<id>" for a domain.
+function boxMapOf(svg) {
   const boxes = {};
   svg.querySelectorAll("g[id]").forEach(g => {
     const m = /-flowchart-(.+)-\d+$/.exec(g.id);
@@ -346,6 +345,15 @@ function bindEdgeHover(svg, tips) {
     else if (g.classList.contains("cluster")) boxes[g.id.slice(svg.id.length + 1)] = g;
   });
   Object.values(boxes).forEach(g => g.classList.add("box"));
+  return boxes;
+}
+
+// Hovering an arrow highlights it, its arrowhead and the two boxes it joins, and shows its comments.
+function bindEdgeHover(svg, tips) {
+  if (!svg) return;
+  const paths = [...svg.querySelectorAll("path.flowchart-link")];
+  const labels = [...svg.querySelectorAll(".edgeLabel")];
+  const boxes = boxMapOf(svg);
   // An edge id reads "<svg>-L_<from>_<to>_<n>". Ids may hold underscores, so match against the boxes we know.
   const endsOf = path => {
     const rest = path.id.slice(svg.id.length + 3).replace(/_\d+$/, "");
@@ -404,6 +412,27 @@ function bindEdgeHover(svg, tips) {
   });
 }
 
+// Hovering a box shows its description, when it has one. The innermost box wins,
+// so a bounded context beats the domain box around it.
+function bindBoxTips(svg) {
+  const boxes = boxMapOf(svg);
+  const innermost = target => {
+    let best = null;
+    Object.entries(boxes).forEach(([id, g]) => {
+      if (g.contains(target) && (!best || best.g.contains(g))) best = { id, g };
+    });
+    return best ? best.id : null;
+  };
+  svg.addEventListener("mousemove", ev => {
+    if (ev.target.closest(".edge-hit")) return;  // the arrow's own tooltip owns the pointer here
+    const id = innermost(ev.target);
+    const text = id && descriptionOf(id);
+    if (text) showTip([{ title: nameOf(id), text }], ev);
+    else hideTip();
+  });
+  svg.addEventListener("pointerleave", hideTip);
+}
+
 // One entry of a tooltip: always a title (who depends on whom) and a description (the comment).
 // An arrow can stand for several dependencies, so every entry names its own.
 const tipEntry = dep => ({ title: `${nameOf(dep.from)} → ${nameOf(dep.to)}`, text: dep.comment });
@@ -446,6 +475,7 @@ function renderInfo(s, visible) {
   const item = contextById[id] || domainById[id];
   let html = `<h2>${escapeHtml(item.name)}</h2>${chip(item.type)} <span class="hint">${isMulti(id) ? "Domain" : "Bounded context"}</span>
     <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>`;
+  if (item.description) html += `<p class="hint">${escapeHtml(item.description)}</p>`;
   if (isMulti(id)) {
     html += `<h3>Bounded contexts</h3>${list(domainById[id].contexts)}`;
   } else if (isMulti(owner[id])) {
