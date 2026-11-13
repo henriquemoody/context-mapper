@@ -15,7 +15,7 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git@v0.10.0
+pip install git+https://github.com/henriquemoody/context-mapper.git@v0.11.0
 ```
 
 Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
@@ -33,10 +33,12 @@ types:
   core:       { label: Core }                     # the colors live in context-map.style.yml
   supporting: { label: Supporting }
   generic:    { label: Generic }
+  group:      { label: Group }                    # its entries are groups (see context-map.style.yml)
 
 context-map:                                      # every id is a key, exactly once
-  foundations:                                    # a group: an entry others' `group` points at
-    name: Shared Foundations                      # views can show, hide or fold it into one box
+  foundations:                                    # a group: an entry of a collapsible type
+    name: Shared Foundations
+    type: group                                  # views can show, hide or fold it into one box
   payments:                                       # no `domain:` key: a domain
     name: Payments
     type: generic
@@ -61,7 +63,7 @@ context-map:                                      # every id is a key, exactly o
     type: supporting                              # a context can override its domain's type
 ```
 
-A group is any set of domains or contexts you want to treat together, such as shared foundations. It is an entry in `context-map` others' `group:` points at, with just a name — nothing can depend on it. A context takes its domain's `group` unless it sets its own.
+Every entry has a name and a type. A group is any set of domains or contexts you want to treat together, such as shared foundations: an entry of a type the style file marks `collapsible: true`, whose members join it with `group:`. Nothing can depend on a group, and a group takes just a name and a type. A context takes its domain's `group` unless it sets its own.
 
 Every entry can carry a `description`: the interactive page shows it as a tooltip when you hover over its box, and the item's page shows it under the title.
 
@@ -90,17 +92,18 @@ open public/index.html
 
 ## Customize the diagrams
 
-`context-map.style.yml` holds all of it. Type, group and domain styles are keyed by the ids in `context-map.yml`, and take Mermaid's own classDef attributes as keys (`fill`, `stroke`, `stroke-width`, ...), so what you write is what Mermaid draws. The build fails if one points at an id that doesn't exist, on an attribute Mermaid doesn't know, or on a type without `fill` and `stroke`.
+`context-map.style.yml` holds all of it. Type, group and domain styles are keyed by the ids in `context-map.yml`, and take Mermaid's own classDef attributes as keys (`fill`, `stroke`, `stroke-width`, ...), so what you write is what Mermaid draws — plus `collapsible: true` on a type whose entries are groups. The build fails if one points at an id that doesn't exist, on an attribute Mermaid doesn't know, or on a type without `fill` and `stroke`.
 
 ```yaml
 types:
-  core: { fill: "#dedaff", stroke: "#6631d7" }                  # types need fill and stroke
+  core: { fill: "#dedaff", stroke: "#6631d7" }                       # types need fill and stroke
+  group: { fill: "#eaf9ef", stroke: "#067429", collapsible: true }   # its entries are groups
 
 groups:
-  foundations: { fill: "#eaf9ef", stroke: "#067429" }            # a group's dashed stroke is built in
+  foundations: { fill: "#eaf9ef", stroke: "#067429" }                # optional: overrides one group's look
 
 domains:
-  orders: { fill: "#eef4ff", stroke: "#305bab" }                # overrides mermaid.domain_style
+  orders: { fill: "#eef4ff", stroke: "#305bab" }                     # overrides mermaid.domain_style
 ```
 
 A style also fills in a readable text `color` when you don't set one.
@@ -152,7 +155,7 @@ Keep only the model in your repository and let CI install this tool. Pin a tag s
 pages:
   image: python:3.12-slim
   script:
-    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.10.0.tar.gz
+    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.11.0.tar.gz
     - context-mapper
   artifacts:
     paths:

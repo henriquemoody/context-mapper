@@ -29,10 +29,11 @@ def classdef(attrs, defaults=TEXT_DEFAULTS):
     return ",".join(f"{key}:{value}" for key, value in items)
 
 
-def box_style(section, item_id, style, defaults, required, errors):
+def box_style(section, item_id, style, defaults, required, errors, allowed=None):
     """Check one box style map and return its classDef string, or None when there is nothing to draw."""
     if not style:
         return None
+    allowed = allowed or BOX_STYLE_KEYS
     if "color" in style and "border" in style:
         errors.append(f"context-map.style.yml: {section}.{item_id}: `color`+`border` are now `fill`+`stroke`")
     elif "border" in style:
@@ -41,12 +42,12 @@ def box_style(section, item_id, style, defaults, required, errors):
         errors.append(f"context-map.style.yml: {section}.{item_id}.mermaid_style: `mermaid_style` is now "
                       "written as the attributes themselves, e.g. fill: \"#fff\", stroke: \"#000\"")
     for key in style:
-        if key not in BOX_STYLE_KEYS:
+        if key not in allowed:
             errors.append(f"context-map.style.yml: {section}.{item_id}.{key}: unknown option. "
-                          f"Known: {', '.join(sorted(BOX_STYLE_KEYS))}")
+                          f"Known: {', '.join(sorted(allowed))}")
     if required and not {"border", "mermaid_style"} & style.keys() and not set(required) <= style.keys():
         errors.append(f"context-map.style.yml: {section}.{item_id} needs `{required[0]}` and `{required[1]}`")
-    return classdef(style, defaults)
+    return classdef({key: value for key, value in style.items() if key in BOX_STYLE_KEYS}, defaults)
 
 
 def normalize(model, styles=None):
@@ -78,11 +79,23 @@ def normalize(model, styles=None):
 
     types = {}
     for type_id, t in model["types"].items():
+        if not isinstance(t, dict):
+            errors.append(f"context-map.yml: types.{type_id}: needs a map with `label`")
+            continue
+        for key in t:
+            if key != "label":
+                errors.append(f"context-map.yml: types.{type_id}.{key}: unknown option. Known: label")
         style = type_styles.get(type_id) or {}
-        mermaid_style = box_style("types", type_id, style, TEXT_DEFAULTS, ("fill", "stroke"), errors)
+        if "collapsible" in style and not isinstance(style["collapsible"], bool):
+            errors.append(f"context-map.style.yml: types.{type_id}.collapsible must be true or false")
+        mermaid_style = box_style("types", type_id, style, TEXT_DEFAULTS, ("fill", "stroke"), errors,
+                                  allowed=BOX_STYLE_KEYS | {"collapsible"})
         if mermaid_style is None:
             errors.append(f"context-map.style.yml: types.{type_id} needs `fill` and `stroke`")
         types[type_id] = {**t, **style, "mermaid_style": mermaid_style}
+    # A type the style file marks `collapsible` turns its entries into groups:
+    # sets that views can fold into one box, not things to depend on.
+    collapsible_types = {type_id for type_id, t in types.items() if t.get("collapsible")}
     for type_id in type_styles:
         if type_id not in model["types"]:
             errors.append(f"context-map.style.yml: types.{type_id}: unknown type, it is not in context-map.yml")
@@ -95,14 +108,14 @@ def normalize(model, styles=None):
         errors.append("context-map.yml: contexts now live next to their domains, each with a `domain:` key")
 
     # An entry with a `domain:` key is a bounded context of that domain; an
-    # entry others' `group:` points at is a group; any other entry is a domain.
+    # entry of a collapsible type is a group; any other entry is a domain.
     # Every id, domain, context or group, is a key of this one map, so nothing
     # can be described twice.
     group_refs = {d.get("group") for d in raw_entries.values()
                   if isinstance(d, dict) and isinstance(d.get("group"), str)}
 
     def is_group(entry_id, d):
-        return "domain" not in d and entry_id in group_refs and d.get("type") is None
+        return "domain" not in d and d.get("type") in collapsible_types
 
     for entry_id in domain_styles:
         entry = raw_entries.get(entry_id)
@@ -125,12 +138,14 @@ def normalize(model, styles=None):
             errors.append(f"{kind} '{item_id}': `group` must be an id")
             return
         target = raw_entries.get(group)
-        if not isinstance(target, dict):
+        if not isinstance(target, dict) or "domain" in target:
+            detail = ", it is a bounded context" if isinstance(target, dict) else ""
+            errors.append(f"{kind} '{item_id}': unknown group '{group}'{detail}")
+        elif target.get("type") is None:
             errors.append(f"{kind} '{item_id}': unknown group '{group}'")
-        elif "domain" in target:
-            errors.append(f"{kind} '{item_id}': unknown group '{group}', it is a bounded context")
         elif not is_group(group, target):
-            errors.append(f"{kind} '{item_id}': unknown group '{group}', it is a domain")
+            errors.append(f"{kind} '{item_id}': unknown group '{group}', "
+                          f"type '{target.get('type')}' is not collapsible")
 
     raw_domains, raw_contexts, raw_groups = [], [], []
     for entry_id, d in raw_entries.items():
@@ -139,6 +154,8 @@ def normalize(model, styles=None):
             continue
         if "domain" in d:
             check_keys(entry_id, d, ("name", "domain", "type", "group", "downstreams", "description"))
+            if d.get("type") in collapsible_types:
+                errors.append(f"context-map.{entry_id}: a bounded context's type can't be collapsible")
             parent = raw_entries.get(d.get("domain"))
             if not isinstance(parent, dict) or "domain" in parent:
                 errors.append(f"context-map.{entry_id}: unknown domain '{d.get('domain')}'")
@@ -146,7 +163,9 @@ def normalize(model, styles=None):
                 errors.append(f"context-map.{entry_id}: unknown domain '{d.get('domain')}', it is a group")
             raw_contexts.append((entry_id, d))
         elif is_group(entry_id, d):
-            check_keys(entry_id, d, ("name",))
+            check_keys(entry_id, d, ("name", "type"))
+            if entry_id not in group_refs:
+                errors.append(f"context-map.{entry_id}: a group needs members, no `group:` points at it")
             raw_groups.append((entry_id, d))
         else:
             check_keys(entry_id, d, ("name", "type", "group", "downstreams", "description"))
@@ -159,17 +178,28 @@ def normalize(model, styles=None):
 
     groups = []
     for group_id, d in raw_groups:
-        style = group_styles.get(group_id) or {}
-        mermaid_style = box_style("groups", group_id, style, GROUP_DEFAULTS, (), errors)
+        override = group_styles.get(group_id) or {}
+        if override:
+            mermaid_style = box_style("groups", group_id, override, GROUP_DEFAULTS, (), errors)
+        else:
+            # A group box takes its type's look, plus the dashed stroke that
+            # marks it as a set rather than a thing.
+            attrs = {key: value for key, value in types[d.get("type")].items() if key in BOX_STYLE_KEYS}
+            mermaid_style = classdef(attrs, GROUP_DEFAULTS)
         groups.append({"id": group_id, "name": d.get("name"), "mermaid_style": mermaid_style})
     group_ids = {g["id"] for g in groups}
     for group_id in group_styles:
         if group_id in group_ids:
             continue
         entry = raw_entries.get(group_id)
-        detail = ("it is a bounded context" if isinstance(entry, dict) and "domain" in entry
-                  else "it is a domain" if isinstance(entry, dict)
-                  else "it is not in context-map.yml")
+        if not isinstance(entry, dict):
+            detail = "it is not in context-map.yml"
+        elif "domain" in entry:
+            detail = "it is a bounded context"
+        elif entry.get("type") is None:
+            detail = "it is not a group"
+        else:
+            detail = "it is a domain"
         errors.append(f"context-map.style.yml: groups.{group_id}: unknown group, {detail}")
 
     for domain_id, d in raw_domains:

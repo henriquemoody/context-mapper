@@ -238,7 +238,7 @@ function mermaidSource(s) {
   Object.entries(MODEL.types).forEach(([id, t]) =>
     lines.push(`  classDef ${id} ${t.mermaid_style}`));
   lines.push(`  classDef focus ${DIAGRAM.focus_style}`);
-  MODEL.groups.forEach(gr => lines.push(`  classDef ${groupNodeId(gr.id)} ${gr.mermaid_style || DIAGRAM.group_style}`));
+  MODEL.groups.forEach(gr => lines.push(`  classDef ${groupNodeId(gr.id)} ${gr.mermaid_style}`));
 
   const plainNodes = [];
   const box = (id, label, type, indent) => { plainNodes.push(id); return `${indent}${nodeId(id)}["${label}"]:::${type}`; };

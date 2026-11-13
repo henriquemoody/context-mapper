@@ -50,10 +50,6 @@ ALLOWED = {
     "groups": {"show", "hide", "collapse"},
 }
 
-# What a group box looks like when its group has no `mermaid_style`.
-GROUP_STYLE = "fill:#f2f2f2,stroke:#595959,stroke-dasharray:4 3,color:#1a1a1a"
-
-
 def settings(config):
     """Fill in defaults and check every key and value. Returns (settings, errors)."""
     config = config or {}
@@ -131,7 +127,6 @@ def client_settings(cfg):
         "focus_style": cfg["focus_style"],
         "domain_style": cfg["domain_style"],
         "edge_styles": cfg["edge_styles"],
-        "group_style": GROUP_STYLE,
         "groups": d["groups"],
         "group_labels": d["group_labels"],
         "context_labels": d["context_labels"],
@@ -174,7 +169,7 @@ def render(data, cfg, view, links=None, markdown=False):
         lines.append(f"  classDef {type_id} {t['mermaid_style']}")
     lines.append(f"  classDef focus {cfg['focus_style']}")
     for gr in data["groups"]:
-        lines.append(f"  classDef {group_node_id(gr['id'])} {gr['mermaid_style'] or GROUP_STYLE}")
+        lines.append(f"  classDef {group_node_id(gr['id'])} {gr['mermaid_style']}")
 
     plain_nodes = []  # ids drawn as plain boxes, for focus and click lines
 

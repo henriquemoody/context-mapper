@@ -4,14 +4,16 @@
 # Unknown keys fail the build.
 
 # Box styles, keyed by the ids in context-map.yml. The keys are Mermaid's own
-# classDef attributes (fill, stroke, stroke-width, ...); the build checks them,
-# so a typo fails the build instead of drawing nothing.
+# classDef attributes (fill, stroke, stroke-width, ...), plus `collapsible:
+# true` on a type whose entries are groups. The build checks them all, so a
+# typo fails the build instead of drawing nothing.
 types:
   core:       { fill: "#dedaff", stroke: "#6631d7" }
   supporting: { fill: "#c6dcff", stroke: "#305bab" }
   generic:    { fill: "#adf0c7", stroke: "#067429" }
+  group:      { fill: "#eaf9ef", stroke: "#067429", collapsible: true }
 
-# A group's dashed stroke is built in; fill and stroke override the default look.
+# One group can override its type's look; the dashed stroke is built in.
 groups:
   foundations: { fill: "#eaf9ef", stroke: "#067429" }
 
