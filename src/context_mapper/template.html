@@ -236,7 +236,7 @@ function mermaidSource(s) {
 
   const lines = ["---", JSON.stringify({ config: DIAGRAM.config }), "---", `flowchart ${DIAGRAM.direction}`];
   Object.entries(MODEL.types).forEach(([id, t]) =>
-    lines.push(`  classDef ${id} ${t.mermaid_style || `fill:${t.color},stroke:${t.border},color:#1a1a1a`}`));
+    lines.push(`  classDef ${id} ${t.mermaid_style}`));
   lines.push(`  classDef focus ${DIAGRAM.focus_style}`);
   MODEL.groups.forEach(gr => lines.push(`  classDef ${groupNodeId(gr.id)} ${gr.mermaid_style || DIAGRAM.group_style}`));
 
@@ -462,7 +462,7 @@ const hideTip = () => { tip.style.display = "none"; };
 const escapeHtml = t => t.replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const link = id => `<a data-go="${id}">${escapeHtml(nameOf(id))}</a>`;
 const list = ids => ids.length ? "<ul>" + ids.map(id => `<li>${link(id)}</li>`).join("") + "</ul>" : '<p class="hint">None</p>';
-const chip = type => { const t = MODEL.types[type]; return `<span class="chip" style="background:${t.color};border-color:${t.border}">${t.label}</span>`; };
+const chip = type => { const t = MODEL.types[type]; return `<span class="chip" style="background:${t.fill};border-color:${t.stroke}">${t.label}</span>`; };
 
 function renderInfo(s, visible) {
   const legend = '<div class="legend">' + Object.keys(MODEL.types).map(chip).join("") + "</div>";

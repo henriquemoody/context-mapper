@@ -171,8 +171,7 @@ def render(data, cfg, view, links=None, markdown=False):
     config_yaml = json.dumps({"config": mermaid_config(cfg, markdown)})
     lines = ["---", config_yaml, "---", f"flowchart {view.get('direction', cfg['direction'])}"]
     for type_id, t in types.items():
-        style = t.get("mermaid_style") or f"fill:{t['color']},stroke:{t['border']},color:#1a1a1a"
-        lines.append(f"  classDef {type_id} {style}")
+        lines.append(f"  classDef {type_id} {t['mermaid_style']}")
     lines.append(f"  classDef focus {cfg['focus_style']}")
     for gr in data["groups"]:
         lines.append(f"  classDef {group_node_id(gr['id'])} {gr['mermaid_style'] or GROUP_STYLE}")

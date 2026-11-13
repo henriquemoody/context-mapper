@@ -8,15 +8,52 @@ Two levels:
 """
 
 
-TYPE_STYLE_KEYS = {"color", "border", "mermaid_style"}
-GROUP_STYLE_KEYS = {"mermaid_style"}
-DOMAIN_STYLE_KEYS = {"color", "border", "mermaid_style"}
+# Mermaid classDef attributes a box style may set, in `types`, `groups` and
+# `domains` alike. The build checks them, so a typo fails the build instead of
+# drawing nothing.
+BOX_STYLE_KEYS = {"color", "fill", "fill-opacity", "font-family", "font-size",
+                  "font-weight", "opacity", "stroke", "stroke-dasharray",
+                  "stroke-opacity", "stroke-width"}
+
+# What a style fills in when the entry doesn't say: readable text on a light
+# box, and for a group the dashed stroke that marks it as a set, not a thing.
+TEXT_DEFAULTS = {"color": "#1a1a1a"}
+GROUP_DEFAULTS = {"stroke-dasharray": "4 3", "color": "#1a1a1a"}
+
+
+def classdef(attrs, defaults=TEXT_DEFAULTS):
+    """A Mermaid classDef string: the attributes as written, then the defaults not set."""
+    items = list((attrs or {}).items())
+    have = {key for key, _ in items}
+    items += [(key, value) for key, value in defaults.items() if key not in have]
+    return ",".join(f"{key}:{value}" for key, value in items)
+
+
+def box_style(section, item_id, style, defaults, required, errors):
+    """Check one box style map and return its classDef string, or None when there is nothing to draw."""
+    if not style:
+        return None
+    if "color" in style and "border" in style:
+        errors.append(f"context-map.style.yml: {section}.{item_id}: `color`+`border` are now `fill`+`stroke`")
+    elif "border" in style:
+        errors.append(f"context-map.style.yml: {section}.{item_id}.border: `border` is now `stroke`")
+    if "mermaid_style" in style:
+        errors.append(f"context-map.style.yml: {section}.{item_id}.mermaid_style: `mermaid_style` is now "
+                      "written as the attributes themselves, e.g. fill: \"#fff\", stroke: \"#000\"")
+    for key in style:
+        if key not in BOX_STYLE_KEYS:
+            errors.append(f"context-map.style.yml: {section}.{item_id}.{key}: unknown option. "
+                          f"Known: {', '.join(sorted(BOX_STYLE_KEYS))}")
+    if required and not {"border", "mermaid_style"} & style.keys() and not set(required) <= style.keys():
+        errors.append(f"context-map.style.yml: {section}.{item_id} needs `{required[0]}` and `{required[1]}`")
+    return classdef(style, defaults)
 
 
 def normalize(model, styles=None):
     """Turn context-map.yml and context-map.style.yml into {types, groups, domains, contexts, edges} plus a list of errors.
 
-    `styles` is the parsed context-map.style.yml. Its `types` and `groups` are merged onto the ones in the model.
+    `styles` is the parsed context-map.style.yml. Its box styles (types, groups,
+    domains) are keyed by the ids in context-map.yml.
     """
     styles = styles or {}
     type_styles = styles.get("types") or {}
@@ -24,10 +61,15 @@ def normalize(model, styles=None):
     domain_styles = styles.get("domains") or {}
     errors = []
     domains, contexts, pending = [], [], []
+    model = model or {}
 
+    if model.get("groups"):
+        return ({"types": {}, "groups": [], "domains": [], "contexts": [], "edges": []},
+                ["context-map.yml: `groups` is now entries in `context-map`, with just a `name`, "
+                 "pointed at by members' `group`"])
     for section in ("types", "context-map"):
-        if not (model or {}).get(section):
-            if section == "context-map" and "domains" in (model or {}):
+        if not model.get(section):
+            if section == "context-map" and "domains" in model:
                 errors.append("context-map.yml: `domains` is now `context-map`")
             else:
                 errors.append(f"context-map.yml: `{section}` is missing or empty")
@@ -37,45 +79,13 @@ def normalize(model, styles=None):
     types = {}
     for type_id, t in model["types"].items():
         style = type_styles.get(type_id) or {}
-        for key in style:
-            if key not in TYPE_STYLE_KEYS:
-                errors.append(f"context-map.style.yml: types.{type_id}.{key}: unknown option. Known: {', '.join(sorted(TYPE_STYLE_KEYS))}")
-        if "mermaid_style" not in style and not {"color", "border"} <= style.keys():
-            errors.append(f"context-map.style.yml: types.{type_id} needs `color` and `border` (or `mermaid_style`)")
-        types[type_id] = {**t, **style}
+        mermaid_style = box_style("types", type_id, style, TEXT_DEFAULTS, ("fill", "stroke"), errors)
+        if mermaid_style is None:
+            errors.append(f"context-map.style.yml: types.{type_id} needs `fill` and `stroke`")
+        types[type_id] = {**t, **style, "mermaid_style": mermaid_style}
     for type_id in type_styles:
         if type_id not in model["types"]:
             errors.append(f"context-map.style.yml: types.{type_id}: unknown type, it is not in context-map.yml")
-
-    raw_groups = model.get("groups") or {}
-    if isinstance(raw_groups, list):
-        errors.append("context-map.yml: `groups` is now a map keyed by group id")
-        raw_groups = {}
-    groups = []
-    for group_id, value in raw_groups.items():
-        # A group maps to its name, or to a map with `name`.
-        if isinstance(value, dict):
-            for key in value:
-                if key != "name":
-                    errors.append(f"groups.{group_id}.{key}: unknown option. Known: name")
-            name = value.get("name")
-        else:
-            name = value
-        if not name:
-            errors.append(f"groups.{group_id}: needs a name")
-        style = group_styles.get(group_id) or {}
-        for key in style:
-            if key not in GROUP_STYLE_KEYS:
-                errors.append(f"context-map.style.yml: groups.{group_id}.{key}: unknown option. Known: {', '.join(sorted(GROUP_STYLE_KEYS))}")
-        groups.append({"id": group_id, "name": name, "mermaid_style": style.get("mermaid_style")})
-    group_ids = {g["id"] for g in groups}
-    for group_id in group_styles:
-        if group_id not in group_ids:
-            errors.append(f"context-map.style.yml: groups.{group_id}: unknown group, it is not in context-map.yml")
-
-    def check_group(kind, item_id, group):
-        if group is not None and group not in group_ids:
-            errors.append(f"{kind} '{item_id}': unknown group '{group}'")
 
     raw_entries = model.get("context-map") or {}
     if isinstance(raw_entries, list):
@@ -83,10 +93,23 @@ def normalize(model, styles=None):
         raw_entries = {}
     if any(isinstance(e, dict) and "contexts" in e for e in raw_entries.values()):
         errors.append("context-map.yml: contexts now live next to their domains, each with a `domain:` key")
+
+    # An entry with a `domain:` key is a bounded context of that domain; an
+    # entry others' `group:` points at is a group; any other entry is a domain.
+    # Every id, domain, context or group, is a key of this one map, so nothing
+    # can be described twice.
+    group_refs = {d.get("group") for d in raw_entries.values()
+                  if isinstance(d, dict) and isinstance(d.get("group"), str)}
+
+    def is_group(entry_id, d):
+        return "domain" not in d and entry_id in group_refs and d.get("type") is None
+
     for entry_id in domain_styles:
         entry = raw_entries.get(entry_id)
         if not isinstance(entry, dict) or "domain" in entry:
             errors.append(f"context-map.style.yml: domains.{entry_id}: unknown domain, it is not in context-map.yml")
+        elif is_group(entry_id, entry):
+            errors.append(f"context-map.style.yml: domains.{entry_id}: unknown domain, it is a group")
 
     def check_keys(entry_id, d, allowed):
         for key in d:
@@ -95,10 +118,21 @@ def normalize(model, styles=None):
         if not d.get("name"):
             errors.append(f"context-map.{entry_id}: needs a name")
 
-    # An entry with a `domain:` key is a bounded context of that domain; any
-    # other entry is a domain. Every id, domain or context, is a key of this
-    # one map, so nothing can be described twice.
-    raw_domains, raw_contexts = [], []
+    def check_group(kind, item_id, group):
+        if group is None:
+            return
+        if not isinstance(group, str):
+            errors.append(f"{kind} '{item_id}': `group` must be an id")
+            return
+        target = raw_entries.get(group)
+        if not isinstance(target, dict):
+            errors.append(f"{kind} '{item_id}': unknown group '{group}'")
+        elif "domain" in target:
+            errors.append(f"{kind} '{item_id}': unknown group '{group}', it is a bounded context")
+        elif not is_group(group, target):
+            errors.append(f"{kind} '{item_id}': unknown group '{group}', it is a domain")
+
+    raw_domains, raw_contexts, raw_groups = [], [], []
     for entry_id, d in raw_entries.items():
         if not isinstance(d, dict):
             errors.append(f"context-map.{entry_id}: needs a map with `name` and `type`")
@@ -108,7 +142,12 @@ def normalize(model, styles=None):
             parent = raw_entries.get(d.get("domain"))
             if not isinstance(parent, dict) or "domain" in parent:
                 errors.append(f"context-map.{entry_id}: unknown domain '{d.get('domain')}'")
+            elif is_group(d.get("domain"), parent):
+                errors.append(f"context-map.{entry_id}: unknown domain '{d.get('domain')}', it is a group")
             raw_contexts.append((entry_id, d))
+        elif is_group(entry_id, d):
+            check_keys(entry_id, d, ("name",))
+            raw_groups.append((entry_id, d))
         else:
             check_keys(entry_id, d, ("name", "type", "group", "downstreams", "description"))
             check_group("domain", entry_id, d.get("group"))
@@ -118,18 +157,25 @@ def normalize(model, styles=None):
                 errors.append(f"context-map.{entry_id}: unknown type '{d.get('type')}'")
             raw_domains.append((entry_id, d))
 
+    groups = []
+    for group_id, d in raw_groups:
+        style = group_styles.get(group_id) or {}
+        mermaid_style = box_style("groups", group_id, style, GROUP_DEFAULTS, (), errors)
+        groups.append({"id": group_id, "name": d.get("name"), "mermaid_style": mermaid_style})
+    group_ids = {g["id"] for g in groups}
+    for group_id in group_styles:
+        if group_id in group_ids:
+            continue
+        entry = raw_entries.get(group_id)
+        detail = ("it is a bounded context" if isinstance(entry, dict) and "domain" in entry
+                  else "it is a domain" if isinstance(entry, dict)
+                  else "it is not in context-map.yml")
+        errors.append(f"context-map.style.yml: groups.{group_id}: unknown group, {detail}")
+
     for domain_id, d in raw_domains:
         dtype, group = d.get("type"), d.get("group")
         dstyle = domain_styles.get(domain_id) or {}
-        for key in dstyle:
-            if key not in DOMAIN_STYLE_KEYS:
-                errors.append(f"context-map.style.yml: domains.{domain_id}.{key}: unknown option. "
-                              f"Known: {', '.join(sorted(DOMAIN_STYLE_KEYS))}")
-        if dstyle and "mermaid_style" not in dstyle and not {"color", "border"} <= dstyle.keys():
-            errors.append(f"context-map.style.yml: domains.{domain_id} needs `color` and `border` (or `mermaid_style`)")
-        mermaid_style = dstyle.get("mermaid_style") or (
-            f"fill:{dstyle['color']},stroke:{dstyle['border']},color:#1a1a1a"
-            if {"color", "border"} <= dstyle.keys() else None)
+        mermaid_style = box_style("domains", domain_id, dstyle, TEXT_DEFAULTS, (), errors)
         if "downstreams" in d:
             pending.append((domain_id, f"context-map.{domain_id}", d["downstreams"]))
         ids = []
@@ -187,7 +233,9 @@ def normalize(model, styles=None):
                 errors.append(f"{where}.downstreams.{downstream}: must be a comment "
                               "string, or a map with `comment` and `style`")
             for end in (owner, downstream):
-                if end not in seen:
+                if end in group_ids:
+                    errors.append(f"a group can't be a dependency: '{end}' in {where}.downstreams")
+                elif end not in seen:
                     errors.append(f"unknown domain or context '{end}' in {where}.downstreams")
             if (downstream, owner) in pairs:
                 errors.append(f"duplicate dependency {downstream} -> {owner}")

@@ -3,23 +3,22 @@
 # Output: public/index.html, public/mermaid/*.html and public/markdown/*.md.
 # Unknown keys fail the build.
 
-# Box colors per type, keyed by the type ids in context-map.yml.
-# A type can also take `mermaid_style` to override its Mermaid classDef.
+# Box styles, keyed by the ids in context-map.yml. The keys are Mermaid's own
+# classDef attributes (fill, stroke, stroke-width, ...); the build checks them,
+# so a typo fails the build instead of drawing nothing.
 types:
-  core:       { color: "#dedaff", border: "#6631d7" }
-  supporting: { color: "#c6dcff", border: "#305bab" }
-  generic:    { color: "#adf0c7", border: "#067429" }
+  core:       { fill: "#dedaff", stroke: "#6631d7" }
+  supporting: { fill: "#c6dcff", stroke: "#305bab" }
+  generic:    { fill: "#adf0c7", stroke: "#067429" }
 
-# Group boxes, keyed by the group ids in context-map.yml. `mermaid_style` overrides the box style.
+# A group's dashed stroke is built in; fill and stroke override the default look.
 groups:
-  foundations:
-    mermaid_style: "fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a"
+  foundations: { fill: "#eaf9ef", stroke: "#067429" }
 
-# Domain boxes, keyed by the domain ids in context-map.yml. A domain takes
-# `mermaid_style`, or `color` and `border`; it overrides `mermaid.domain_style`
-# below and, when the domain is drawn as one box, its type colors.
+# A domain takes any attributes; it overrides `mermaid.domain_style` below and,
+# when the domain is drawn as one box, its type colors.
 domains:
-  catalog: { color: "#f7f7ff", border: "#6631d7" }
+  catalog: { fill: "#f7f7ff", stroke: "#6631d7" }
 
 mermaid:
   direction: BT          # BT: upstream on top. Also TB, LR, RL.
