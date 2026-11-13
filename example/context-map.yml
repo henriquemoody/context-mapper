@@ -1,15 +1,17 @@
 # Source of truth for the context map.
 #
-# The `context-map` section maps each domain id to the domain: its name, type,
-# group, its bounded contexts, and `downstreams`: who depends on it, and why.
-# The interactive page shows the reason as a tooltip when you hover over that arrow:
+# The `context-map` section maps each id to what it is, so nothing can be
+# described twice: an entry with a `domain:` key is a bounded context of that
+# domain, anything else is a domain. Every entry can carry `downstreams`, who
+# depends on it and why, and the interactive page shows the reason as a tooltip
+# when you hover over that arrow:
 #
 #   billing:
 #     downstreams:
 #       packaging: Charges for Packages and Subscriptions
 #       pro-account: Charges the monthly subscription
 #
-# A domain without `contexts` is a single bounded context with the same name.
+# A domain no context points at is a single bounded context with the same name.
 # A dependency can point at a domain when we don't know yet which of its
 # contexts is involved. Move it to the right context once we know.
 #
@@ -45,22 +47,29 @@ context-map:
   catalog:
     name: Catalog
     type: core
-    contexts:
-      browsing: Browsing
-      search:   Search
     downstreams:                                    # the whole catalog: we don't know which context yet
       checkout:
         comment: Reads prices and availability at checkout time.
         style: dotted                               # a styled edge: colors live in context-map.style.yml
+  browsing:
+    name: Browsing
+    domain: catalog
+  search:
+    name: Search
+    domain: catalog
 
   orders:
     name: Orders
     type: core
-    contexts:
-      checkout:    Checkout
-      fulfillment: { name: Fulfillment, type: supporting }   # a context can override its type
     downstreams:                                    # a dependency pointing at a whole domain
       crm: Reads orders to sync them into the ticket system.
+  checkout:
+    name: Checkout
+    domain: orders
+  fulfillment:
+    name: Fulfillment
+    domain: orders
+    type: supporting                                # a context can override its domain's type
 
   crm:
     name: CRM

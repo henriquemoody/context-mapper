@@ -15,7 +15,7 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git@v0.7.0
+pip install git+https://github.com/henriquemoody/context-mapper.git@v0.8.0
 ```
 
 Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
@@ -37,29 +37,33 @@ types:
 groups:
   foundations: Shared Foundations                 # views can show, hide or fold a group into one box
 
-context-map:                                      # keyed by domain id
-  payments:                                       # no `contexts`: one bounded context, same name
+context-map:                                      # every id is a key, exactly once
+  payments:                                       # no `domain:` key: a domain
     name: Payments
     type: generic
     group: foundations
     downstreams:                                 # who depends on it, and why
       checkout: Charges the payment method and signals whether it went through.   # a tooltip on the arrow
       fulfillment:                               # a bare key: no comment yet
-  orders:
-    name: Orders
-    type: core                                   # contexts inherit type and group
-    contexts:                                   # keyed by context id
-      checkout: Checkout                         # a bare string: the name is all it needs
-      fulfillment: { name: Fulfillment, type: supporting }   # a map, when it overrides something
-    downstreams:                                 # a dependency can point at a whole domain
-      crm:
-        comment: Reads orders to sync them into the ticket system.
+  catalog:                                       # a dependency can point at a whole domain
+    name: Catalog
+    type: core
+    downstreams:
+      checkout:
+        comment: Reads prices and availability at checkout time.
         style: dotted                             # or a map, for a styled edge
+  checkout:                                      # a `domain:` key makes an entry a bounded context
+    name: Checkout
+    domain: orders
+  fulfillment:
+    name: Fulfillment
+    domain: orders
+    type: supporting                              # a context can override its domain's type
 ```
 
 A group is any set of domains or contexts you want to treat together, such as shared foundations. A context takes its domain's `group` unless it sets its own.
 
-Every domain and context can carry a `downstreams` map. A context can also be an upstream: put its `downstreams` on the context itself, under `contexts`.
+A domain no context points at is a single bounded context with the same name.
 
 At domain level, context dependencies are lifted to their domains and merged, and dependencies inside a domain disappear.
 
@@ -144,7 +148,7 @@ Keep only the model in your repository and let CI install this tool. Pin a tag s
 pages:
   image: python:3.12-slim
   script:
-    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.7.0.tar.gz
+    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.8.0.tar.gz
     - context-mapper
   artifacts:
     paths:

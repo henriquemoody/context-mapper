@@ -77,38 +77,54 @@ def normalize(model, styles=None):
         if group is not None and group not in group_ids:
             errors.append(f"{kind} '{item_id}': unknown group '{group}'")
 
-    raw_domains = model.get("context-map") or {}
-    if isinstance(raw_domains, list):
-        errors.append("context-map.yml: `context-map` is now a map keyed by domain id")
-        raw_domains = {}
-    for domain_id in domain_styles:
-        if domain_id not in raw_domains:
-            errors.append(f"context-map.style.yml: domains.{domain_id}: unknown domain, it is not in context-map.yml")
-    for domain_id, d in raw_domains.items():
-        # A domain maps to its name and type, the group it belongs to, its
-        # bounded contexts, and `downstreams`: who depends on it, and why. A
-        # context maps to its name, or to a map with `name`, `type`, `group`
-        # and `downstreams` when it has more to say.
-        if not isinstance(d, dict):
-            errors.append(f"context-map.{domain_id}: needs a map with `name` and `type`")
-            continue
+    raw_entries = model.get("context-map") or {}
+    if isinstance(raw_entries, list):
+        errors.append("context-map.yml: `context-map` is now a map keyed by id")
+        raw_entries = {}
+    if any(isinstance(e, dict) and "contexts" in e for e in raw_entries.values()):
+        errors.append("context-map.yml: contexts now live next to their domains, each with a `domain:` key")
+    for entry_id in domain_styles:
+        entry = raw_entries.get(entry_id)
+        if not isinstance(entry, dict) or "domain" in entry:
+            errors.append(f"context-map.style.yml: domains.{entry_id}: unknown domain, it is not in context-map.yml")
+
+    def check_keys(entry_id, d, allowed):
         for key in d:
-            if key not in ("name", "type", "group", "contexts", "downstreams"):
-                errors.append(f"context-map.{domain_id}.{key}: unknown option. Known: "
-                              f"{', '.join(sorted(('name', 'type', 'group', 'contexts', 'downstreams')))}")
-        dtype, group = d.get("type"), d.get("group")
-        check_group("domain", domain_id, group)
-        if dtype is None:
-            errors.append(f"context-map.{domain_id}: needs a type")
-        elif dtype not in types:
-            errors.append(f"context-map.{domain_id}: unknown type '{dtype}'")
+            if key not in allowed:
+                errors.append(f"context-map.{entry_id}.{key}: unknown option. Known: {', '.join(sorted(allowed))}")
         if not d.get("name"):
-            errors.append(f"context-map.{domain_id}: needs a name")
+            errors.append(f"context-map.{entry_id}: needs a name")
+
+    # An entry with a `domain:` key is a bounded context of that domain; any
+    # other entry is a domain. Every id, domain or context, is a key of this
+    # one map, so nothing can be described twice.
+    raw_domains, raw_contexts = [], []
+    for entry_id, d in raw_entries.items():
+        if not isinstance(d, dict):
+            errors.append(f"context-map.{entry_id}: needs a map with `name` and `type`")
+            continue
+        if "domain" in d:
+            check_keys(entry_id, d, ("name", "domain", "type", "group", "downstreams"))
+            parent = raw_entries.get(d.get("domain"))
+            if not isinstance(parent, dict) or "domain" in parent:
+                errors.append(f"context-map.{entry_id}: unknown domain '{d.get('domain')}'")
+            raw_contexts.append((entry_id, d))
+        else:
+            check_keys(entry_id, d, ("name", "type", "group", "downstreams"))
+            check_group("domain", entry_id, d.get("group"))
+            if d.get("type") is None:
+                errors.append(f"context-map.{entry_id}: needs a type")
+            elif d.get("type") not in types:
+                errors.append(f"context-map.{entry_id}: unknown type '{d.get('type')}'")
+            raw_domains.append((entry_id, d))
+
+    for domain_id, d in raw_domains:
+        dtype, group = d.get("type"), d.get("group")
         dstyle = domain_styles.get(domain_id) or {}
         for key in dstyle:
             if key not in DOMAIN_STYLE_KEYS:
                 errors.append(f"context-map.style.yml: domains.{domain_id}.{key}: unknown option. "
-                             f"Known: {', '.join(sorted(DOMAIN_STYLE_KEYS))}")
+                              f"Known: {', '.join(sorted(DOMAIN_STYLE_KEYS))}")
         if dstyle and "mermaid_style" not in dstyle and not {"color", "border"} <= dstyle.keys():
             errors.append(f"context-map.style.yml: domains.{domain_id} needs `color` and `border` (or `mermaid_style`)")
         mermaid_style = dstyle.get("mermaid_style") or (
@@ -116,29 +132,11 @@ def normalize(model, styles=None):
             if {"color", "border"} <= dstyle.keys() else None)
         if "downstreams" in d:
             pending.append((domain_id, f"context-map.{domain_id}", d["downstreams"]))
-        raw_contexts = d.get("contexts")
-        if raw_contexts is not None and not isinstance(raw_contexts, dict):
-            hint = "is now a map keyed by context id" if isinstance(raw_contexts, list) \
-                else "must be a map from context id to name"
-            errors.append(f"context-map.{domain_id}.contexts: {hint}")
-            raw_contexts = None
-        if raw_contexts == {}:
-            errors.append(f"context-map.{domain_id}.contexts: is empty")
         ids = []
-        for context_id, c in (raw_contexts or {}).items():
-            if isinstance(c, dict):
-                for key in c:
-                    if key not in ("name", "type", "group", "downstreams"):
-                        errors.append(f"context-map.{domain_id}.contexts.{context_id}.{key}: unknown option. "
-                                      f"Known: {', '.join(sorted(('name', 'type', 'group', 'downstreams')))}")
-                cname, ctype, cgroup = c.get("name"), c.get("type", dtype), c.get("group", group)
-                if "downstreams" in c:
-                    pending.append((context_id, f"context-map.{domain_id}.contexts.{context_id}",
-                                    c["downstreams"]))
-            else:
-                cname, ctype, cgroup = c, dtype, group
-            if not cname:
-                errors.append(f"context-map.{domain_id}.contexts.{context_id}: needs a name")
+        for context_id, c in raw_contexts:
+            if c.get("domain") != domain_id:
+                continue
+            cname, ctype, cgroup = c.get("name"), c.get("type", dtype), c.get("group", group)
             if ctype not in types:
                 errors.append(f"context '{context_id}': unknown type '{ctype}'")
             check_group("context", context_id, cgroup)
@@ -146,6 +144,8 @@ def normalize(model, styles=None):
                 "id": context_id, "name": cname, "type": ctype, "domain": domain_id, "group": cgroup,
             })
             ids.append(context_id)
+            if "downstreams" in c:
+                pending.append((context_id, f"context-map.{context_id}", c["downstreams"]))
         if ids:
             domains.append({"id": domain_id, "name": d.get("name"), "type": dtype, "group": group,
                             "contexts": ids, "single": False, "mermaid_style": mermaid_style})
@@ -155,11 +155,7 @@ def normalize(model, styles=None):
             domains.append({"id": domain_id, "name": d.get("name"), "type": dtype, "group": group,
                             "contexts": [domain_id], "single": True, "mermaid_style": mermaid_style})
 
-    seen = set()
-    for item in [*contexts, *(d for d in domains if not d["single"])]:
-        if item["id"] in seen:
-            errors.append(f"id '{item['id']}' is used more than once")
-        seen.add(item["id"])
+    seen = set(raw_entries)
 
     edges, pairs = [], set()
     for section in ("dependencies", "upstreams"):
