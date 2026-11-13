@@ -15,7 +15,7 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git@v0.4.0
+pip install git+https://github.com/henriquemoody/context-mapper.git@v0.5.0
 ```
 
 Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
@@ -35,16 +35,16 @@ types:
   generic:    { label: Generic }
 
 groups:
-  - { id: foundations, name: Shared Foundations }             # views can show, hide or fold a group into one box
+  foundations: Shared Foundations             # views can show, hide or fold a group into one box
 
-domains:
-  - { id: payments, name: Payments, type: generic, group: foundations }  # one bounded context, same name
-  - id: orders
+domains:                                       # keyed by domain id
+  payments: { name: Payments, type: generic, group: foundations }  # no `contexts`: one bounded context, same name
+  orders:
     name: Orders
-    type: core                                               # contexts inherit type and group
-    contexts:
-      - { id: checkout, name: Checkout }
-      - { id: fulfillment, name: Fulfillment, type: supporting }   # a context can override its type
+    type: core                                # contexts inherit type and group
+    contexts:                                 # keyed by context id
+      checkout: Checkout                      # a bare string: the name is all it needs
+      fulfillment: { name: Fulfillment, type: supporting }   # a map, when it overrides something
 
 upstreams:                                                   # keyed by the upstream
   payments:
@@ -140,7 +140,7 @@ Keep only the model in your repository and let CI install this tool. Pin a tag s
 pages:
   image: python:3.12-slim
   script:
-    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.4.0.tar.gz
+    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.5.0.tar.gz
     - context-mapper
   artifacts:
     paths:

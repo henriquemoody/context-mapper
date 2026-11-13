@@ -21,29 +21,29 @@ types:
 
 # Groups collect domains or contexts that views can show, hide, or fold into one box.
 groups:
-  - { id: foundations, name: Shared Foundations }
+  foundations: Shared Foundations
 
 # A context takes its domain's `type` and `group` unless it sets its own.
 domains:
   # Shared foundations: used by most domains.
-  - { id: identity, name: Identity, type: generic, group: foundations }
-  - { id: payments, name: Payments, type: generic, group: foundations }
+  identity:       { name: Identity, type: generic, group: foundations }
+  payments:       { name: Payments, type: generic, group: foundations }
 
-  - id: catalog
+  catalog:
     name: Catalog
     type: core
     contexts:
-      - { id: browsing, name: Browsing }
-      - { id: search,   name: Search }
+      browsing: Browsing
+      search:   Search
 
-  - id: orders
+  orders:
     name: Orders
     type: core
     contexts:
-      - { id: checkout,     name: Checkout }
-      - { id: fulfillment,  name: Fulfillment, type: supporting }   # a context can override its type
+      checkout:    Checkout
+      fulfillment: { name: Fulfillment, type: supporting }   # a context can override its type
 
-  - { id: crm, name: CRM, type: supporting }
+  crm:            { name: CRM, type: supporting }
 
 upstreams:
   identity:

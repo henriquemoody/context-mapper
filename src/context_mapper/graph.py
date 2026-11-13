@@ -23,6 +23,12 @@ def normalize(model, styles=None):
     errors = []
     domains, contexts = [], []
 
+    for section in ("types", "domains"):
+        if not (model or {}).get(section):
+            errors.append(f"context-map.yml: `{section}` is missing or empty")
+    if errors:
+        return {"types": {}, "groups": [], "domains": [], "contexts": [], "edges": []}, errors
+
     types = {}
     for type_id, t in model["types"].items():
         style = type_styles.get(type_id) or {}
@@ -36,15 +42,27 @@ def normalize(model, styles=None):
         if type_id not in model["types"]:
             errors.append(f"context-map.style.yml: types.{type_id}: unknown type, it is not in context-map.yml")
 
+    raw_groups = model.get("groups") or {}
+    if isinstance(raw_groups, list):
+        errors.append("context-map.yml: `groups` is now a map keyed by group id")
+        raw_groups = {}
     groups = []
-    for g in model.get("groups") or []:
-        if any(g["id"] == other["id"] for other in groups):
-            errors.append(f"group '{g['id']}' is used more than once")
-        style = group_styles.get(g["id"]) or {}
+    for group_id, value in raw_groups.items():
+        # A group maps to its name, or to a map with `name`.
+        if isinstance(value, dict):
+            for key in value:
+                if key != "name":
+                    errors.append(f"groups.{group_id}.{key}: unknown option. Known: name")
+            name = value.get("name")
+        else:
+            name = value
+        if not name:
+            errors.append(f"groups.{group_id}: needs a name")
+        style = group_styles.get(group_id) or {}
         for key in style:
             if key not in GROUP_STYLE_KEYS:
-                errors.append(f"context-map.style.yml: groups.{g['id']}.{key}: unknown option. Known: {', '.join(sorted(GROUP_STYLE_KEYS))}")
-        groups.append({"id": g["id"], "name": g["name"], "mermaid_style": style.get("mermaid_style")})
+                errors.append(f"context-map.style.yml: groups.{group_id}.{key}: unknown option. Known: {', '.join(sorted(GROUP_STYLE_KEYS))}")
+        groups.append({"id": group_id, "name": name, "mermaid_style": style.get("mermaid_style")})
     group_ids = {g["id"] for g in groups}
     for group_id in group_styles:
         if group_id not in group_ids:
@@ -54,31 +72,64 @@ def normalize(model, styles=None):
         if group is not None and group not in group_ids:
             errors.append(f"{kind} '{item_id}': unknown group '{group}'")
 
-    for d in model["domains"]:
-        dtype = d.get("type")
-        group = d.get("group")
-        check_group("domain", d["id"], group)
-        if dtype not in types:
-            errors.append(f"domain '{d['id']}': unknown type '{dtype}'")
-        if d.get("contexts"):
-            ids = []
-            for c in d["contexts"]:
-                ctype = c.get("type", dtype)
-                if ctype not in types:
-                    errors.append(f"context '{c['id']}': unknown type '{ctype}'")
-                cgroup = c.get("group", group)
-                check_group("context", c["id"], cgroup)
-                contexts.append({
-                    "id": c["id"], "name": c["name"], "type": ctype, "domain": d["id"], "group": cgroup,
-                })
-                ids.append(c["id"])
-            domains.append({"id": d["id"], "name": d["name"], "type": dtype, "group": group,
+    raw_domains = model.get("domains") or {}
+    if isinstance(raw_domains, list):
+        errors.append("context-map.yml: `domains` is now a map keyed by domain id")
+        raw_domains = {}
+    for domain_id, d in raw_domains.items():
+        # A domain maps to its name and type, the group it belongs to, and its
+        # bounded contexts. A context maps to its name, or to a map with
+        # `name`, `type` and `group` when it overrides its domain's.
+        if not isinstance(d, dict):
+            errors.append(f"domains.{domain_id}: needs a map with `name` and `type`")
+            continue
+        for key in d:
+            if key not in ("name", "type", "group", "contexts"):
+                errors.append(f"domains.{domain_id}.{key}: unknown option. Known: "
+                              f"{', '.join(sorted(('name', 'type', 'group', 'contexts')))}")
+        dtype, group = d.get("type"), d.get("group")
+        check_group("domain", domain_id, group)
+        if dtype is None:
+            errors.append(f"domains.{domain_id}: needs a type")
+        elif dtype not in types:
+            errors.append(f"domains.{domain_id}: unknown type '{dtype}'")
+        if not d.get("name"):
+            errors.append(f"domains.{domain_id}: needs a name")
+        raw_contexts = d.get("contexts")
+        if raw_contexts is not None and not isinstance(raw_contexts, dict):
+            hint = "is now a map keyed by context id" if isinstance(raw_contexts, list) \
+                else "must be a map from context id to name"
+            errors.append(f"domains.{domain_id}.contexts: {hint}")
+            raw_contexts = None
+        if raw_contexts == {}:
+            errors.append(f"domains.{domain_id}.contexts: is empty")
+        ids = []
+        for context_id, c in (raw_contexts or {}).items():
+            if isinstance(c, dict):
+                for key in c:
+                    if key not in ("name", "type", "group"):
+                        errors.append(f"domains.{domain_id}.contexts.{context_id}.{key}: unknown option. "
+                                      f"Known: {', '.join(sorted(('name', 'type', 'group')))}")
+                cname, ctype, cgroup = c.get("name"), c.get("type", dtype), c.get("group", group)
+            else:
+                cname, ctype, cgroup = c, dtype, group
+            if not cname:
+                errors.append(f"domains.{domain_id}.contexts.{context_id}: needs a name")
+            if ctype not in types:
+                errors.append(f"context '{context_id}': unknown type '{ctype}'")
+            check_group("context", context_id, cgroup)
+            contexts.append({
+                "id": context_id, "name": cname, "type": ctype, "domain": domain_id, "group": cgroup,
+            })
+            ids.append(context_id)
+        if ids:
+            domains.append({"id": domain_id, "name": d.get("name"), "type": dtype, "group": group,
                             "contexts": ids, "single": False})
         else:
-            contexts.append({"id": d["id"], "name": d["name"], "type": dtype, "domain": d["id"],
+            contexts.append({"id": domain_id, "name": d.get("name"), "type": dtype, "domain": domain_id,
                              "group": group})
-            domains.append({"id": d["id"], "name": d["name"], "type": dtype, "group": group,
-                            "contexts": [d["id"]], "single": True})
+            domains.append({"id": domain_id, "name": d.get("name"), "type": dtype, "group": group,
+                            "contexts": [domain_id], "single": True})
 
     seen = set()
     for item in [*contexts, *(d for d in domains if not d["single"])]:
