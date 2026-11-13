@@ -87,20 +87,44 @@ def normalize(model, styles=None):
         seen.add(item["id"])
 
     edges, pairs = [], set()
-    for dep in model["dependencies"]:
+    if "dependencies" in model:
+        errors.append("context-map.yml: `dependencies` is now `upstreams`, keyed by upstream "
+                      "with a `downstreams` map")
+    for upstream, entry in (model.get("upstreams") or {}).items():
         # An edge points from the downstream (the one that depends) to the upstream.
-        # A downstream is an id, or {id, comment} when the dependency deserves a note.
-        upstream = dep["upstream"]
-        downstreams = dep["downstream"] if isinstance(dep["downstream"], list) else [dep["downstream"]]
-        for item in downstreams:
-            downstream, comment = (item["id"], item.get("comment")) if isinstance(item, dict) else (item, None)
+        # A downstream maps to why it depends on the upstream (the tooltip), or to
+        # {comment, style} when the edge also carries a style, or to nothing at all.
+        if not isinstance(entry, dict) or "downstreams" not in entry:
+            errors.append(f"upstreams.{upstream}: needs a `downstreams` map")
+            continue
+        for key in entry:
+            if key != "downstreams":
+                errors.append(f"upstreams.{upstream}.{key}: unknown option. Known: downstreams")
+        downstreams = entry["downstreams"]
+        if not isinstance(downstreams, dict):
+            errors.append(f"upstreams.{upstream}: `downstreams` must be a map from downstream to comment")
+            continue
+        if not downstreams:
+            errors.append(f"upstreams.{upstream}: `downstreams` is empty")
+            continue
+        for downstream, value in downstreams.items():
+            comment, style = value, "solid"
+            if isinstance(value, dict):
+                for key in value:
+                    if key not in ("comment", "style"):
+                        errors.append(f"upstreams.{upstream}.downstreams.{downstream}.{key}: "
+                                      "unknown option. Known: comment, style")
+                comment, style = value.get("comment"), value.get("style") or "solid"
+            elif value is not None and not isinstance(value, str):
+                errors.append(f"upstreams.{upstream}.downstreams.{downstream}: must be a comment "
+                              "string, or a map with `comment` and `style`")
             for end in (upstream, downstream):
                 if end not in seen:
-                    errors.append(f"unknown domain or context '{end}' in dependencies")
+                    errors.append(f"unknown domain or context '{end}' in upstreams")
             if (downstream, upstream) in pairs:
                 errors.append(f"duplicate dependency {downstream} -> {upstream}")
             pairs.add((downstream, upstream))
-            edges.append({"from": downstream, "to": upstream, "style": dep.get("style", "solid"), "comment": comment})
+            edges.append({"from": downstream, "to": upstream, "style": style, "comment": comment})
 
     data = {"types": types, "groups": groups, "domains": domains, "contexts": contexts, "edges": edges}
     if not errors:

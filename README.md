@@ -15,7 +15,7 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git@v0.3.0
+pip install git+https://github.com/henriquemoody/context-mapper.git@v0.4.0
 ```
 
 Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
@@ -30,25 +30,32 @@ context-mapper --model context-map.yml --diagrams context-map.style.yml --out pu
 
 ```yaml
 types:
-  core: { label: Core }                                       # the colors live in context-map.style.yml
+  core:       { label: Core }                                 # the colors live in context-map.style.yml
+  supporting: { label: Supporting }
+  generic:    { label: Generic }
 
 groups:
   - { id: foundations, name: Shared Foundations }             # views can show, hide or fold a group into one box
 
 domains:
-  - { id: legal, name: Legal Agreements, type: supporting, group: foundations }  # one bounded context, same name
-  - id: business
-    name: Business
-    type: supporting                                          # contexts inherit type and group
+  - { id: payments, name: Payments, type: generic, group: foundations }  # one bounded context, same name
+  - id: orders
+    name: Orders
+    type: core                                               # contexts inherit type and group
     contexts:
-      - { id: registry, name: Business Registry }
-      - { id: reviews,  name: Reviews, type: core }           # a context can override its type
+      - { id: checkout, name: Checkout }
+      - { id: fulfillment, name: Fulfillment, type: supporting }   # a context can override its type
 
-dependencies:
-  - { upstream: legal, downstream: [registry, reviews] }      # registry and reviews depend on legal
-  - upstream: marketplace
-    downstream:
-      - { id: crm, comment: Reads leads to sync them }   # a comment shows as a tooltip when you hover over the arrow
+upstreams:                                                   # keyed by the upstream
+  payments:
+    downstreams:                                             # everything under it depends on payments
+      checkout: Charges the payment method and signals whether it went through.   # shows as a tooltip on the arrow
+      fulfillment:                                           # a bare key: depends on it, no comment yet
+  catalog:                                                   # a dependency can point at a whole domain
+    downstreams:
+      checkout:                                              # or a map, for a styled edge
+        comment: Reads prices and availability at checkout time.
+        style: dotted
 ```
 
 A group is any set of domains or contexts you want to treat together, such as shared foundations. A context takes its domain's `group` unless it sets its own.
@@ -100,7 +107,7 @@ The rest lives in the `mermaid` section. It styles the interactive page (`index.
 | `markdown_config` | map | Merged over everything for `<out>/markdown/*.md` only. GitLab's built-in Mermaid has no ELK, so the example sets `layout: dagre` here. |
 | `focus_style` | CSS-ish string | How the focused item is highlighted. |
 | `domain_style` | CSS-ish string | Style of the box around a domain's bounded contexts. |
-| `edge_styles.solid`, `edge_styles.dotted` | CSS-ish string | Line styles. Dotted comes from `style: dotted` on a dependency. |
+| `edge_styles.solid`, `edge_styles.dotted` | CSS-ish string | Line styles. Dotted comes from `style: dotted` on a downstream. |
 | `pages` | `all`, `domains`, `contexts`, or a list of ids | Which items get their own page. |
 
 These can be set under `defaults` and overridden per view:
@@ -118,9 +125,9 @@ These can be set under `defaults` and overridden per view:
 A view can also set `id`, `title`, `focus` (a domain or context id), `description` and `direction`:
 
 ```yaml
-    - id: marketplace-detail
-      title: Leads Marketplace in detail
-      focus: marketplace
+    - id: catalog-detail
+      title: Catalog in detail
+      focus: catalog
       groups: show                       # or { foundations: show }
       direction: LR
 ```
@@ -133,7 +140,7 @@ Keep only the model in your repository and let CI install this tool. Pin a tag s
 pages:
   image: python:3.12-slim
   script:
-    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.3.0.tar.gz
+    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.4.0.tar.gz
     - context-mapper
   artifacts:
     paths:
@@ -144,8 +151,8 @@ pages:
 
 ## Links
 
-- `index.html#focus=reviews`: interactive, Reviews and its direct neighbors
-- `index.html#level=domain&focus=business`: interactive, the Business domain and its neighbors
+- `index.html#focus=checkout`: interactive, Checkout and its direct neighbors
+- `index.html#level=domain&focus=orders`: interactive, the Orders domain and its neighbors
 - Other hash options: `depth=1|2|99`, `dir=both|up|down`, `group.<group id>=collapse|show|hide`
-- `mermaid/reviews.html`: static diagram for Reviews
+- `mermaid/checkout.html`: static diagram for Checkout
 - `mermaid/index.html`: all static diagrams

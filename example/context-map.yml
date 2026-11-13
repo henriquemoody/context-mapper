@@ -1,9 +1,12 @@
 # Source of truth for the context map.
 #
-# Domains group bounded contexts. Dependencies are between bounded contexts:
-# each entry names an `upstream` and the `downstream` contexts that depend on it.
-# A downstream can carry a note about why it depends on the upstream, and the
-# interactive page shows it as a tooltip when you hover over that arrow.
+# Domains group bounded contexts. `upstreams` maps each upstream to the
+# `downstreams` that depend on it, and each downstream carries the reason,
+# which the interactive page shows as a tooltip when you hover over that arrow:
+#
+#   payments:
+#     downstreams:
+#       checkout: Charges the payment method and signals whether it went through.
 #
 # A domain without `contexts` is a single bounded context with the same name.
 # A dependency can point at a domain when we don't know yet which of its
@@ -24,38 +27,38 @@ groups:
 domains:
   # Shared foundations: used by most domains.
   - { id: identity, name: Identity, type: generic, group: foundations }
-  - { id: legal,    name: Legal Agreements, type: generic, group: foundations }
+  - { id: payments, name: Payments, type: generic, group: foundations }
 
-  - id: business
-    name: Business
-    type: supporting
-    contexts:
-      - { id: registry, name: Business Registry }
-      - { id: reviews,  name: Reviews, type: core }   # a context can override its type
-
-  - id: marketplace
-    name: Marketplace
+  - id: catalog
+    name: Catalog
     type: core
     contexts:
-      - { id: matching, name: Matching }
-      - { id: crm,      name: CRM Integrations }
+      - { id: browsing, name: Browsing }
+      - { id: search,   name: Search }
 
-dependencies:
-  - upstream: identity
-    downstream:
-      - registry
-  - upstream: legal
-    downstream:
-      - { id: registry, comment: Requests the terms and conditions a business signed }
-  # `style: dotted` on a dependency entry draws its arrows dotted.
-  - upstream: legal
-    style: dotted
-    downstream:
-      - { id: matching, comment: Checks that a match only happens under a current agreement }
-  # crm depends on the marketplace as a whole: we don't know which context yet.
-  - upstream: marketplace
-    downstream:
-      - { id: crm, comment: Reads leads to sync them }
-  - upstream: reviews
-    downstream:
-      - { id: matching, comment: Weighs reviews when ranking matches }
+  - id: orders
+    name: Orders
+    type: core
+    contexts:
+      - { id: checkout,     name: Checkout }
+      - { id: fulfillment,  name: Fulfillment, type: supporting }   # a context can override its type
+
+  - { id: crm, name: CRM, type: supporting }
+
+upstreams:
+  identity:
+    downstreams:
+      checkout: Creates an account for guests who check out.
+      crm:                                          # a bare key: depends on it, no comment yet
+  payments:
+    downstreams:
+      checkout: Charges the payment method and signals whether it went through.
+      fulfillment: Captures the payment once the order ships, and refunds returns.
+  catalog:                                         # the whole catalog: we don't know which context yet
+    downstreams:
+      checkout:
+        comment: Reads prices and availability at checkout time.
+        style: dotted                              # a styled edge: colors live in context-map.style.yml
+  orders:                                         # a dependency pointing at a whole domain
+    downstreams:
+      crm: Reads orders to sync them into the ticket system.

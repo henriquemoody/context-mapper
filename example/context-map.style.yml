@@ -59,8 +59,8 @@ mermaid:
       title: Domains
       level: domain
       depth: 99
-    - id: reviews-consumers
-      title: Everything that uses Reviews
-      focus: reviews
-      dir: down
+    - id: checkout-upstreams
+      title: Everything Checkout depends on
+      focus: checkout
+      dir: up
       depth: 99
