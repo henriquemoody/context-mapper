@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "context-mapper"
+version = "0.1.0"
+description = "Builds an interactive context map and Mermaid diagrams from a YAML domain model."
+readme = "README.md"
+license = "ISC"
+license-files = ["LICENSE"]
+requires-python = ">=3.9"
+authors = [
+    { name = "Henrique Moody", email = "henriquemoody@gmail.com" },
+]
+keywords = ["domain-driven-design", "context-map", "mermaid", "diagrams"]
+classifiers = [
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Documentation",
+]
+dependencies = [
+    "PyYAML",
+]
+
+[project.urls]
+Homepage = "https://github.com/henriquemoody/context-mapper"
+
+[project.scripts]
+context-mapper = "context_mapper.build:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+context_mapper = ["template.html"]
