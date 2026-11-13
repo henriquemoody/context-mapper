@@ -353,8 +353,7 @@ PAGE = """<!doctype html>
 <nav><a href="index.html">All diagrams</a><a href="../{interactive}">Interactive view</a></nav>
 <main>
 <h1>{title}</h1>
-{about}
-<p class="hint">{description}</p>
+{about}<p class="hint">{description}</p>
 {body}
 </main>
 </body>
