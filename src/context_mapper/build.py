@@ -19,7 +19,7 @@ from . import graph
 from . import mermaid
 
 TEMPLATE = Path(__file__).parent / "template.html"
-DIAGRAMS_KEYS = {"types", "groups", "mermaid"}
+DIAGRAMS_KEYS = {"types", "groups", "domains", "mermaid"}
 
 
 class StrictLoader(yaml.SafeLoader):

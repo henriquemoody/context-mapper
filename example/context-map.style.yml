@@ -15,6 +15,12 @@ groups:
   foundations:
     mermaid_style: "fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a"
 
+# Domain boxes, keyed by the domain ids in context-map.yml. A domain takes
+# `mermaid_style`, or `color` and `border`; it overrides `mermaid.domain_style`
+# below and, when the domain is drawn as one box, its type colors.
+domains:
+  catalog: { color: "#f7f7ff", border: "#6631d7" }
+
 mermaid:
   direction: BT          # BT: upstream on top. Also TB, LR, RL.
   theme: base            # base, default, neutral, dark, forest

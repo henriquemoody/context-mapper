@@ -15,7 +15,7 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git@v0.6.0
+pip install git+https://github.com/henriquemoody/context-mapper.git@v0.7.0
 ```
 
 Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
@@ -84,7 +84,7 @@ open public/index.html
 
 ## Customize the diagrams
 
-`context-map.style.yml` holds all of it. Type and group styles are keyed by the ids in `context-map.yml`, and the build fails if one points at an id that doesn't exist or a type has no colors.
+`context-map.style.yml` holds all of it. Type, group and domain styles are keyed by the ids in `context-map.yml`, and the build fails if one points at an id that doesn't exist or a type has no colors.
 
 ```yaml
 types:
@@ -92,6 +92,9 @@ types:
 
 groups:
   foundations: { mermaid_style: "fill:#eaf9ef,stroke:#067429" }  # style of the group's box
+
+domains:
+  orders: { color: "#eef4ff", border: "#305bab" }             # style of one domain's box
 ```
 
 The rest lives in the `mermaid` section. It styles the interactive page (`index.html`) and the static pages alike, since both are drawn with Mermaid. The interactive page uses the view `defaults` (such as `groups`) as its starting state. Unknown keys fail the build, so a typo tells you instead of doing nothing.
@@ -107,7 +110,7 @@ The rest lives in the `mermaid` section. It styles the interactive page (`index.
 | `config` | map | Any other [Mermaid config](https://mermaid.js.org/config/schema-docs/config.html), merged over the above. For example `elk.nodePlacementStrategy`. |
 | `markdown_config` | map | Merged over everything for `<out>/markdown/*.md` only. GitLab's built-in Mermaid has no ELK, so the example sets `layout: dagre` here. |
 | `focus_style` | CSS-ish string | How the focused item is highlighted. |
-| `domain_style` | CSS-ish string | Style of the box around a domain's bounded contexts. |
+| `domain_style` | CSS-ish string | Style of the box around a domain's bounded contexts. A domain with its own style under `domains` overrides it — and its type colors, when drawn as one box. |
 | `edge_styles.solid`, `edge_styles.dotted` | CSS-ish string | Line styles. Dotted comes from `style: dotted` on a downstream. |
 | `pages` | `all`, `domains`, `contexts`, or a list of ids | Which items get their own page. |
 
@@ -141,7 +144,7 @@ Keep only the model in your repository and let CI install this tool. Pin a tag s
 pages:
   image: python:3.12-slim
   script:
-    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.6.0.tar.gz
+    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.7.0.tar.gz
     - context-mapper
   artifacts:
     paths:

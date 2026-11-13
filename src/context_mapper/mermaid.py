@@ -191,12 +191,18 @@ def render(data, cfg, view, links=None, markdown=False):
             label = text(d["name"])
             if not d["single"] and view["context_labels"]:
                 label = f"<b>{label}</b><br/>" + "<br/>".join(text(contexts[c]["name"]) for c in d["contexts"])
-            return [box(d["id"], label, d["type"], indent)]
+            out = [box(d["id"], label, d["type"], indent)]
+            if d.get("mermaid_style"):
+                out.append(f"{indent}style {node_id(d['id'])} {d['mermaid_style']}")
+            return out
 
         if d["single"]:
             if d["id"] not in visible or d["id"] in collapsed:
                 return []
-            return [box(d["id"], text(d["name"]), d["type"], indent)]
+            out = [box(d["id"], text(d["name"]), d["type"], indent)]
+            if d.get("mermaid_style"):
+                out.append(f"{indent}style {node_id(d['id'])} {d['mermaid_style']}")
+            return out
 
         shown = [c for c in d["contexts"] if c in visible and c not in collapsed]
         domain_shown = d["id"] in visible and d["id"] not in collapsed
@@ -208,7 +214,7 @@ def render(data, cfg, view, links=None, markdown=False):
         out = [f'{indent}subgraph {node_id(d["id"])}["{text(d["name"])}"]']
         out += [box(c, text(contexts[c]["name"]), contexts[c]["type"], indent + "  ") for c in shown]
         out.append(f"{indent}end")
-        style = cfg["domain_style"]
+        style = d.get("mermaid_style") or cfg["domain_style"]
         if d["id"] == view.get("focus"):
             style += "," + cfg["focus_style"]
         out.append(f"{indent}style {node_id(d['id'])} {style}")

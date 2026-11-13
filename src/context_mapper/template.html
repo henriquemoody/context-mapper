@@ -248,16 +248,23 @@ function mermaidSource(s) {
       if (hidden) return [];
       let label = quote(d.name);
       if (!d.single && DIAGRAM.context_labels) label = `<b>${label}</b><br/>` + d.contexts.map(c => quote(contextById[c].name)).join("<br/>");
-      return [box(d.id, label, d.type, indent)];
+      const out = [box(d.id, label, d.type, indent)];
+      if (d.mermaid_style) out.push(`${indent}style ${nodeId(d.id)} ${d.mermaid_style}`);
+      return out;
     }
-    if (d.single) return hidden ? [] : [box(d.id, quote(d.name), d.type, indent)];
+    if (d.single) {
+      if (hidden) return [];
+      const out = [box(d.id, quote(d.name), d.type, indent)];
+      if (d.mermaid_style) out.push(`${indent}style ${nodeId(d.id)} ${d.mermaid_style}`);
+      return out;
+    }
     let shown = d.contexts.filter(c => visible.has(c) && !collapsed.has(c));
     if (!hidden && !shown.length) shown = d.contexts.filter(c => !collapsed.has(c));  // reached as a whole: show what is inside
     if (!shown.length) return hidden ? [] : [box(d.id, quote(d.name), d.type, indent)];
     const out = [`${indent}subgraph ${nodeId(d.id)}["${quote(d.name)}"]`];
     shown.forEach(c => out.push(box(c, quote(contextById[c].name), contextById[c].type, indent + "  ")));
     out.push(`${indent}end`);
-    out.push(`${indent}style ${nodeId(d.id)} ${DIAGRAM.domain_style}${d.id === s.focus ? "," + DIAGRAM.focus_style : ""}`);
+    out.push(`${indent}style ${nodeId(d.id)} ${d.mermaid_style || DIAGRAM.domain_style}${d.id === s.focus ? "," + DIAGRAM.focus_style : ""}`);
     return out;
   };
 
@@ -429,7 +436,7 @@ const chip = type => { const t = MODEL.types[type]; return `<span class="chip" s
 
 function renderInfo(s, visible) {
   const legend = '<div class="legend">' + Object.keys(MODEL.types).map(chip).join("") + "</div>";
-  const howTo = `<h3>How to read</h3><p class="hint">An arrow from A to B means A depends on B. Upstream is at the top. White boxes are domains, coloured boxes inside them are bounded contexts. ${MODEL.groups.length ? "Dashed boxes stand for a group of bounded contexts folded into one, and the header can show or hide them. " : ""}Click a box to focus on it.</p>`;
+  const howTo = `<h3>How to read</h3><p class="hint">An arrow from A to B means A depends on B. Upstream is at the top. The outer boxes are domains, the coloured boxes inside them are bounded contexts. ${MODEL.groups.length ? "Dashed boxes stand for a group of bounded contexts folded into one, and the header can show or hide them. " : ""}Click a box to focus on it.</p>`;
   if (!s.focus) {
     $("info").innerHTML = `<h2>Whole system</h2><p class="hint">${visible.size} items shown. Pick a domain or bounded context to see only what it touches.</p>
       <p><a href="mermaid/index.html">Static diagrams</a></p>${legend}${howTo}`;

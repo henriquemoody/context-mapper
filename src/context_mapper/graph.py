@@ -10,6 +10,7 @@ Two levels:
 
 TYPE_STYLE_KEYS = {"color", "border", "mermaid_style"}
 GROUP_STYLE_KEYS = {"mermaid_style"}
+DOMAIN_STYLE_KEYS = {"color", "border", "mermaid_style"}
 
 
 def normalize(model, styles=None):
@@ -20,6 +21,7 @@ def normalize(model, styles=None):
     styles = styles or {}
     type_styles = styles.get("types") or {}
     group_styles = styles.get("groups") or {}
+    domain_styles = styles.get("domains") or {}
     errors = []
     domains, contexts, pending = [], [], []
 
@@ -79,6 +81,9 @@ def normalize(model, styles=None):
     if isinstance(raw_domains, list):
         errors.append("context-map.yml: `context-map` is now a map keyed by domain id")
         raw_domains = {}
+    for domain_id in domain_styles:
+        if domain_id not in raw_domains:
+            errors.append(f"context-map.style.yml: domains.{domain_id}: unknown domain, it is not in context-map.yml")
     for domain_id, d in raw_domains.items():
         # A domain maps to its name and type, the group it belongs to, its
         # bounded contexts, and `downstreams`: who depends on it, and why. A
@@ -99,6 +104,16 @@ def normalize(model, styles=None):
             errors.append(f"context-map.{domain_id}: unknown type '{dtype}'")
         if not d.get("name"):
             errors.append(f"context-map.{domain_id}: needs a name")
+        dstyle = domain_styles.get(domain_id) or {}
+        for key in dstyle:
+            if key not in DOMAIN_STYLE_KEYS:
+                errors.append(f"context-map.style.yml: domains.{domain_id}.{key}: unknown option. "
+                             f"Known: {', '.join(sorted(DOMAIN_STYLE_KEYS))}")
+        if dstyle and "mermaid_style" not in dstyle and not {"color", "border"} <= dstyle.keys():
+            errors.append(f"context-map.style.yml: domains.{domain_id} needs `color` and `border` (or `mermaid_style`)")
+        mermaid_style = dstyle.get("mermaid_style") or (
+            f"fill:{dstyle['color']},stroke:{dstyle['border']},color:#1a1a1a"
+            if {"color", "border"} <= dstyle.keys() else None)
         if "downstreams" in d:
             pending.append((domain_id, f"context-map.{domain_id}", d["downstreams"]))
         raw_contexts = d.get("contexts")
@@ -133,12 +148,12 @@ def normalize(model, styles=None):
             ids.append(context_id)
         if ids:
             domains.append({"id": domain_id, "name": d.get("name"), "type": dtype, "group": group,
-                            "contexts": ids, "single": False})
+                            "contexts": ids, "single": False, "mermaid_style": mermaid_style})
         else:
             contexts.append({"id": domain_id, "name": d.get("name"), "type": dtype, "domain": domain_id,
                              "group": group})
             domains.append({"id": domain_id, "name": d.get("name"), "type": dtype, "group": group,
-                            "contexts": [domain_id], "single": True})
+                            "contexts": [domain_id], "single": True, "mermaid_style": mermaid_style})
 
     seen = set()
     for item in [*contexts, *(d for d in domains if not d["single"])]:
