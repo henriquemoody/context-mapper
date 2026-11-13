@@ -15,7 +15,7 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git@v0.9.1
+pip install git+https://github.com/henriquemoody/context-mapper.git@v0.9.2
 ```
 
 Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
@@ -151,7 +151,7 @@ Keep only the model in your repository and let CI install this tool. Pin a tag s
 pages:
   image: python:3.12-slim
   script:
-    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.9.1.tar.gz
+    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.9.2.tar.gz
     - context-mapper
   artifacts:
     paths:
