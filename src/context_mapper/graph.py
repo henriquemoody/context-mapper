@@ -65,7 +65,8 @@ def box_style(section, item_id, style, defaults, required, errors, allowed=None)
                           f"Known: {', '.join(sorted(allowed))}")
     if required and not {"border", "mermaid_style"} & style.keys() and not set(required) <= style.keys():
         errors.append(f"context-map.style.yml: {section}.{item_id} needs `{required[0]}` and `{required[1]}`")
-    return classdef({key: value for key, value in style.items() if key in BOX_STYLE_KEYS}, defaults)
+    attrs = {key: value for key, value in style.items() if key in BOX_STYLE_KEYS}
+    return classdef(attrs, defaults) if attrs else None
 
 
 def normalize(model, styles=None):
