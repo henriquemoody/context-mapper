@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "context-mapper"
-version = "0.15.0"
+version = "0.16.0"
 description = "Builds an interactive context map and Mermaid diagrams from a YAML domain model."
 readme = "README.md"
 license = "ISC"
@@ -23,6 +23,12 @@ dependencies = [
     "PyYAML",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+]
+
 [project.urls]
 Homepage = "https://github.com/henriquemoody/context-mapper"
 
@@ -34,3 +40,13 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 context_mapper = ["template.html"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "B", "UP"]
+ignore = ["E501"]

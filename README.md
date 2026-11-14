@@ -15,7 +15,7 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git@v0.15.0
+pip install git+https://github.com/henriquemoody/context-mapper.git
 ```
 
 Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
@@ -106,7 +106,7 @@ context-map:
 
 A style also fills in a readable text `color` when you don't set one.
 
-The rest lives in the `mermaid` section. It styles the interactive page (`index.html`) and the static pages alike, since both are drawn with Mermaid. The interactive page uses the view `defaults` (such as `groups`) as its starting state. Unknown keys fail the build, so a typo tells you instead of doing nothing.
+The rest lives in the `mermaid` section. It styles the interactive page (`index.html`) and the static pages alike, since both are drawn with Mermaid. The interactive page uses the view `defaults` (such as `display`) as its starting state. Unknown keys fail the build, so a typo tells you instead of doing nothing.
 
 | Option | Values | What it does |
 | --- | --- | --- |
@@ -119,7 +119,7 @@ The rest lives in the `mermaid` section. It styles the interactive page (`index.
 | `config` | map | Any other [Mermaid config](https://mermaid.js.org/config/schema-docs/config.html), merged over the above. For example `elk.nodePlacementStrategy`. |
 | `markdown_config` | map | Merged over everything for `<out>/markdown/*.md` only. GitLab's built-in Mermaid has no ELK, so the example sets `layout: dagre` here. |
 | `focus_style` | CSS-ish string | How the focused item is highlighted. |
-| `domain_style` | CSS-ish string | Style of the box around a domain's bounded contexts. A domain with its own style under `domains` overrides it — and its type colors, when drawn as one box. |
+| `domain_style` | CSS-ish string | Style of the box around a domain's bounded contexts. A domain with its own style under `context-map` overrides it — and its type colors, when drawn as one box. |
 | `edge_styles.solid`, `edge_styles.dotted` | CSS-ish string | Line styles. Dotted comes from `style: dotted` on a downstream. |
 | `pages` | `all`, `domains`, `contexts`, or a list of ids | Which items get their own page. |
 

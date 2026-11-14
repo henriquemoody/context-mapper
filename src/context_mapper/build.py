@@ -15,8 +15,7 @@ from pathlib import Path
 
 import yaml
 
-from . import graph
-from . import mermaid
+from . import graph, mermaid
 
 TEMPLATE = Path(__file__).parent / "template.html"
 DIAGRAMS_KEYS = {"types", "clusters", "context-map", "mermaid"}
@@ -70,12 +69,7 @@ def load(model_path, diagrams_path):
 
     for key in diagrams:
         if key not in DIAGRAMS_KEYS:
-            if key == "groups":
-                errors.append("context-map.style.yml: `groups` is now `clusters`")
-            elif key == "domains":
-                errors.append("context-map.style.yml: `domains` is now `context-map`")
-            else:
-                errors.append(f"context-map.style.yml: {key}: unknown section. Known: {', '.join(sorted(DIAGRAMS_KEYS))}")
+            errors.append(f"context-map.style.yml: {key}: unknown section. Known: {', '.join(sorted(DIAGRAMS_KEYS))}")
 
     mermaid_cfg, mermaid_errors = mermaid.settings(diagrams.get("mermaid"))
     errors += mermaid_errors
@@ -93,7 +87,7 @@ def load(model_path, diagrams_path):
     cycle = graph.find_cycle(graph.level_graph(data, "domain"))
     if cycle:
         _, _, _, names = graph.index(data)
-        print("warning: domains depend on each other: " + " -> ".join(names[i] for i in cycle), file=sys.stderr)
+        print("warning: domains depend on each other: " + " -> ".join(names[node] for node in cycle), file=sys.stderr)
 
     return data, diagrams.get("mermaid")
 
@@ -103,16 +97,16 @@ def main(argv=None):
     for flag, path in (("--model", args.model), ("--diagrams", args.diagrams)):
         if not path.exists():
             sys.exit(f"error: {path} not found. Pass {flag} to set the path.")
-    data, mermaid_config = load(args.model, args.diagrams)
-    cfg, _ = mermaid.settings(mermaid_config)
-    payload = json.dumps({**data, "mermaid": mermaid.client_settings(cfg)}, ensure_ascii=False).replace("</", "<\\/")
+    data, mermaid_section = load(args.model, args.diagrams)
+    mermaid_cfg, _ = mermaid.settings(mermaid_section)
+    payload = json.dumps({**data, "mermaid": mermaid.client_settings(mermaid_cfg)}, ensure_ascii=False).replace("</", "<\\/")
     html = TEMPLATE.read_text().replace("/*__MODEL__*/null", payload)
     index = args.out / "index.html"
     args.out.mkdir(parents=True, exist_ok=True)
     index.write_text(html)
     print(f"built {index}: {len(data['domains'])} domains, "
           f"{len(data['contexts'])} bounded contexts, {len(data['edges'])} dependencies")
-    count = mermaid.build(data, mermaid_config, args.out)
+    count = mermaid.build(data, mermaid_section, args.out)
     print(f"built {count} Mermaid views in {args.out}/mermaid/ and {args.out}/markdown/")
 
 
