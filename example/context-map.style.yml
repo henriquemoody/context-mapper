@@ -4,19 +4,20 @@
 # Unknown keys fail the build.
 
 # Box styles, keyed by the ids in context-map.yml. The keys are Mermaid's own
-# classDef attributes (fill, stroke, stroke-width, ...), plus `defaultDisplay`
-# on a type whose entries hold others: expanded, collapsed, contents or hidden.
-# The build checks them all, so a typo fails the build instead of drawing
-# nothing.
+# classDef attributes (fill, stroke, stroke-width, ...). The build checks them,
+# so a typo fails the build instead of drawing nothing.
 types:
   core:       { fill: "#dedaff", stroke: "#6631d7" }
   supporting: { fill: "#c6dcff", stroke: "#305bab" }
   generic:    { fill: "#adf0c7", stroke: "#067429" }
-  group:      { fill: "#eaf9ef", stroke: "#067429", stroke-dasharray: "4 3", defaultDisplay: collapsed }
+  group:      { fill: "#eaf9ef", stroke: "#067429", stroke-dasharray: "4 3" }
 
-# A domain takes any attributes; it overrides `mermaid.domain_style` below and,
-# when the domain is drawn as one box, its type colors.
+# A domain takes any attributes, and `defaultDisplay` says how it first renders
+# when it holds others: expanded, collapsed, contents or hidden. It overrides
+# `mermaid.domain_style` below and, when the domain is drawn as one box, its
+# type colors.
 domains:
+  foundations: { defaultDisplay: collapsed }
   catalog: { fill: "#f7f7ff", stroke: "#6631d7" }
 
 mermaid:

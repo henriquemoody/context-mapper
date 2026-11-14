@@ -45,7 +45,10 @@ def box_style(section, item_id, style, defaults, required, errors, allowed=None)
     allowed = allowed or BOX_STYLE_KEYS
     if "collapsible" in style:
         errors.append(f"context-map.style.yml: {section}.{item_id}.collapsible: "
-                      "`collapsible` is now `defaultDisplay: collapsed`")
+                      "`collapsible` is now `defaultDisplay: collapsed`, under `domains`")
+    if section == "types" and "defaultDisplay" in style:
+        errors.append(f"context-map.style.yml: {section}.{item_id}.defaultDisplay: "
+                      "`defaultDisplay` is now set per domain, under `domains`")
     if "color" in style and "border" in style:
         errors.append(f"context-map.style.yml: {section}.{item_id}: `color`+`border` are now `fill`+`stroke`")
     elif "border" in style:
@@ -100,8 +103,7 @@ def normalize(model, styles=None):
             if key != "label":
                 errors.append(f"context-map.yml: types.{type_id}.{key}: unknown option. Known: label")
         style = type_styles.get(type_id) or {}
-        mermaid_style = box_style("types", type_id, style, TEXT_DEFAULTS, ("fill", "stroke"), errors,
-                                  allowed=BOX_STYLE_KEYS | {"defaultDisplay"})
+        mermaid_style = box_style("types", type_id, style, TEXT_DEFAULTS, ("fill", "stroke"), errors)
         if mermaid_style is None:
             errors.append(f"context-map.style.yml: types.{type_id} needs `fill` and `stroke`")
         types[type_id] = {**t, **style, "mermaid_style": mermaid_style}
@@ -171,7 +173,8 @@ def normalize(model, styles=None):
     for domain_id, d in raw_domains:
         dtype, group = d.get("type"), d.get("group")
         dstyle = domain_styles.get(domain_id) or {}
-        mermaid_style = box_style("domains", domain_id, dstyle, TEXT_DEFAULTS, (), errors)
+        mermaid_style = box_style("domains", domain_id, dstyle, TEXT_DEFAULTS, (), errors,
+                                  allowed=BOX_STYLE_KEYS | {"defaultDisplay"})
         if "downstreams" in d:
             pending.append((domain_id, f"context-map.{domain_id}", d["downstreams"]))
         ids = []
@@ -190,7 +193,8 @@ def normalize(model, styles=None):
         single = not ids and not members
         domains.append({"id": domain_id, "name": d.get("name"), "type": dtype, "group": group,
                         "contexts": ids, "members": members, "single": single,
-                        "mermaid_style": mermaid_style, "description": d.get("description")})
+                        "mermaid_style": mermaid_style, "defaultDisplay": dstyle.get("defaultDisplay"),
+                        "description": d.get("description")})
         if single:
             contexts.append({"id": domain_id, "name": d.get("name"), "type": dtype, "domain": domain_id,
                              "description": d.get("description")})

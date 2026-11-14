@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "context-mapper"
-version = "0.12.0"
+version = "0.13.0"
 description = "Builds an interactive context map and Mermaid diagrams from a YAML domain model."
 readme = "README.md"
 license = "ISC"

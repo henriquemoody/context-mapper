@@ -103,12 +103,12 @@ def settings(config):
     return cfg, errors
 
 
-def display_mode(view, types, domain):
-    """How a container first renders: the view's `display`, else its type's
-    `defaultDisplay`, else expanded. The type never matters, only the display."""
+def display_mode(view, domain):
+    """How a container first renders: the view's `display`, else the domain's
+    own `defaultDisplay` from the style file, else expanded."""
     display = view["display"]
     mode = display.get(domain["id"]) if isinstance(display, dict) else display
-    return mode or types[domain["type"]].get("defaultDisplay") or "expanded"
+    return mode or domain.get("defaultDisplay") or "expanded"
 
 
 def deep_merge(base, extra):
@@ -172,7 +172,7 @@ def render(data, cfg, view, links=None, markdown=False):
     # A container is a domain that holds others. Its display comes from the
     # view, its type, or expanded; a focused container opens up.
     containers = {d["id"]: d for d in data["domains"] if not d["single"]}
-    state = {cid: ("expanded" if cid in starts else display_mode(view, types, containers[cid]))
+    state = {cid: ("expanded" if cid in starts else display_mode(view, containers[cid]))
              for cid in containers}
     hidden = graph.descendants(g, {cid for cid, s in state.items() if s == "hidden"})
     visible = graph.walk(g, starts, view["depth"], view["dir"], hidden)

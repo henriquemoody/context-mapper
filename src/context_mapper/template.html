@@ -185,8 +185,8 @@ const levelSel = $("level"), focusSel = $("focus"), depthSel = $("depth"), dirSe
 
 const DIAGRAM = MODEL.mermaid;
 
-// A container first renders as the view says, else as its type says, else expanded.
-const defaultDisplayOf = id => MODEL.types[domainById[id].type].defaultDisplay || "expanded";
+// A container first renders as the view says, else as its own `defaultDisplay` says, else expanded.
+const defaultDisplayOf = id => domainById[id].defaultDisplay || "expanded";
 const defaultMode = id => {
   const d = DIAGRAM.display;
   if (d === null || d === undefined) return defaultDisplayOf(id);
