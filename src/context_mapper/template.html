@@ -289,7 +289,7 @@ function mermaidSource(s) {
   };
 
   const drawChild = (c, indent) =>
-    contextById[c] ? [box(c, quote(contextById[c].name), contextById[c].type, indent)] : drawEntry(domainById[c], indent);
+    (contextById[c] && !domainById[c]) ? [box(c, quote(contextById[c].name), contextById[c].type, indent)] : drawEntry(domainById[c], indent);
 
   function drawEntry(d, indent) {
     if (folded[d.id]) return [];

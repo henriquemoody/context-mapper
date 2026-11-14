@@ -228,8 +228,9 @@ def render(data, cfg, view, links=None, markdown=False):
         return f'{indent}{node_id(item_id)}["{label}"]{cls}'
 
     def draw_child(child, indent):
-        """One child of a container: a bounded context is a box; a domain may hold others."""
-        if child in contexts:
+        """One child of a container. A single bounded context is in both payloads;
+        the domain entry carries its style, so it wins."""
+        if child in contexts and child not in domains:
             return [box(child, text(contexts[child]["name"]), contexts[child]["type"], indent)]
         return draw_entry(domains[child], indent)
 
