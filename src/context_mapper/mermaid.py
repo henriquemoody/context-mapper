@@ -169,9 +169,11 @@ def render(data, cfg, view, links=None, markdown=False):
     g = graph.level_graph(data, level)
     starts = graph.focus_set(data, level, view.get("focus"))
 
-    # A container is a domain that holds others. Its display comes from the
-    # view, its type, or expanded; a focused container opens up.
+    # A container is a domain that holds bounded contexts, or a cluster that
+    # holds members. Its display comes from the view, its own `defaultDisplay`,
+    # or expanded; a focused domain opens up.
     containers = {d["id"]: d for d in data["domains"] if not d["single"]}
+    containers.update({c["id"]: c for c in data["clusters"]})
     state = {cid: ("expanded" if cid in starts else display_mode(view, containers[cid]))
              for cid in containers}
     hidden = graph.descendants(g, {cid for cid, s in state.items() if s == "hidden"})
@@ -183,10 +185,10 @@ def render(data, cfg, view, links=None, markdown=False):
         kids_of.setdefault(parent, []).append(child)
 
     def held(d):
-        """A container's children that are nodes at this level: its bounded
-        contexts there, and its members anywhere."""
-        inside = [c for c in d["contexts"] if c != d["id"]] if level == "context" else []
-        return inside + [m for m in d["members"] if m != d["id"]]
+        """A container's children that are nodes at this level: a domain holds
+        bounded contexts there, a cluster holds members anywhere."""
+        inside = [c for c in d.get("contexts", []) if c != d["id"]] if level == "context" else []
+        return inside + [m for m in d.get("members", []) if m != d["id"]]
 
     folded = {}  # node -> the collapsed container it folded into
 
@@ -222,7 +224,8 @@ def render(data, cfg, view, links=None, markdown=False):
     def box(item_id, label, type_id, indent):
         plain_nodes.append(item_id)
         drawn.add(item_id)
-        return f'{indent}{node_id(item_id)}["{label}"]:::{type_id}'
+        cls = f":::{type_id}" if type_id else ""
+        return f'{indent}{node_id(item_id)}["{label}"]{cls}'
 
     def draw_child(child, indent):
         """One child of a container: a bounded context is a box; a domain may hold others."""
@@ -231,20 +234,29 @@ def render(data, cfg, view, links=None, markdown=False):
         return draw_entry(domains[child], indent)
 
     def draw_entry(d, indent):
-        """Lines for one domain: a plain box, a wrapper with the boxes inside it,
+        """Lines for one container: a plain box, a wrapper with the boxes inside it,
         the boxes inside it without a wrapper of its own, or nothing."""
         did = d["id"]
         if did in folded:
             return []
+        st = state.get(did, "expanded")
+        if st == "hidden":
+            return []
+        is_cluster = did not in domains
         kids = held(d)
         folded_kids = [c for c in kids if folded.get(c) == did]
-        if did not in visible and not folded_kids:
+        inside = [c for c in kids if c in visible and c not in folded]
+        if is_cluster:
+            # A cluster isn't a node in the walk: it draws only through what it holds.
+            if st == "collapsed" and not folded_kids:
+                return []
+            if st == "expanded" and not inside:
+                return []
+        elif did not in visible and not folded_kids:
             return []
-        st = state.get(did, "expanded")
         if st == "contents":
-            return [line for c in kids if c in visible and c not in folded for line in draw_child(c, indent)]
-        if st == "expanded" and kids and (did in visible or folded_kids):
-            inside = [c for c in kids if c in visible and c not in folded]
+            return [line for c in inside for line in draw_child(c, indent)]
+        if st == "expanded" and kids:
             if not inside:
                 # Reached as a whole, so show what is inside it.
                 inside = [c for c in kids if c not in folded]
@@ -259,22 +271,22 @@ def render(data, cfg, view, links=None, markdown=False):
                     style += "," + cfg["focus_style"]
                 out.append(f"{indent}style {node_id(did)} {style}")
                 return out
-        # A plain box: the domain alone. With `child_labels`, a container that
-        # holds others names them inside.
+        # A plain box: the container alone. With `child_labels`, it names what it holds.
         label = text(d["name"])
-        if view["child_labels"] and not d["single"]:
-            named = sorted(names[c] for c in d["contexts"] if c != did)
-            named += sorted(names[m] for m in d["members"] if folded.get(m) == did)
+        if view["child_labels"] and not d.get("single", False):
+            named = sorted(names[c] for c in d.get("contexts", []) if c != did)
+            named += sorted(names[m] for m in d.get("members", []) if folded.get(m) == did)
             if named:
                 label = f"<b>{label}</b><br/>{text(', '.join(named))}"
-        out = [box(did, label, d["type"], indent)]
+        out = [box(did, label, d.get("type"), indent)]
         if d.get("mermaid_style"):
             out.append(f"{indent}style {node_id(did)} {d['mermaid_style']}")
         return out
 
     # A domain drawn inside another container comes from that container's own drawing.
     opens = {cid for cid, s in state.items()
-             if s in ("expanded", "contents") and cid in visible and cid not in folded}
+             if s in ("expanded", "contents") and cid not in folded
+             and (cid not in domains or cid in visible)}
     at_top = lambda d: g["child_of"].get(d["id"]) not in opens
 
     if view["group_by_type"]:
@@ -282,11 +294,13 @@ def render(data, cfg, view, links=None, markdown=False):
             block = [line for d in data["domains"] if d["type"] == type_id and at_top(d)
                      for line in draw_entry(d, "    ")]
             if block:
-                lines += [f'  subgraph type_{type_id}["{text(t["label"])}"]', *block, "  end"]
+                lines += [f'  subgraph type_{type_id}["{text(t["name"])}"]', *block, "  end"]
     else:
         for d in data["domains"]:
             if at_top(d):
                 lines += draw_entry(d, "  ")
+        for c in data["clusters"]:
+            lines += draw_entry(c, "  ")
 
     # Merge edges that land on the same pair once containers are collapsed.
     target = lambda n: folded.get(n, n)
@@ -374,7 +388,8 @@ def check(data, cfg):
         seen.add(v["id"])
         if v.get("focus") and v["focus"] not in names:
             errors.append(f"mermaid view '{v['id']}': unknown focus '{v['focus']}'")
-    container_ids = {d["id"] for d in data["domains"] if not d["single"]}
+    container_ids = ({d["id"] for d in data["domains"] if not d["single"]}
+                     | {c["id"] for c in data["clusters"]})
     for name, v in [("defaults", cfg["defaults"]), *((f"views.{v['id']}", v) for v in cfg["views"])]:
         if isinstance(v.get("display"), dict):
             errors += [f"mermaid.{name}.display: unknown container '{i}'" for i in v["display"] if i not in container_ids]
@@ -471,10 +486,7 @@ def facts(data, view, link):
     domains, contexts, _, names = graph.index(data)
     out = []
     if focus in domains and not domains[focus]["single"]:
-        if domains[focus]["contexts"]:
-            out.append(("Bounded contexts", domains[focus]["contexts"]))
-        if domains[focus]["members"]:
-            out.append(("Members", domains[focus]["members"]))
+        out.append(("Bounded contexts", domains[focus]["contexts"]))
     elif not domains[contexts[focus]["domain"]]["single"]:
         out.append(("Domain", [contexts[focus]["domain"]]))
     ups, downs = graph.relations(data, focus)

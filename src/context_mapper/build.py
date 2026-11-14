@@ -19,7 +19,7 @@ from . import graph
 from . import mermaid
 
 TEMPLATE = Path(__file__).parent / "template.html"
-DIAGRAMS_KEYS = {"types", "domains", "mermaid"}
+DIAGRAMS_KEYS = {"types", "clusters", "context-map", "mermaid"}
 
 
 class StrictLoader(yaml.SafeLoader):
@@ -71,8 +71,9 @@ def load(model_path, diagrams_path):
     for key in diagrams:
         if key not in DIAGRAMS_KEYS:
             if key == "groups":
-                errors.append("context-map.style.yml: `groups` is now gone: a container takes its type's look, "
-                              "or a per-id style under `domains`")
+                errors.append("context-map.style.yml: `groups` is now `clusters`")
+            elif key == "domains":
+                errors.append("context-map.style.yml: `domains` is now `context-map`")
             else:
                 errors.append(f"context-map.style.yml: {key}: unknown section. Known: {', '.join(sorted(DIAGRAMS_KEYS))}")
 

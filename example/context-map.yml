@@ -1,14 +1,16 @@
 # Source of truth for the context map.
 #
-# The `context-map` section maps each id to what it is, so nothing can be
-# described twice: an entry with a `domain:` key is a bounded context of that
-# domain, and any other entry is a domain. A domain holds bounded contexts
-# (theirs `domain:` points at it) and members (theirs `group:` points at it);
-# how it first renders — expanded, collapsed, contents or hidden — comes from
-# `defaultDisplay` under `domains:` in context-map.style.yml. Every entry can
-# carry `downstreams`, who
-# depends on it and why, and the interactive page shows the reason as a tooltip
-# when you hover over that arrow:
+# Three kinds of thing, in three sections:
+# - `types` is the role vocabulary of the model: a domain or bounded context
+#   has one, and it colors the box.
+# - `clusters` names a set of domains or contexts treated together; its members
+#   point at it with `cluster:`.
+# - `context-map` maps each id to what it is, so nothing can be described
+#   twice: an entry with a `domain:` key is a bounded context of that domain,
+#   and any other entry is a domain — one no context points at is a single
+#   bounded context. Every entry can carry `downstreams`, who depends on it and
+#   why, and the interactive page shows the reason as a tooltip when you hover
+#   over that arrow:
 #
 #   billing:
 #     downstreams:
@@ -18,31 +20,27 @@
 # Every entry can also carry a `description`: the interactive page shows it as
 # a tooltip when you hover over its box, and the item's page shows it in text.
 #
-# A domain no context points at is a single bounded context with the same name.
 # A dependency can point at a domain when we don't know yet which of its
 # contexts is involved. Move it to the right context once we know.
 #
 # How it looks (colors, layout, views) lives in context-map.style.yml.
 
 types:
-  core:       { label: Core }
-  supporting: { label: Supporting }
-  generic:    { label: Generic }
-  group:      { label: Group }
+  core:       { name: Core }
+  supporting: { name: Supporting }
+  generic:    { name: Generic }
 
-# A context takes its domain's `type` and `group` unless it sets its own.
+# A cluster: its members point at it with `cluster:`.
+clusters:
+  foundations: { name: Shared Foundations }
+
+# A context takes its domain's `type` unless it sets its own.
 context-map:
-  # A container: its members join it with `group:`. How it first renders comes
-  # from `defaultDisplay` under `domains:` in context-map.style.yml; the header
-  # and views can change it.
-  foundations:
-    name: Shared Foundations
-    type: group
   # Shared foundations: used by most domains.
   identity:
     name: Identity
     type: generic
-    group: foundations
+    cluster: foundations
     description: Accounts and logins. Everyone signs in here.
     downstreams:
       checkout: Creates an account for guests who check out.
@@ -50,7 +48,7 @@ context-map:
   payments:
     name: Payments
     type: generic
-    group: foundations
+    cluster: foundations
     downstreams:
       checkout: Charges the payment method and signals whether it went through.
       fulfillment: Captures the payment once the order ships, and refunds returns.

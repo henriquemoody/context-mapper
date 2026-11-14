@@ -3,21 +3,23 @@
 # Output: public/index.html, public/mermaid/*.html and public/markdown/*.md.
 # Unknown keys fail the build.
 
-# Box styles, keyed by the ids in context-map.yml. The keys are Mermaid's own
-# classDef attributes (fill, stroke, stroke-width, ...). The build checks them,
-# so a typo fails the build instead of drawing nothing.
+# How the map looks. The sections mirror context-map.yml — `types`, `clusters`,
+# `context-map` — keyed by the same ids. The keys are Mermaid's own classDef
+# attributes (fill, stroke, stroke-width, ...), plus `defaultDisplay` on a
+# container, saying how it first renders: expanded, collapsed, contents or
+# hidden. The build checks them all, so a typo fails the build instead of
+# drawing nothing.
 types:
   core:       { fill: "#dedaff", stroke: "#6631d7" }
   supporting: { fill: "#c6dcff", stroke: "#305bab" }
   generic:    { fill: "#adf0c7", stroke: "#067429" }
-  group:      { fill: "#eaf9ef", stroke: "#067429", stroke-dasharray: "4 3" }
 
-# A domain takes any attributes, and `defaultDisplay` says how it first renders
-# when it holds others: expanded, collapsed, contents or hidden. It overrides
-# `mermaid.domain_style` below and, when the domain is drawn as one box, its
-# type colors.
-domains:
-  foundations: { defaultDisplay: collapsed }
+clusters:
+  foundations: { fill: "#eaf9ef", stroke: "#067429", stroke-dasharray: "4 3", defaultDisplay: collapsed }
+
+# An entry takes any attributes; it overrides `mermaid.domain_style` below and,
+# when the domain is drawn as one box, its type colors.
+context-map:
   catalog: { fill: "#f7f7ff", stroke: "#6631d7" }
 
 mermaid:
