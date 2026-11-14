@@ -366,10 +366,18 @@ def find_cycle(graph):
 
 def focus_set(data, level, focus):
     """The node ids a focus starts from at a level. A domain focus opens it: its
-    bounded contexts are starts too."""
+    bounded contexts are starts too. A cluster focus opens it: its members —
+    and their bounded contexts there — are starts too."""
     if not focus:
         return set()
     domains, _, owner, _ = index(data)
+    clusters = {c["id"]: c for c in data["clusters"]}
+    if focus in clusters:
+        starts = {focus, *clusters[focus]["members"]}
+        if level == "context":
+            for member in clusters[focus]["members"]:
+                starts.update(domains[member]["contexts"])
+        return starts
     if level == "domain":
         return {owner[focus]}
     if focus in domains and not domains[focus]["single"]:
@@ -380,7 +388,8 @@ def focus_set(data, level, focus):
 def walk(graph, starts, depth, direction, hidden):
     """Nodes reachable from `starts` within `depth` hops. Without starts, every node.
     `hidden` holds what isn't shown: a hidden container and everything inside it.
-    A start is always shown."""
+    A start is always shown; one that isn't a node, like a cluster, only marks
+    itself."""
     allowed = lambda n: n in starts or n not in hidden
     if not starts:
         return {n for n in graph["nodes"] if allowed(n)}
@@ -396,7 +405,7 @@ def walk(graph, starts, depth, direction, hidden):
         for _ in range(depth):
             new = []
             for n in frontier:
-                for m in nxt[n]:
+                for m in nxt.get(n, []):
                     if m not in seen and allowed(m):
                         seen.add(m)
                         new.append(m)

@@ -136,6 +136,11 @@ function descendants(g, ids) {
 
 function focusSet(level, focus) {
   if (!focus) return new Set();
+  if (clusterById[focus]) {
+    const starts = new Set([focus, ...clusterById[focus].members]);
+    if (level === "context") clusterById[focus].members.forEach(m => domainById[m].contexts.forEach(c => starts.add(c)));
+    return starts;
+  }
   if (level === "domain") return new Set([owner[focus]]);
   if (isMulti(focus)) return new Set([focus, ...domainById[focus].contexts]);
   return new Set([focus]);
@@ -152,7 +157,7 @@ function walk(g, starts, depth, dir, hidden) {
     let frontier = [...starts];
     for (let i = 0; i < depth && frontier.length; i++) {
       const nf = [];
-      frontier.forEach(n => next[n].forEach(m => { if (!seen.has(m) && allowed(m)) { seen.add(m); nf.push(m); } }));
+      frontier.forEach(n => (next[n] || []).forEach(m => { if (!seen.has(m) && allowed(m)) { seen.add(m); nf.push(m); } }));
       frontier = nf;
     }
   };
@@ -182,6 +187,7 @@ const levelSel = $("level"), focusSel = $("focus"), depthSel = $("depth"), dirSe
     focusSel.appendChild(og);
   };
   group("Domains", MODEL.domains.filter(d => !d.single));
+  group("Clusters", [...MODEL.clusters]);
   group("Bounded contexts", [...MODEL.contexts]);
 })();
 
@@ -225,7 +231,7 @@ function state() {
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   levelSel.value = p.get("level") === "domain" ? "domain" : "context";
-  focusSel.value = p.has("focus") && owner[p.get("focus")] ? p.get("focus") : "";
+  focusSel.value = p.has("focus") && (owner[p.get("focus")] || clusterById[p.get("focus")]) ? p.get("focus") : "";
   depthSel.value = p.get("depth") || "1";
   dirSel.value = p.get("dir") || "both";
   Object.entries(displaySels).forEach(([id, sel]) => {
@@ -375,10 +381,10 @@ function mermaidSource(s) {
   Object.entries(byStyle).forEach(([style, indexes]) =>
     lines.push(`  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${DIAGRAM.edge_styles[style] || ""}`.trimEnd()));
 
-  const highlight = s.level === "domain" && s.focus ? owner[s.focus] : s.focus;
+  const highlight = s.level === "domain" && owner[s.focus] ? owner[s.focus] : s.focus;
   plainNodes.forEach(n => { if (n === highlight) lines.push(`  class ${nodeId(n)} focus`); });
-  // Clicking a box focuses on it. A plain link keeps back and forward working.
-  plainNodes.forEach(n => { if (owner[n]) lines.push(`  click ${nodeId(n)} href "${hashFor({ ...s, focus: n })}"`); });
+  // Clicking a box focuses on it, a cluster included. A plain link keeps back and forward working.
+  plainNodes.forEach(n => { if (owner[n] || clusterById[n]) lines.push(`  click ${nodeId(n)} href "${hashFor({ ...s, focus: n })}"`); });
   return { source: lines.join("\n") + "\n", visible, tips };
 }
 
@@ -534,29 +540,36 @@ function renderInfo(s, visible) {
   const legend = '<div class="legend">' + Object.keys(MODEL.types).map(chip).join("") + "</div>";
   const howTo = `<h3>How to read</h3><p class="hint">An arrow from A to B means A depends on B. Upstream is at the top. The outer boxes are domains, the coloured boxes inside them are bounded contexts. Every container can be expanded (the boxes inside it), collapsed (one box), or hidden; the header has a select for each, and a dashed underline marks a cluster's. Click a box to focus on it.</p>`;
   if (!s.focus) {
-    $("info").innerHTML = `<h2>Whole system</h2><p class="hint">${visible.size} items shown. Pick a domain or bounded context to see only what it touches.</p>
+    $("info").innerHTML = `<h2>Whole system</h2><p class="hint">${visible.size} items shown. Pick a domain, cluster or bounded context to see only what it touches.</p>
       <p><a href="mermaid/index.html">Static diagrams</a></p>${legend}${howTo}`;
     return;
   }
   const id = s.focus;
-  const item = contextById[id] || domainById[id];
-  let html = `<h2>${escapeHtml(item.name)}</h2>${chip(item.type)} <span class="hint">${isMulti(id) ? "Domain" : "Bounded context"}</span>
-    <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>`;
-  if (item.description) html += `<p class="hint">${escapeHtml(item.description)}</p>`;
-  if (isMulti(id)) {
-    html += `<h3>Bounded contexts</h3>${list(domainById[id].contexts)}`;
-  } else if (isMulti(owner[id])) {
-    html += `<h3>Domain</h3>${list([owner[id]])}`;
-  }
-  const r = relations(id);
-  html += `<h3>Depends on (${r.ups.length})</h3>${list(r.ups)}<h3>Used by (${r.downs.length})</h3>${list(r.downs)}`;
-  if (!isMulti(id) && isMulti(owner[id])) {
-    const own = GRAPHS.context.edges;
-    const dUps = own.filter(e => e.from === owner[id]).map(e => e.to);
-    const dDowns = own.filter(e => e.to === owner[id]).map(e => e.from);
-    const pname = escapeHtml(nameOf(owner[id]));
-    if (dUps.length) html += `<h3>${pname} as a whole depends on</h3>${list(dUps)}`;
-    if (dDowns.length) html += `<h3>${pname} as a whole is used by</h3>${list(dDowns)}`;
+  const item = contextById[id] || domainById[id] || clusterById[id];
+  let html;
+  if (clusterById[id]) {
+    html = `<h2>${escapeHtml(item.name)}</h2><span class="hint">Cluster</span>
+      <p><a href="mermaid/index.html">All diagrams</a></p>
+      <h3>Members</h3>${list(item.members)}`;
+  } else {
+    html = `<h2>${escapeHtml(item.name)}</h2>${chip(item.type)} <span class="hint">${isMulti(id) ? "Domain" : "Bounded context"}</span>
+      <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>`;
+    if (item.description) html += `<p class="hint">${escapeHtml(item.description)}</p>`;
+    if (isMulti(id)) {
+      html += `<h3>Bounded contexts</h3>${list(domainById[id].contexts)}`;
+    } else if (isMulti(owner[id])) {
+      html += `<h3>Domain</h3>${list([owner[id]])}`;
+    }
+    const r = relations(id);
+    html += `<h3>Depends on (${r.ups.length})</h3>${list(r.ups)}<h3>Used by (${r.downs.length})</h3>${list(r.downs)}`;
+    if (!isMulti(id) && isMulti(owner[id])) {
+      const own = GRAPHS.context.edges;
+      const dUps = own.filter(e => e.from === owner[id]).map(e => e.to);
+      const dDowns = own.filter(e => e.to === owner[id]).map(e => e.from);
+      const pname = escapeHtml(nameOf(owner[id]));
+      if (dUps.length) html += `<h3>${pname} as a whole depends on</h3>${list(dUps)}`;
+      if (dDowns.length) html += `<h3>${pname} as a whole is used by</h3>${list(dDowns)}`;
+    }
   }
   $("info").innerHTML = html + `<h3>Legend</h3>${legend}${howTo}`;
 }

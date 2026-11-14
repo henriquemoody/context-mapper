@@ -15,7 +15,7 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git@v0.14.1
+pip install git+https://github.com/henriquemoody/context-mapper.git@v0.15.0
 ```
 
 Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
@@ -134,7 +134,7 @@ These can be set under `defaults` and overridden per view:
 | `child_labels` | `true`, `false` | A collapsed container names what it holds, in the box and on each arrow that reaches it. |
 | `group_by_type` | `true`, `false` | Wrap Core, Supporting and Generic in their own boxes. |
 
-A view can also set `id`, `title`, `focus` (a domain or context id), `description` and `direction`:
+A view can also set `id`, `title`, `focus` (a domain, context or cluster id), `description` and `direction`:
 
 ```yaml
     - id: catalog-detail
@@ -152,7 +152,7 @@ Keep only the model in your repository and let CI install this tool. Pin a tag s
 pages:
   image: python:3.12-slim
   script:
-    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.14.1.tar.gz
+    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.15.0.tar.gz
     - context-mapper
   artifacts:
     paths:
@@ -164,6 +164,7 @@ pages:
 ## Links
 
 - `index.html#focus=checkout`: interactive, Checkout and its direct neighbors
+- `index.html#focus=foundations`: interactive, the foundations cluster, opened, and what its members touch
 - `index.html#level=domain&focus=orders`: interactive, the Orders domain and its neighbors
 - Other hash options: `depth=1|2|99`, `dir=both|up|down`, `display.<domain id>=expanded|collapsed|contents|hidden`
 - `mermaid/checkout.html`: static diagram for Checkout

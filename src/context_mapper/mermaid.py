@@ -337,7 +337,7 @@ def render(data, cfg, view, links=None, markdown=False):
         lines.append(f"  linkStyle {','.join(indexes)} interpolate {curve} {extra}".rstrip())
 
     # Highlight only the focused item itself: a domain focus marks the domain box, not each context.
-    highlight = owner[view["focus"]] if level == "domain" and view.get("focus") else view.get("focus")
+    highlight = owner[view["focus"]] if level == "domain" and view.get("focus") in owner else view.get("focus")
     for n in plain_nodes:
         if n == highlight:
             lines.append(f"  class {node_id(n)} focus")
@@ -383,11 +383,12 @@ def check(data, cfg):
     elif isinstance(pages, list):
         errors += [f"mermaid.pages: unknown id '{i}'" for i in pages if i not in names]
     seen = set()
+    focusable = set(names) | {c["id"] for c in data["clusters"]}
     for v in views(data, cfg) if not errors else []:
         if v["id"] in seen:
             errors.append(f"mermaid view id '{v['id']}' is used twice (pages use the domain or context id)")
         seen.add(v["id"])
-        if v.get("focus") and v["focus"] not in names:
+        if v.get("focus") and v["focus"] not in focusable:
             errors.append(f"mermaid view '{v['id']}': unknown focus '{v['focus']}'")
     container_ids = ({d["id"] for d in data["domains"] if not d["single"]}
                      | {c["id"] for c in data["clusters"]})
@@ -462,6 +463,9 @@ def describe(data, view):
     if not focus:
         return reading
     hops = "all hops" if view["depth"] >= 99 else f"{view['depth']} hop" + ("s" if view["depth"] > 1 else "")
+    clusters = {c["id"]: c for c in data["clusters"]}
+    if focus in clusters:
+        return f"{clusters[focus]['name']}: what it holds, and what those touch, {hops}. {reading}"
     what = {"both": "what it depends on and what uses it", "up": "what it depends on", "down": "what uses it"}[view["dir"]]
     where = ""
     if focus in contexts and not domains[contexts[focus]["domain"]]["single"]:
@@ -485,10 +489,13 @@ def facts(data, view, link):
     if not focus:
         return []
     domains, contexts, _, names = graph.index(data)
+    clusters = {c["id"]: c for c in data["clusters"]}
     out = []
-    if focus in domains and not domains[focus]["single"]:
+    if focus in clusters:
+        out.append(("Members", clusters[focus]["members"]))
+    elif focus in domains and not domains[focus]["single"]:
         out.append(("Bounded contexts", domains[focus]["contexts"]))
-    elif not domains[contexts[focus]["domain"]]["single"]:
+    elif focus in contexts and not domains[contexts[focus]["domain"]]["single"]:
         out.append(("Domain", [contexts[focus]["domain"]]))
     ups, downs = graph.relations(data, focus)
     out += [(f"Depends on ({len(ups)})", ups), (f"Used by ({len(downs)})", downs)]
