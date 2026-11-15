@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Context Map</title>
+<style>
+/*__STYLE__*/
+</style>
+</head>
+<body>
+<header>
+  <h1>Context Map</h1>
+  <label>Show
+    <select id="level">
+      <option value="context">Bounded contexts</option>
+      <option value="domain">Domains</option>
+    </select>
+  </label>
+  <label>Focus
+    <select id="focus"><option value="">Whole system</option></select>
+  </label>
+  <label>Depth
+    <select id="depth">
+      <option value="1">1 hop</option>
+      <option value="2">2 hops</option>
+      <option value="99">All</option>
+    </select>
+  </label>
+  <label>Direction
+    <select id="dir">
+      <option value="both">Both</option>
+      <option value="up">Depends on (upstream)</option>
+      <option value="down">Used by (downstream)</option>
+    </select>
+  </label>
+  <span id="display"></span>
+  <button id="reset">Reset</button>
+</header>
+<main>
+  <div id="graph"></div>
+  <aside id="info"></aside>
+</main>
+<script type="module">
+/*__SCRIPT__*/
+</script>
+</body>
+</html>

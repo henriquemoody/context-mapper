@@ -139,7 +139,11 @@ def test_main_builds_the_site(tmp_path, capsys):
     assert index.exists()
     text = index.read_text()
     assert "/*__MODEL__*/null" not in text
+    assert "/*__STYLE__*/" not in text
+    assert "/*__SCRIPT__*/" not in text
     assert "const MODEL = {" in text
+    assert "--accent: #305bab" in text        # style.css is inlined
+    assert "function mermaidSource(" in text  # app.js is inlined
     assert (out / "mermaid" / "index.html").exists()
     assert (out / "markdown" / "README.md").exists()
     assert (out / "mermaid" / "overview.html").exists()

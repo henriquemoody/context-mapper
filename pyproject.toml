@@ -39,7 +39,7 @@ context-mapper = "context_mapper.build:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-context_mapper = ["template.html"]
+context_mapper = ["template/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

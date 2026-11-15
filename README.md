@@ -7,7 +7,7 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 - `src/context_mapper/build.py` validates the model and builds everything.
 - `src/context_mapper/graph.py` holds the model logic: levels, lifting context dependencies to domains, and the focus walk.
 - `src/context_mapper/mermaid.py` turns views into Mermaid.
-- `src/context_mapper/template.html` is the interactive page.
+- `src/context_mapper/template/` is the interactive page: `index.html`, `style.css` and `app.js`, spliced into one file when it builds.
 - `example/` is a small working model you can build right away.
 
 ## Install

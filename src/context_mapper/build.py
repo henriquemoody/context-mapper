@@ -17,7 +17,7 @@ import yaml
 
 from . import graph, mermaid
 
-TEMPLATE = Path(__file__).parent / "template.html"
+TEMPLATE_DIR = Path(__file__).parent / "template"
 DIAGRAMS_KEYS = {"types", "clusters", "context-map", "mermaid"}
 
 
@@ -92,6 +92,14 @@ def load(model_path, diagrams_path):
     return data, diagrams.get("mermaid")
 
 
+def render_index(payload):
+    """The interactive page: the skeleton with the stylesheet, the script and the model spliced in."""
+    html = (TEMPLATE_DIR / "index.html").read_text()
+    css = (TEMPLATE_DIR / "style.css").read_text().strip()
+    js = (TEMPLATE_DIR / "app.js").read_text().replace("/*__MODEL__*/null", payload).strip()
+    return html.replace("/*__STYLE__*/", css).replace("/*__SCRIPT__*/", js)
+
+
 def main(argv=None):
     args = parse_args(argv)
     for flag, path in (("--model", args.model), ("--diagrams", args.diagrams)):
@@ -100,7 +108,7 @@ def main(argv=None):
     data, mermaid_section = load(args.model, args.diagrams)
     mermaid_cfg, _ = mermaid.settings(mermaid_section)
     payload = json.dumps({**data, "mermaid": mermaid.client_settings(mermaid_cfg)}, ensure_ascii=False).replace("</", "<\\/")
-    html = TEMPLATE.read_text().replace("/*__MODEL__*/null", payload)
+    html = render_index(payload)
     index = args.out / "index.html"
     args.out.mkdir(parents=True, exist_ok=True)
     index.write_text(html)
