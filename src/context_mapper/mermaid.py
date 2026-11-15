@@ -29,14 +29,17 @@ TOP_DEFAULTS = {
     "config": {},
     "markdown_config": {},
     "defaults": {},
-    "focus_style": "stroke-width:4px,font-weight:bold",
-    "domain_style": "fill:#ffffff,stroke:#b0b0b0",
+    "focus_style": {"stroke-width": "4px", "font-weight": "bold"},
+    "domain_style": {"fill": "#ffffff", "stroke": "#b0b0b0"},
     "edge_styles": {},
     "pages": "all",
     "views": [],
 }
 
 VIEW_ONLY = {"id", "title", "focus", "description", "direction"}
+
+# The kinds of edge `edge_styles` can style: a plain one, and `style: dotted` on a downstream.
+EDGE_KINDS = ("solid", "dotted")
 
 ALLOWED = {
     "direction": {"TB", "BT", "LR", "RL"},
@@ -84,7 +87,35 @@ def settings(config):
             if mode is not None and mode not in ALLOWED["display"]:
                 errors.append(f"mermaid.{where}.display must be one of {', '.join(sorted(ALLOWED['display']))}, "
                               "or a map from domain id to one of those")
+
+    # Styles are written like the ones in `types`, `clusters` and `context-map`: a map of
+    # Mermaid attributes. Past this point they are classDef strings, which is what the
+    # renderers (here and in the page's script) put straight into the diagram.
+    for key in ("focus_style", "domain_style"):
+        cfg[key] = attribute_string(f"mermaid.{key}", cfg[key], errors)
+    edge_styles = cfg["edge_styles"]
+    if isinstance(edge_styles, dict):
+        for kind in edge_styles:
+            if kind not in EDGE_KINDS:
+                errors.append(f"mermaid.edge_styles.{kind}: unknown option. Known: {', '.join(EDGE_KINDS)}")
+        cfg["edge_styles"] = {kind: attribute_string(f"mermaid.edge_styles.{kind}", attrs, errors)
+                              for kind, attrs in edge_styles.items()}
+    else:
+        errors.append("mermaid.edge_styles must be a map from solid or dotted to Mermaid attributes")
+        cfg["edge_styles"] = {}
     return cfg, errors
+
+
+def attribute_string(where, attrs, errors):
+    """Check a map of Mermaid style attributes and return it as a classDef string."""
+    if not isinstance(attrs, dict):
+        errors.append(f"{where} must be a map of Mermaid attributes, "
+                      "such as `stroke: \"#313131\"`")
+        return ""
+    for key in attrs:
+        if key not in graph.BOX_STYLE_KEYS:
+            errors.append(f"{where}.{key}: unknown option. Known: {', '.join(sorted(graph.BOX_STYLE_KEYS))}")
+    return graph.classdef({key: value for key, value in attrs.items() if key in graph.BOX_STYLE_KEYS}, {})
 
 
 def display_mode(view, domain):

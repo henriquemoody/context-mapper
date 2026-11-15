@@ -50,11 +50,21 @@ mermaid:
     child_labels: true     # A collapsed container names what it holds, in the box and on each arrow
     group_by_type: false   # Wrap Core, Supporting, Generic in their own boxes
 
-  focus_style: "stroke-width:4px,font-weight:bold"
-  domain_style: "fill:#ffffff,stroke:#b0b0b0"   # The box around a domain's contexts
+  # Styles are maps of Mermaid attributes here too, like the ones above.
+  focus_style:             # The focused item
+    stroke-width: "4px"
+    font-weight: bold
+  domain_style:            # The box around a domain's contexts
+    fill: "#ffffff"
+    stroke: "#b0b0b0"
   edge_styles:
-    solid:  "stroke:#313131,stroke-width:1.5px"
-    dotted: "stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3"
+    solid:
+      stroke: "#313131"
+      stroke-width: "1.5px"
+    dotted:
+      stroke: "#313131"
+      stroke-width: "1.5px"
+      stroke-dasharray: "3 3"
 
   # Which pages to generate, each focused on one item: all, domains, contexts, or a list of ids.
   pages: all

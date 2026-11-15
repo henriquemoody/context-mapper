@@ -30,6 +30,53 @@ def test_settings_keeps_what_the_style_file_says():
     assert cfg["curve"] == "step"
 
 
+def test_settings_turns_style_maps_into_classdef_strings():
+    cfg, errors = mermaid.settings({
+        "focus_style": {"stroke-width": "4px", "font-weight": "bold"},
+        "domain_style": {"fill": "#ffffff", "stroke": "#b0b0b0"},
+        "edge_styles": {"dotted": {"stroke": "#313131", "stroke-dasharray": "3 3"}},
+    })
+    assert errors == []
+    assert cfg["focus_style"] == "stroke-width:4px,font-weight:bold"
+    assert cfg["domain_style"] == "fill:#ffffff,stroke:#b0b0b0"
+    assert cfg["edge_styles"] == {"dotted": "stroke:#313131,stroke-dasharray:3 3"}
+
+
+def test_settings_default_styles_are_maps_too():
+    cfg, errors = mermaid.settings({})
+    assert errors == []
+    assert cfg["focus_style"] == "stroke-width:4px,font-weight:bold"
+    assert cfg["domain_style"] == "fill:#ffffff,stroke:#b0b0b0"
+    assert cfg["edge_styles"] == {}
+
+
+@pytest.mark.parametrize("key, value", [
+    ("focus_style", "stroke-width:4px"),
+    ("domain_style", "fill:#ffffff"),
+    ("edge_styles", "stroke:#313131"),
+    ("edge_styles", {"dotted": "stroke:#313131"}),
+])
+def test_settings_rejects_a_style_that_is_not_a_map(key, value):
+    _, errors = mermaid.settings({key: value})
+    assert any("must be a map" in err for err in errors), errors
+
+
+def test_settings_rejects_an_unknown_style_attribute():
+    _, errors = mermaid.settings({"focus_style": {"stroke-widht": "4px"}})
+    assert any("mermaid.focus_style.stroke-widht: unknown option" in err for err in errors), errors
+
+
+def test_settings_rejects_an_unknown_edge_style():
+    _, errors = mermaid.settings({"edge_styles": {"wavy": {"stroke": "#000"}}})
+    assert any("mermaid.edge_styles.wavy: unknown option" in err for err in errors), errors
+
+
+def test_settings_does_not_change_the_config_it_is_given():
+    config = {"focus_style": {"stroke-width": "4px"}}
+    mermaid.settings(config)
+    assert config == {"focus_style": {"stroke-width": "4px"}}
+
+
 def test_settings_rejects_an_unknown_top_level_key():
     _, errors = mermaid.settings({"bogus": 1})
     assert any("mermaid.bogus: unknown option" in err for err in errors), errors
