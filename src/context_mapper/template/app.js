@@ -10,7 +10,6 @@ const owner = {};
 MODEL.contexts.forEach(c => owner[c.id] = c.domain);
 MODEL.domains.forEach(d => owner[d.id] = d.id);
 const nameOf = id => (contextById[id] || domainById[id]).name;
-const descriptionOf = id => (contextById[id] || domainById[id]).description;
 const isMulti = id => domainById[id] && !domainById[id].single;
 
 // Same graphs as graph.py: context level as written, domain level lifted and merged.
@@ -236,6 +235,11 @@ function hashFor(s) {
 // Same diagram as mermaid.py's render(): keep the two in step.
 const nodeId = id => id.replace(/\W/g, "_");
 const quote = value => value.replaceAll('"', "#quot;");
+// A node id in the page is an id with every non-word character turned into an
+// underscore, so `audit-log` reaches the DOM as `audit_log`. This maps back to the
+// item, for the places that read ids out of the SVG.
+const itemOfNode = {};
+[...MODEL.contexts, ...MODEL.domains, ...MODEL.clusters].forEach(item => itemOfNode[nodeId(item.id)] = item);
 
 function mermaidSource(s) {
   const g = GRAPHS[s.level];
@@ -497,9 +501,8 @@ function bindBoxTips(svg) {
   };
   svg.addEventListener("mousemove", ev => {
     if (ev.target.closest(".edge-hit")) return;  // the arrow's own tooltip owns the pointer here
-    const id = innermost(ev.target);
-    const text = id && descriptionOf(id);
-    if (text) showTip([{ title: nameOf(id), text }], ev);
+    const item = itemOfNode[innermost(ev.target) || ""];
+    if (item?.description) showTip([{ title: item.name, text: item.description }], ev);
     else hideTip();
   });
   svg.addEventListener("pointerleave", hideTip);

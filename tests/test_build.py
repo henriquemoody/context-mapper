@@ -150,6 +150,39 @@ def test_main_builds_the_site(tmp_path, capsys):
     assert (out / "markdown" / "overview.md").exists()
 
 
+HYPHEN_MODEL = """\
+types:
+  core: { name: Core }
+context-map:
+  audit-log:
+    name: Audit Log
+    type: core
+    description: Records every action, who took it, and when.
+  payments:
+    name: Payments
+    type: core
+    description: Charges the customer for a purchase.
+    downstreams:
+      audit-log: Payments records every charge in the log.
+"""
+
+
+def test_box_tooltips_map_node_ids_back_to_items(tmp_path):
+    """A hyphen in an id becomes an underscore in the SVG: `audit-log` is a node
+    called `audit_log`. Box tooltips must go from that node id back to the item,
+    or an id with a hyphen gets no tooltip while one without does."""
+    model = tmp_path / "model.yml"
+    model.write_text(HYPHEN_MODEL)
+    style = tmp_path / "style.yml"
+    style.write_text(STYLE)
+    out = tmp_path / "public"
+    build.main(["--model", str(model), "--diagrams", str(style), "--out", str(out)])
+    text = (out / "index.html").read_text()
+    assert 'itemOfNode[nodeId(item.id)] = item' in text        # the node id -> item map
+    assert 'itemOfNode[innermost(ev.target) || ""]' in text    # box tooltips go through it
+    assert "descriptionOf" not in text                         # no lookup by SVG id left
+
+
 def test_main_refuses_a_model_file_that_is_not_there(tmp_path):
     with pytest.raises(SystemExit) as excinfo:
         build.main([
