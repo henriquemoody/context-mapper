@@ -19,10 +19,10 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
 
 ```sh
-pip install git+https://github.com/henriquemoody/context-mapper.git
+pip install context-mapper
 ```
 
-Pin a tag (as above) or a branch, so a change here cannot break your build unannounced.
+Pin the version (`context-mapper==<version>`) so a change here cannot break your build unannounced.
 
 Run `context-mapper` in a directory that has a `context-map.yml` and a `context-map.style.yml`. The paths are flags:
 
@@ -156,13 +156,13 @@ A view can also set `id`, `title`, `focus` (a domain, context or cluster id), `d
 
 ## Use it in another repository
 
-Keep only the model in your repository and let CI install this tool. Pin a tag so the build is reproducible; when you want a newer version, bump the tag. This GitLab Pages job is all it takes (the GitHub tag tarball works everywhere, and needs no `git` in the image):
+Keep only the model in your repository and let CI install this tool. Pin the version so the build is reproducible; when you want a newer one, bump it. This GitLab Pages job is all it takes:
 
 ```yaml
 pages:
   image: python:3.12-slim
   script:
-    - pip install --quiet https://github.com/henriquemoody/context-mapper/archive/refs/tags/v0.20.2.tar.gz
+    - pip install --quiet context-mapper==<version>
     - context-mapper
   artifacts:
     paths:
