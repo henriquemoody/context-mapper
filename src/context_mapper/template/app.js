@@ -101,6 +101,7 @@ const levelSel = $("level"), focusSel = $("focus"), depthSel = $("depth"), dirSe
 (function fillFocus() {
   const byName = (a, b) => a.name.localeCompare(b.name);
   const group = (label, items) => {
+    if (!items.length) return;
     const og = document.createElement("optgroup");
     og.label = label;
     items.sort(byName).forEach(i => og.appendChild(new Option(i.name, i.id)));
@@ -108,7 +109,9 @@ const levelSel = $("level"), focusSel = $("focus"), depthSel = $("depth"), dirSe
   };
   group("Domains", [...MODEL.domains]);
   group("Clusters", [...MODEL.clusters]);
-  group("Bounded contexts", MODEL.contexts.filter(c => !domainById[c.id]));
+  // One group per domain, so a context sits next to the others of its domain.
+  [...MODEL.domains].sort(byName).forEach(d =>
+    group(`Bounded contexts: ${d.name}`, MODEL.contexts.filter(c => c.domain === d.id && !domainById[c.id])));
 })();
 
 const DIAGRAM = MODEL.mermaid;
