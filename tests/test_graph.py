@@ -391,6 +391,25 @@ def test_walk_always_shows_a_start_even_when_it_is_hidden(tiny_data):
     assert "web_api" in graph.walk(g, {"web_api"}, 1, "both", {"web_api"})
 
 
+def test_walk_goes_on_from_the_contexts_of_a_domain_it_reaches():
+    # `hub` is used by the whole of `web`, a domain, and `web_ui` has a user of its own.
+    data, errors = graph.normalize({
+        "types": {"core": {"name": "Core"}},
+        "context-map": {
+            "hub": {"name": "Hub", "type": "core", "downstreams": {"web": "Everything in Web uses it."}},
+            "web": {"name": "Web", "type": "core"},
+            "web_ui": {"name": "Web UI", "domain": "web", "downstreams": {"app": "App embeds the UI."}},
+            "web_api": {"name": "Web API", "domain": "web"},
+            "app": {"name": "App", "type": "core"},
+        },
+    }, STYLE)
+    assert not errors
+    g = graph.level_graph(data, "context")
+    assert graph.walk(g, {"hub"}, 1, "down", set()) == {"hub", "web", "web_ui", "web_api"}
+    assert graph.walk(g, {"hub"}, 2, "down", set()) == {"hub", "web", "web_ui", "web_api", "app"}
+    assert graph.walk(g, {"hub"}, 2, "down", {"web_api"}) == {"hub", "web", "web_ui", "app"}
+
+
 # --- focus_set --------------------------------------------------------------
 
 

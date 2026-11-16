@@ -377,7 +377,9 @@ def walk(level_graph, starts, depth, direction, hidden):
     """Nodes reachable from `starts` within `depth` hops. Without starts, every node.
     `hidden` holds what isn't shown: a hidden container and everything inside it.
     A start is always shown; one that isn't a node, like a cluster, only marks
-    itself."""
+    itself. Reaching a container reaches what it holds, at the same hop: an edge
+    to a domain is an edge to the whole of it, so the walk goes on from its
+    bounded contexts too."""
 
     def is_shown(node):
         return node in starts or node not in hidden
@@ -397,9 +399,10 @@ def walk(level_graph, starts, depth, direction, hidden):
             next_frontier = []
             for node in frontier:
                 for neighbor in adjacency.get(node, []):
-                    if neighbor not in seen and is_shown(neighbor):
-                        seen.add(neighbor)
-                        next_frontier.append(neighbor)
+                    for reached in descendants(level_graph, [neighbor]):
+                        if reached not in seen and is_shown(reached):
+                            seen.add(reached)
+                            next_frontier.append(reached)
             frontier = next_frontier
 
     if direction != "down":

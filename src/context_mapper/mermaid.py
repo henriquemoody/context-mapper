@@ -292,18 +292,19 @@ def render(data, cfg, view, links=None, markdown=False):
                 return []
             if mode == "expanded" and not inside and container_id != view.get("focus"):
                 return []
-        elif container_id not in visible and not folded_kids \
+        elif container_id not in visible and not folded_kids and not inside \
                 and not any(child_id in starts for child_id in kids):
-            # Not reached itself, and it holds no start either. A domain that
-            # holds one — the focus of a bounded-context view, say — still
-            # draws, so the start has a box to appear in.
+            # Not reached itself, holds nothing that was reached, and no start
+            # either. A domain that holds one of those — the focus of a
+            # bounded-context view, or a context reached on its own — still
+            # draws, so it has a box to appear in.
             return []
         if mode == "contents":
             return [line for child_id in inside for line in draw_child(child_id, indent)]
         if mode == "expanded" and kids:
-            if not inside or container_id not in visible:
-                # Reached as a whole — or through a start it holds — so show
-                # what is inside it. A start is never hidden, not even by `hide`.
+            if not inside:
+                # Nothing inside was reached: show what is there that isn't
+                # hidden. A start is never hidden, not even by `hide`.
                 inside = [child_id for child_id in kids
                           if child_id not in folded and (child_id not in hidden or child_id in starts)]
             if inside:

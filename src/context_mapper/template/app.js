@@ -74,7 +74,10 @@ function walk(g, starts, depth, dir, hidden) {
     let frontier = [...starts];
     for (let i = 0; i < depth && frontier.length; i++) {
       const nf = [];
-      frontier.forEach(n => (next[n] || []).forEach(m => { if (!seen.has(m) && allowed(m)) { seen.add(m); nf.push(m); } }));
+      // Reaching a container reaches what it holds, at the same hop.
+      frontier.forEach(n => (next[n] || []).forEach(m => descendants(g, [m]).forEach(r => {
+        if (!seen.has(r) && allowed(r)) { seen.add(r); nf.push(r); }
+      })));
       frontier = nf;
     }
   };
@@ -313,18 +316,19 @@ function mermaidSource(s) {
       // still one box of its own.
       if (st === "collapsed" && !foldedKids.length) return [];
       if (st === "expanded" && !inside.length && d.id !== s.focus) return [];
-    } else if (!visible.has(d.id) && !foldedKids.length && !kids.some(c => starts.has(c))) {
-      // Not reached itself, and it holds no start either. A domain that holds
-      // one — the focus of a bounded-context view, say — still draws, so the
-      // start has a box to appear in.
+    } else if (!visible.has(d.id) && !foldedKids.length && !inside.length && !kids.some(c => starts.has(c))) {
+      // Not reached itself, holds nothing that was reached, and no start
+      // either. A domain that holds one of those — the focus of a
+      // bounded-context view, or a context reached on its own — still draws,
+      // so it has a box to appear in.
       return [];
     }
     if (st === "contents") return inside.flatMap(c => drawChild(c, indent));
     if (st === "expanded" && kids.length) {
       let show = inside;
-      if (!show.length || !visible.has(d.id)) {
-        // Reached as a whole — or through a start it holds — so show what is
-        // inside it. A start is never hidden, not even by `hide`.
+      if (!show.length) {
+        // Nothing inside was reached: show what is there that isn't hidden.
+        // A start is never hidden, not even by `hide`.
         show = kids.filter(c => !folded[c] && (!hidden.has(c) || starts.has(c)));
       }
       if (show.length) {

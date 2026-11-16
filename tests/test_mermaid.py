@@ -300,6 +300,48 @@ def test_render_uses_the_markdown_layout_only_for_markdown(example_data, example
     assert '"layout": "dagre"' in markdown_source
 
 
+# --- reaching a domain ------------------------------------------------------
+
+
+def _hub_data():
+    """`hub` is used by the whole of `web`; `web_ui` has a user in `ops`, which holds two contexts."""
+    data, errors = graph.normalize({
+        "types": {"core": {"name": "Core"}},
+        "context-map": {
+            "hub": {"name": "Hub", "type": "core", "downstreams": {"web": "All of Web uses it."}},
+            "web": {"name": "Web", "type": "core"},
+            "web_ui": {"name": "Web UI", "domain": "web", "downstreams": {"ops_a": "Ops A embeds the UI."}},
+            "web_api": {"name": "Web API", "domain": "web"},
+            "ops": {"name": "Ops", "type": "core"},
+            "ops_a": {"name": "Ops A", "domain": "ops"},
+            "ops_b": {"name": "Ops B", "domain": "ops"},
+        },
+    }, {"types": {"core": {"fill": "#dedaff", "stroke": "#6631d7"}}})
+    assert errors == []
+    cfg, errors = mermaid.settings({})
+    assert errors == []
+    return data, cfg
+
+
+def test_render_draws_a_domain_holding_only_the_contexts_that_were_reached():
+    data, cfg = _hub_data()
+    view = {**cfg["defaults"], "id": "v", "focus": "web_ui", "dir": "down", "depth": 99}
+    source = mermaid.render(data, cfg, view)
+    assert 'subgraph ops["Ops"]' in source
+    assert 'ops_a["Ops A"]' in source
+    assert "Ops B" not in source
+    assert "ops_a --> web_ui" in source
+
+
+def test_render_follows_a_domain_level_edge_into_the_contexts_of_the_domain():
+    data, cfg = _hub_data()
+    view = {**cfg["defaults"], "id": "v", "focus": "hub", "dir": "down", "depth": 99}
+    source = mermaid.render(data, cfg, view)
+    assert "web --> hub" in source
+    assert 'ops_a["Ops A"]' in source and "ops_a --> web_ui" in source
+    assert "Ops B" not in source
+
+
 # --- hide --------------------------------------------------------------------
 
 
@@ -346,12 +388,12 @@ def test_render_never_hides_the_focus_itself(example_data, example_cfg):
 
 
 def test_render_draws_a_focused_context_inside_its_domain(example_data, example_cfg):
-    """A bounded-context focus appears, in its domain box with what the domain holds."""
+    """A bounded-context focus appears in its domain box, with only what was reached."""
     view = {**example_cfg["defaults"], "id": "checkout-page", "focus": "checkout"}
     source = mermaid.render(example_data, example_cfg, view)
     assert 'subgraph orders["Orders"]' in source
     assert 'checkout["Checkout"]' in source
-    assert 'fulfillment["Fulfillment"]' in source
+    assert "Fulfillment" not in source            # a sibling nobody reached stays out
     assert "class checkout focus" in source
     assert "checkout -.-> catalog" in source      # its own dependency draws too
     assert "crm" not in source                    # but the domain's own relations stay out
