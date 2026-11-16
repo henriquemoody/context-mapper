@@ -5,10 +5,11 @@
 
 # How the map looks. The sections mirror context-map.yml — `types`, `clusters`,
 # `context-map` — keyed by the same ids. The keys are Mermaid's own classDef
-# attributes (fill, stroke, stroke-width, ...), plus `defaultDisplay` on a
-# container, saying how it first renders: expanded, collapsed, contents or
-# hidden. The build checks them all, so a typo fails the build instead of
-# drawing nothing.
+# attributes (fill, stroke, stroke-width, ...), plus `defaultDisplay` on any
+# entry, saying how it first renders: expanded, collapsed, contents or hidden
+# for a domain or a cluster; a bounded context — one box with nothing inside —
+# only expanded or hidden. The build checks them all, so a typo fails the
+# build instead of drawing nothing.
 types:
   core:       { fill: "#dedaff", stroke: "#6631d7" }
   supporting: { fill: "#c6dcff", stroke: "#305bab" }
@@ -17,8 +18,10 @@ types:
 clusters:
   foundations: { fill: "#eaf9ef", stroke: "#067429", stroke-dasharray: "4 3", defaultDisplay: collapsed }
 
-# An entry takes any attributes; it overrides `mermaid.domain_style` below and,
-# when the domain is drawn as one box, its type colors.
+# An entry takes any attributes: a domain's overrides `mermaid.domain_style`
+# below and, drawn as one box, its type colors; a bounded context's styles its
+# own box. Any entry also takes `defaultDisplay`, saying how it first renders —
+# a bounded context, which holds nothing inside, only expanded or hidden.
 context-map:
   catalog: { fill: "#f7f7ff", stroke: "#6631d7" }
 

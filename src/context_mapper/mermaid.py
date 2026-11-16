@@ -198,10 +198,14 @@ def render(data, cfg, view, links=None, markdown=False):
                       for container_id in containers}
 
     # `hide` names what this view never draws: a domain or cluster goes with
-    # everything inside it, a bounded context with just its own box. The focus
+    # everything inside it, a bounded context with just its own box. A bounded
+    # context — a single domain is one too — with `defaultDisplay: hidden` in
+    # the style file hides the same way, everywhere but as the focus. The focus
     # itself is never hidden — a page still shows what it is a page of.
     hidden = graph.descendants(level_graph,
                                {container_id for container_id, mode in display_states.items() if mode == "hidden"}
+                               | {context["id"] for context in data["contexts"]
+                                  if context.get("defaultDisplay") == "hidden"}
                                | set(view.get("hide") or []))
     if view.get("focus"):
         starts = (starts - hidden) | {view["focus"]}
@@ -261,7 +265,10 @@ def render(data, cfg, view, links=None, markdown=False):
         """One child of a container. A single bounded context is in both payloads;
         the domain entry carries its style, so it wins."""
         if child_id in contexts and child_id not in domains:
-            return [box(child_id, text(contexts[child_id]["name"]), contexts[child_id]["type"], indent)]
+            lines = [box(child_id, text(contexts[child_id]["name"]), contexts[child_id]["type"], indent)]
+            if contexts[child_id].get("mermaid_style"):
+                lines.append(f"{indent}style {node_id(child_id)} {contexts[child_id]['mermaid_style']}")
+            return lines
         return draw_entry(domains[child_id], indent)
 
     def draw_entry(container, indent):

@@ -238,10 +238,64 @@ def test_normalize_accepts_the_current_names_only():
         STYLE,
         "dependency cycle: alpha -> beta -> alpha",
     ),
+    (
+        model(
+            dom={"name": "Dom", "type": "core"},
+            ctx={"name": "Ctx", "domain": "dom", "type": "core"},
+        ),
+        {**STYLE, "context-map": {"ctx": {"defaultDisplay": "collapsed"}}},
+        "context-map.ctx.defaultDisplay must be one of expanded, hidden",
+    ),
+    (
+        model(solo={"name": "Solo", "type": "core"}),
+        {**STYLE, "context-map": {"solo": {"defaultDisplay": "contents"}}},
+        "context-map.solo.defaultDisplay must be one of expanded, hidden",
+    ),
+    (
+        model(
+            dom={"name": "Dom", "type": "core"},
+            ctx={"name": "Ctx", "domain": "dom", "type": "core"},
+        ),
+        {**STYLE, "context-map": {"ctx": {"bogus": 1}}},
+        "context-map.ctx.bogus: unknown option",
+    ),
 ])
 def test_normalize_rejects_a_broken_model(model, style, expected):
     errors = errors_of(model, style)
     assert any(expected in err for err in errors), errors
+
+
+# --- normalize, defaultDisplay ----------------------------------------------
+
+
+def test_normalize_keeps_a_bounded_contexts_default_display_and_style():
+    data, errors = graph.normalize(
+        model(dom={"name": "Dom", "type": "core"}, ctx={"name": "Ctx", "domain": "dom", "type": "core"}),
+        {**STYLE, "context-map": {"ctx": {"fill": "#fff", "defaultDisplay": "hidden"}}})
+    assert errors == []
+    contexts = {context["id"]: context for context in data["contexts"]}
+    assert contexts["ctx"]["defaultDisplay"] == "hidden"
+    assert contexts["ctx"]["mermaid_style"] == "fill:#fff,color:#1a1a1a"
+
+
+def test_normalize_accepts_every_display_for_a_domain_that_holds_contexts():
+    data, errors = graph.normalize(
+        model(dom={"name": "Dom", "type": "core"}, ctx={"name": "Ctx", "domain": "dom", "type": "core"}),
+        {**STYLE, "context-map": {"dom": {"defaultDisplay": "collapsed"}}})
+    assert errors == []
+    assert {d["id"]: d for d in data["domains"]}["dom"]["defaultDisplay"] == "collapsed"
+
+
+def test_normalize_carries_a_single_domains_default_display_to_its_context():
+    """A single domain is a bounded context: its entry's defaultDisplay hides that one box."""
+    data, errors = graph.normalize(
+        model(solo={"name": "Solo", "type": "core"}),
+        {**STYLE, "context-map": {"solo": {"defaultDisplay": "hidden"}}})
+    assert errors == []
+    domains = {domain["id"]: domain for domain in data["domains"]}
+    contexts = {context["id"]: context for context in data["contexts"]}
+    assert domains["solo"]["defaultDisplay"] == "hidden"
+    assert contexts["solo"]["defaultDisplay"] == "hidden"
 
 
 # --- find_cycle -------------------------------------------------------------

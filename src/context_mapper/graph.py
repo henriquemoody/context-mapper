@@ -11,8 +11,11 @@ model (a domain or bounded context has one, and it colors the box), `clusters`
 names a set of domains or contexts treated together (members point at one with
 `cluster:`), and `context-map` maps each id to what it is. A cluster holds
 members; a domain holds bounded contexts; neither can be depended on or hold
-the other's children. How either first renders comes from `defaultDisplay` in the
-style file: expanded, collapsed, contents or hidden. No type name is special.
+the other's children. How anything first renders comes from `defaultDisplay` in
+the style file: a domain or a cluster can be expanded, collapsed, contents or
+hidden; a bounded context — a domain no context points at is one too — is one
+box with nothing inside, so it can only be expanded or hidden. No type name is
+special.
 """
 
 
@@ -28,6 +31,11 @@ BOX_STYLE_KEYS = {"color", "fill", "fill-opacity", "font-family", "font-size",
 # box hidden. hidden: neither.
 DISPLAY_STATES = ("expanded", "collapsed", "contents", "hidden")
 
+# How a bounded context first renders — a domain no context points at is one
+# too. It is a single box with nothing inside, so there is nothing to collapse
+# and no contents to show: expanded draws the box, hidden doesn't.
+BOX_DISPLAY_STATES = ("expanded", "hidden")
+
 # What a style fills in when the entry doesn't say: readable text on a light box.
 TEXT_DEFAULTS = {"color": "#1a1a1a"}
 
@@ -40,14 +48,16 @@ def classdef(attrs, defaults=TEXT_DEFAULTS):
     return ",".join(f"{key}:{value}" for key, value in items)
 
 
-def box_style(section, item_id, style, defaults, required, errors, allowed=None):
+def box_style(section, item_id, style, defaults, required, errors, allowed=None,
+              display_states=DISPLAY_STATES):
     """Check one box style map and return its classDef string, or None when there is nothing to draw."""
     if not style:
         return None
     allowed = allowed or BOX_STYLE_KEYS
-    if "defaultDisplay" in style and "defaultDisplay" in allowed and style["defaultDisplay"] not in DISPLAY_STATES:
+    if "defaultDisplay" in style and "defaultDisplay" in allowed and style["defaultDisplay"] not in display_states:
+        hint = "" if display_states is DISPLAY_STATES else " — a bounded context is one box, with nothing inside it"
         errors.append(f"context-map.style.yml: {section}.{item_id}.defaultDisplay must be one of "
-                      f"{', '.join(DISPLAY_STATES)}")
+                      f"{', '.join(display_states)}{hint}")
     for key in style:
         if key not in allowed:
             errors.append(f"context-map.style.yml: {section}.{item_id}.{key}: unknown option. "
@@ -176,8 +186,6 @@ def normalize(model, styles=None):
     for domain_id, domain in raw_domains:
         domain_type, cluster = domain.get("type"), domain.get("cluster")
         domain_style = entry_styles.get(domain_id) or {}
-        mermaid_style = box_style("context-map", domain_id, domain_style, TEXT_DEFAULTS, (), errors,
-                                  allowed=BOX_STYLE_KEYS | {"defaultDisplay"})
         if "downstreams" in domain:
             pending.append((domain_id, f"context-map.{domain_id}", domain["downstreams"]))
         context_ids = []
@@ -187,18 +195,30 @@ def normalize(model, styles=None):
             context_name, context_type = context.get("name"), context.get("type", domain_type)
             if context_type not in types:
                 errors.append(f"context '{context_id}': unknown type '{context_type}'")
+            context_style = entry_styles.get(context_id) or {}
+            context_mermaid_style = box_style("context-map", context_id, context_style, TEXT_DEFAULTS, (), errors,
+                                              allowed=BOX_STYLE_KEYS | {"defaultDisplay"},
+                                              display_states=BOX_DISPLAY_STATES)
             contexts.append({"id": context_id, "name": context_name, "type": context_type, "domain": domain_id,
-                             "description": context.get("description")})
+                             "description": context.get("description"),
+                             "mermaid_style": context_mermaid_style,
+                             "defaultDisplay": context_style.get("defaultDisplay")})
             context_ids.append(context_id)
             if "downstreams" in context:
                 pending.append((context_id, f"context-map.{context_id}", context["downstreams"]))
+        # A domain with no bounded contexts is one itself: one box, with nothing
+        # inside, so its defaultDisplay is a bounded context's.
+        mermaid_style = box_style("context-map", domain_id, domain_style, TEXT_DEFAULTS, (), errors,
+                                  allowed=BOX_STYLE_KEYS | {"defaultDisplay"},
+                                  display_states=DISPLAY_STATES if context_ids else BOX_DISPLAY_STATES)
         domains.append({"id": domain_id, "name": domain.get("name"), "type": domain_type, "cluster": cluster,
                         "contexts": context_ids, "single": not context_ids,
                         "mermaid_style": mermaid_style, "defaultDisplay": domain_style.get("defaultDisplay"),
                         "description": domain.get("description")})
         if not context_ids:
             contexts.append({"id": domain_id, "name": domain.get("name"), "type": domain_type, "domain": domain_id,
-                             "description": domain.get("description")})
+                             "description": domain.get("description"),
+                             "defaultDisplay": domain_style.get("defaultDisplay")})
 
     clusters = []
     for cluster_id, cluster in raw_clusters.items():

@@ -66,7 +66,7 @@ context-map:                                      # every id is a key, exactly o
     type: supporting                              # a context can override its domain's type
 ```
 
-Three kinds of thing, in three sections. `types` is the role vocabulary of the model: a domain or bounded context has one. `clusters` names a set of domains or contexts treated together; members join with `cluster:`, and nothing can depend on a cluster. In `context-map`, an entry with a `domain:` key is a bounded context, and any other entry is a domain — one no context points at is a single bounded context. How a container first renders — `expanded` (the box and what it holds), `collapsed` (the box alone), `contents` (what it holds, no box), or `hidden` (neither) — comes from `defaultDisplay` in the style file.
+Three kinds of thing, in three sections. `types` is the role vocabulary of the model: a domain or bounded context has one. `clusters` names a set of domains or contexts treated together; members join with `cluster:`, and nothing can depend on a cluster. In `context-map`, an entry with a `domain:` key is a bounded context, and any other entry is a domain — one no context points at is a single bounded context. How anything first renders comes from `defaultDisplay` in the style file: a domain or a cluster takes `expanded` (the box and what it holds), `collapsed` (the box alone), `contents` (what it holds, no box), or `hidden` (neither). A bounded context — one box with nothing inside, and a domain no context points at is one too — takes only `expanded` or `hidden`; writing `collapsed` or `contents` for one fails the build, saying why.
 
 Every entry can carry a `description`: the interactive page shows it as a tooltip when you hover over its box, and the item's page shows it under the title.
 
@@ -95,7 +95,7 @@ open public/index.html
 
 ## Customize the diagrams
 
-`context-map.style.yml` holds all of it. Its sections mirror the model's — `types`, `clusters`, `context-map` — keyed by the same ids, and take Mermaid's own classDef attributes as keys (`fill`, `stroke`, `stroke-width`, ...), so what you write is what Mermaid draws. A container's entry also takes `defaultDisplay`, saying how it first renders. The build fails if one points at an id that doesn't exist, on an attribute Mermaid doesn't know, or on a type without `fill` and `stroke`.
+`context-map.style.yml` holds all of it. Its sections mirror the model's — `types`, `clusters`, `context-map` — keyed by the same ids, and take Mermaid's own classDef attributes as keys (`fill`, `stroke`, `stroke-width`, ...), so what you write is what Mermaid draws: a domain's entry styles the box around its bounded contexts, a bounded context's entry styles its own box. Any entry also takes `defaultDisplay`, saying how it first renders — a bounded context hidden that way is hidden like `hide` hides it, everywhere except its own page. The build fails if one points at an id that doesn't exist, on an attribute Mermaid doesn't know, or on a type without `fill` and `stroke`.
 
 ```yaml
 types:
@@ -106,6 +106,7 @@ clusters:
 
 context-map:
   orders: { fill: "#eef4ff", stroke: "#305bab" }                    # overrides mermaid.domain_style
+  checkout: { fill: "#fff4f4", defaultDisplay: hidden }             # a bounded context styles its own box, and can start hidden
 ```
 
 A style also fills in a readable text `color` when you don't set one.

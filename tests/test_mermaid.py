@@ -1,7 +1,7 @@
 """The Mermaid layer: settings, checks, rendering and the static pages."""
 import pytest
 
-from context_mapper import mermaid
+from context_mapper import graph, mermaid
 
 # --- settings ---------------------------------------------------------------
 
@@ -379,6 +379,75 @@ def test_render_leaves_a_hidden_context_out_of_a_collapsed_label(example_data, e
     source = mermaid.render(example_data, example_cfg, view)
     assert "Fulfillment" not in source
     assert "<b>Orders</b><br/>Checkout" in source
+
+
+# --- defaultDisplay ---------------------------------------------------------
+
+
+HIDDEN_MODEL = {
+    "types": {"core": {"name": "Core"}},
+    "context-map": {
+        "dom": {"name": "Dom", "type": "core"},
+        "shy": {"name": "Shy", "domain": "dom", "type": "core"},
+        "out": {"name": "Out", "domain": "dom", "type": "core",
+                "downstreams": {"solo": "Out stands on Solo."}},
+        "solo": {"name": "Solo", "type": "core"},
+    },
+}
+HIDDEN_STYLE = {
+    "types": {"core": {"fill": "#dedaff", "stroke": "#6631d7"}},
+    "context-map": {
+        "shy": {"defaultDisplay": "hidden"},
+        "out": {"fill": "#f7f7ff", "stroke": "#6631d7"},
+        "solo": {"defaultDisplay": "hidden"},
+    },
+}
+
+
+@pytest.fixture
+def hidden_data():
+    """A domain holding one bounded context that starts hidden and one that
+    doesn't, plus a single domain that starts hidden, depended on by Out."""
+    data, errors = graph.normalize(HIDDEN_MODEL, HIDDEN_STYLE)
+    assert errors == []
+    return data
+
+
+def test_render_leaves_out_what_starts_hidden(hidden_data):
+    """`defaultDisplay: hidden` on a bounded context — or on a single domain,
+    which is one — hides it like `hide` hides it."""
+    cfg, _ = mermaid.settings({})
+    source = mermaid.render(hidden_data, cfg, {**cfg["defaults"], "id": "whole"})
+    assert "shy" not in source and "Shy" not in source
+    assert "solo" not in source and "Solo" not in source
+    assert 'out["Out"]' in source
+    assert "out --> solo" not in source      # an arrow needs both its boxes
+
+
+def test_render_still_shows_what_starts_hidden_where_it_is_the_focus(hidden_data):
+    cfg, _ = mermaid.settings({})
+    view = {**cfg["defaults"], "id": "shy", "focus": "shy"}
+    source = mermaid.render(hidden_data, cfg, view)
+    assert 'shy["Shy"]' in source
+    assert "class shy focus" in source
+
+
+def test_render_keeps_what_starts_hidden_out_of_its_domains_page(hidden_data):
+    """Like `hide`, a default-hidden bounded context stays out even of the page
+    of the domain holding it; only its own page shows it."""
+    cfg, _ = mermaid.settings({})
+    view = {**cfg["defaults"], "id": "dom", "focus": "dom", "depth": 99}
+    source = mermaid.render(hidden_data, cfg, view)
+    assert "Shy" not in source
+    assert 'subgraph dom["Dom"]' in source
+    assert 'out["Out"]' in source
+
+
+def test_render_styles_a_bounded_context_of_its_own(hidden_data):
+    cfg, _ = mermaid.settings({})
+    source = mermaid.render(hidden_data, cfg, {**cfg["defaults"], "id": "whole"})
+    assert 'out["Out"]:::core' in source
+    assert "style out fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a" in source
 
 
 # --- build ------------------------------------------------------------------

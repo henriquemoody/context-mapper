@@ -170,10 +170,13 @@ function buildControls() {
 buildControls();
 const displayModes = () => Object.fromEntries(Object.entries(displaySels).map(([id, sel]) => [id, sel.value]));
 // What `hide` in the style file keeps out, of any kind: a bounded context, a
-// domain, a cluster member. The toggles below hide the same way, so a hidden
-// item stays hidden even where focus would open it. A container's select
-// mirrors the hide while it holds, and takes over the moment it is touched.
-const DEFAULT_HIDE = new Set(STYLE_HIDE);
+// domain, a cluster member — and what `defaultDisplay: hidden` starts with,
+// which only a bounded context or a single domain can be: one box with nothing
+// inside. The toggles below hide the same way, so a hidden item stays hidden
+// even where focus would open it. A container's select mirrors the hide while
+// it holds, and takes over the moment it is touched.
+const DEFAULT_HIDE = new Set([...STYLE_HIDE,
+  ...MODEL.contexts.filter(c => c.defaultDisplay === "hidden").map(c => c.id)]);
 const hiddenContexts = new Set(DEFAULT_HIDE);
 
 // The form's toggle links are static DOM: on every render, refresh what each
@@ -287,8 +290,14 @@ function mermaidSource(s) {
     return `${indent}${nodeId(id)}["${label}"]${type ? ":::" + type : ""}`;
   };
 
-  const drawChild = (c, indent) =>
-    (contextById[c] && !domainById[c]) ? [box(c, quote(contextById[c].name), contextById[c].type, indent)] : drawEntry(domainById[c], indent);
+  const drawChild = (c, indent) => {
+    if (contextById[c] && !domainById[c]) {
+      const out = [box(c, quote(contextById[c].name), contextById[c].type, indent)];
+      if (contextById[c].mermaid_style) out.push(`${indent}style ${nodeId(c)} ${contextById[c].mermaid_style}`);
+      return out;
+    }
+    return drawEntry(domainById[c], indent);
+  };
 
   function drawEntry(d, indent) {
     if (folded[d.id] || (hidden.has(d.id) && d.id !== s.focus)) return [];
