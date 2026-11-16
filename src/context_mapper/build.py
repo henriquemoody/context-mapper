@@ -48,17 +48,24 @@ def read_yaml(path):
         sys.exit(f"error: {path}: {err}")
 
 
-def parse_args(argv=None):
-    parser = argparse.ArgumentParser(
-        prog="context-mapper",
-        description="Build a context map site from a model file (what it describes) "
-                    "and a style file (how it looks).")
+def add_input_flags(parser):
+    """The flags shared by the build and the serve commands."""
     parser.add_argument("--model", type=Path, default=Path("context-map.yml"),
                         help="the model file (default: %(default)s)")
     parser.add_argument("--diagrams", type=Path, default=Path("context-map.style.yml"),
                         help="the style file (default: %(default)s)")
     parser.add_argument("--out", type=Path, default=Path("public"),
                         help="the directory to build into (default: %(default)s)")
+
+
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(
+        prog="context-mapper",
+        description="Build a context map site from a model file (what it describes) "
+                    "and a style file (how it looks).",
+        epilog="Run 'context-mapper serve --watch' to serve the site and rebuild it "
+               "whenever the YAML files change.")
+    add_input_flags(parser)
     return parser.parse_args(argv)
 
 
@@ -100,8 +107,8 @@ def render_index(payload):
     return html.replace("/*__STYLE__*/", css).replace("/*__SCRIPT__*/", js)
 
 
-def main(argv=None):
-    args = parse_args(argv)
+def build_site(args):
+    """Build the whole site into args.out. Exits on missing or invalid input."""
     for flag, path in (("--model", args.model), ("--diagrams", args.diagrams)):
         if not path.exists():
             sys.exit(f"error: {path} not found. Pass {flag} to set the path.")
@@ -116,6 +123,14 @@ def main(argv=None):
           f"{len(data['contexts'])} bounded contexts, {len(data['edges'])} dependencies")
     count = mermaid.build(data, mermaid_section, args.out)
     print(f"built {count} Mermaid views in {args.out}/mermaid/ and {args.out}/markdown/")
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and argv[0] == "serve":
+        from .serve import serve
+        return serve(argv[1:])
+    build_site(parse_args(argv))
 
 
 if __name__ == "__main__":

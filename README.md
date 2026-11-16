@@ -30,6 +30,8 @@ Run `context-mapper` in a directory that has a `context-map.yml` and a `context-
 context-mapper --model context-map.yml --diagrams context-map.style.yml --out public
 ```
 
+While you write the model, `context-mapper serve --watch` serves the site at `http://127.0.0.1:8000/` and rebuilds it whenever you save — the same flags apply.
+
 ## The model
 
 ```yaml
@@ -89,9 +91,10 @@ git clone https://github.com/henriquemoody/context-mapper.git
 cd context-mapper
 pip install .
 cd example
-context-mapper
-open public/index.html
+context-mapper serve --watch
 ```
+
+`serve` builds the site and serves it at `http://127.0.0.1:8000/` (`--host` and `--port` to move it, `--out` for the directory). With `--watch`, saving the model or the style file rebuilds the site and the browser reloads the page by itself; a build that fails says why on the terminal and the page keeps showing the last good one, so a broken edit never takes the site down. The reload script is served on the wire only — the files stay exactly what a plain `context-mapper` writes, ready to publish.
 
 ## Customize the diagrams
 
