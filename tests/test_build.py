@@ -102,7 +102,7 @@ def test_load_reads_the_example():
     assert len(data["contexts"]) == 7
     assert len(data["edges"]) == 6
     assert mermaid_config["direction"] == "BT"
-    assert len(mermaid_config["views"]) == 3
+    assert len(mermaid_config["views"]) == 4
 
 
 def test_load_warns_when_the_domains_depend_on_each_other(tmp_path, capsys):

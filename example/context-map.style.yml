@@ -47,6 +47,7 @@ mermaid:
     depth: 1               # Hops out from the focus. 99 means everything.
     dir: both              # both, up (depends on), down (used by)
     display: {}            # How containers first render: expanded, collapsed, contents, hidden — or a map by id
+    hide: []               # Ids this view never draws: a domain or cluster (with what's inside), or a bounded context
     child_labels: true     # A collapsed container names what it holds, in the box and on each arrow
     group_by_type: false   # Wrap Core, Supporting, Generic in their own boxes
 
@@ -75,6 +76,7 @@ mermaid:
       title: Domains
       level: domain
       depth: 99
+      hide: [crm]              # the whole system, without CRM
     - id: foundations-detail
       title: Shared Foundations in detail
       focus: foundations
@@ -84,3 +86,8 @@ mermaid:
       focus: checkout
       dir: up
       depth: 99
+    - id: orders-detail
+      title: Orders, without Fulfillment
+      focus: orders
+      depth: 99
+      hide: [fulfillment]      # a domain view can hide one of its bounded contexts

@@ -104,15 +104,16 @@ const levelSel = $("level"), focusSel = $("focus"), depthSel = $("depth"), dirSe
     items.sort(byName).forEach(i => og.appendChild(new Option(i.name, i.id)));
     focusSel.appendChild(og);
   };
-  group("Domains", MODEL.domains.filter(d => !d.single));
+  group("Domains", [...MODEL.domains]);
   group("Clusters", [...MODEL.clusters]);
-  group("Bounded contexts", [...MODEL.contexts]);
+  group("Bounded contexts", MODEL.contexts.filter(c => !domainById[c.id]));
 })();
 
 const DIAGRAM = MODEL.mermaid;
 
 // A container first renders as the view says, else as its own `defaultDisplay` says, else expanded.
 const defaultDisplayOf = id => (clusterById[id] || domainById[id]).defaultDisplay || "expanded";
+const STYLE_HIDE = DIAGRAM.hide || [];
 const defaultMode = id => {
   const d = DIAGRAM.display;
   if (d === null || d === undefined) return defaultDisplayOf(id);
@@ -120,22 +121,73 @@ const defaultMode = id => {
 };
 const MODES = [["expanded", "Expanded"], ["collapsed", "Collapsed"], ["contents", "Contents"], ["hidden", "Hidden"]];
 const displaySels = {};
-const addSelect = (id, name, cluster) => {
-  const label = document.createElement("label");
-  const span = document.createElement("span");
-  span.append(name + " ");
-  if (cluster) span.className = "cluster";   // a dashed underline, like the box it controls
-  label.appendChild(span);
-  const sel = document.createElement("select");
-  MODES.forEach(([value, text]) => sel.appendChild(new Option(text, value)));
-  label.appendChild(sel);
-  $("display").appendChild(label);
-  $("display").append(" ");
-  displaySels[id] = sel;
-};
-MODEL.domains.filter(d => !d.single).forEach(d => addSelect(d.id, d.name, false));
-MODEL.clusters.forEach(c => addSelect(c.id, c.name, true));
+const toggles = {};  // a single domain — one plain box — as a hide/show toggle
+// The panel's "Show & hide" form, built once so it survives the re-renders of
+// the focus info above it: one row per domain and cluster, grouped by kind.
+// A multi-context domain or a cluster gets a display select; a single domain
+// gets a hide/show toggle instead, driven by `hiddenContexts` like the list
+// toggles below.
+function buildControls() {
+  const nameSpan = name => {
+    const span = document.createElement("span");
+    span.className = "name";
+    span.textContent = name;
+    return span;
+  };
+  const addSelect = (id, name, cluster) => {
+    const label = document.createElement("label");
+    label.className = "row";
+    const span = nameSpan(name);
+    if (cluster) span.classList.add("cluster");   // a dashed underline, like the box it controls
+    label.appendChild(span);
+    const sel = document.createElement("select");
+    MODES.forEach(([value, text]) => sel.appendChild(new Option(text, value)));
+    label.appendChild(sel);
+    $("display").appendChild(label);
+    displaySels[id] = sel;
+  };
+  const addToggle = (id, name) => {
+    const label = document.createElement("label");
+    label.className = "row";
+    label.appendChild(nameSpan(name));
+    const hint = document.createElement("span");
+    hint.className = "hint";
+    const link = document.createElement("a");
+    link.className = "toggle";
+    label.append(hint, link);
+    $("display").appendChild(label);
+    toggles[id] = { row: label, hint, link };
+  };
+  const sub = text => {
+    const h = document.createElement("h4");
+    h.textContent = text;
+    $("display").appendChild(h);
+  };
+  sub("Domains");
+  MODEL.domains.forEach(d => (d.single ? addToggle : addSelect)(d.id, d.name));
+  sub("Clusters");
+  MODEL.clusters.forEach(c => addSelect(c.id, c.name, true));
+}
+buildControls();
 const displayModes = () => Object.fromEntries(Object.entries(displaySels).map(([id, sel]) => [id, sel.value]));
+// What `hide` in the style file keeps out, of any kind: a bounded context, a
+// domain, a cluster member. The toggles below hide the same way, so a hidden
+// item stays hidden even where focus would open it. A container's select
+// mirrors the hide while it holds, and takes over the moment it is touched.
+const DEFAULT_HIDE = new Set(STYLE_HIDE);
+const hiddenContexts = new Set(DEFAULT_HIDE);
+
+// The form's toggle links are static DOM: on every render, refresh what each
+// one says and does — a hidden item's link shows it, a visible one's hides it.
+const refreshToggles = () => Object.entries(toggles).forEach(([id, t]) => {
+  const hidden = hiddenContexts.has(id);
+  t.link.removeAttribute("data-hide");
+  t.link.removeAttribute("data-show");
+  t.link.setAttribute(hidden ? "data-show" : "data-hide", id);
+  t.link.textContent = hidden ? "show" : "hide";
+  t.hint.textContent = hidden ? "(hidden)" : "";
+  t.row.classList.toggle("off", hidden);
+});
 if (DIAGRAM.elk) {
   const { default: elkLayouts } = await import("https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs");
   mermaid.registerLayoutLoaders(elkLayouts);
@@ -143,7 +195,8 @@ if (DIAGRAM.elk) {
 mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
 
 function state() {
-  return { level: levelSel.value, focus: focusSel.value, depth: Number(depthSel.value), dir: dirSel.value, display: displayModes() };
+  return { level: levelSel.value, focus: focusSel.value, depth: Number(depthSel.value), dir: dirSel.value,
+           display: displayModes(), hide: new Set(hiddenContexts) };
 }
 
 function readHash() {
@@ -156,6 +209,15 @@ function readHash() {
     const m = p.get("display." + id);
     sel.value = MODES.some(([value]) => value === m) ? m : defaultMode(id);
   });
+  hiddenContexts.clear();
+  DEFAULT_HIDE.forEach(id => hiddenContexts.add(id));
+  for (const [key, value] of p) {
+    const m = /^hide\.(.+)$/.exec(key);
+    if (!m) continue;
+    if (value === "1") hiddenContexts.add(m[1]);
+    else if (value === "0") hiddenContexts.delete(m[1]);
+  }
+  Object.entries(displaySels).forEach(([id, sel]) => { if (hiddenContexts.has(id)) sel.value = "hidden"; });
 }
 
 function hashFor(s) {
@@ -164,7 +226,9 @@ function hashFor(s) {
   if (s.focus) p.set("focus", s.focus);
   if (s.depth !== 1) p.set("depth", s.depth);
   if (s.dir !== "both") p.set("dir", s.dir);
-  Object.entries(s.display).forEach(([id, mode]) => { if (mode !== defaultMode(id)) p.set("display." + id, mode); });
+  Object.entries(s.display).forEach(([id, mode]) => { if (mode !== defaultMode(id) && !s.hide.has(id)) p.set("display." + id, mode); });
+  s.hide.forEach(id => { if (!DEFAULT_HIDE.has(id)) p.set("hide." + id, "1"); });
+  DEFAULT_HIDE.forEach(id => { if (!s.hide.has(id)) p.set("hide." + id, "0"); });
   const h = p.toString();
   return h ? "#" + h : "";
 }
@@ -175,11 +239,18 @@ const quote = value => value.replaceAll('"', "#quot;");
 
 function mermaidSource(s) {
   const g = GRAPHS[s.level];
-  const starts = focusSet(s.level, s.focus);
+  let starts = focusSet(s.level, s.focus);
   const containers = [...MODEL.domains.filter(d => !d.single), ...MODEL.clusters];
   const state = {};
   containers.forEach(d => state[d.id] = starts.has(d.id) ? "expanded" : (s.display[d.id] || defaultMode(d.id)));
-  const hidden = descendants(g, containers.filter(d => state[d.id] === "hidden").map(d => d.id));
+  // What isn't shown: containers set to hidden, with everything inside them,
+  // plus the bounded contexts hidden here. The focus itself is never hidden.
+  const hidden = descendants(g, [...containers.filter(d => state[d.id] === "hidden").map(d => d.id), ...s.hide]);
+  if (s.focus) {
+    starts = new Set([...starts].filter(id => !hidden.has(id)));
+    starts.add(s.focus);
+    if (s.level === "domain" && owner[s.focus]) starts.add(owner[s.focus]);
+  }
   const visible = walk(g, starts, s.depth, s.dir, hidden);
 
   const kidsOf = {};
@@ -216,7 +287,7 @@ function mermaidSource(s) {
     (contextById[c] && !domainById[c]) ? [box(c, quote(contextById[c].name), contextById[c].type, indent)] : drawEntry(domainById[c], indent);
 
   function drawEntry(d, indent) {
-    if (folded[d.id]) return [];
+    if (folded[d.id] || (hidden.has(d.id) && d.id !== s.focus)) return [];
     const st = state[d.id] || "expanded";
     if (st === "hidden") return [];
     const isCluster = !domainById[d.id];
@@ -225,15 +296,24 @@ function mermaidSource(s) {
     const inside = kids.filter(c => visible.has(c) && !folded[c]);
     if (isCluster) {
       // A cluster isn't a node in the walk: it draws only through what it holds.
+      // The focus is the exception: with everything it holds hidden, it is
+      // still one box of its own.
       if (st === "collapsed" && !foldedKids.length) return [];
-      if (st === "expanded" && !inside.length) return [];
-    } else if (!visible.has(d.id) && !foldedKids.length) {
+      if (st === "expanded" && !inside.length && d.id !== s.focus) return [];
+    } else if (!visible.has(d.id) && !foldedKids.length && !kids.some(c => starts.has(c))) {
+      // Not reached itself, and it holds no start either. A domain that holds
+      // one — the focus of a bounded-context view, say — still draws, so the
+      // start has a box to appear in.
       return [];
     }
     if (st === "contents") return inside.flatMap(c => drawChild(c, indent));
     if (st === "expanded" && kids.length) {
       let show = inside;
-      if (!show.length) show = kids.filter(c => !folded[c]);  // reached as a whole: show what is inside
+      if (!show.length || !visible.has(d.id)) {
+        // Reached as a whole — or through a start it holds — so show what is
+        // inside it. A start is never hidden, not even by `hide`.
+        show = kids.filter(c => !folded[c] && (!hidden.has(c) || starts.has(c)));
+      }
       if (show.length) {
         drawn.add(d.id);
         const out = [`${indent}subgraph ${nodeId(d.id)}["${quote(d.name)}"]`];
@@ -247,7 +327,7 @@ function mermaidSource(s) {
     }
     let label = quote(d.name);
     if (DIAGRAM.child_labels && !d.single) {
-      const named = (d.contexts || []).filter(c => c !== d.id).map(nameOf)
+      const named = (d.contexts || []).filter(c => c !== d.id && !hidden.has(c)).map(nameOf)
         .concat((d.members || []).filter(m => folded[m] === d.id).map(nameOf)).sort();
       if (named.length) label = `<b>${label}</b><br/>${quote(named.join(", "))}`;
     }
@@ -258,7 +338,7 @@ function mermaidSource(s) {
 
   // A domain drawn inside another container comes from that container's own drawing.
   const opens = new Set(Object.entries(state).filter(([, st]) => st === "expanded" || st === "contents")
-    .map(([id]) => id).filter(id => (domainById[id] ? visible.has(id) : true) && !folded[id]));
+    .map(([id]) => id).filter(id => (domainById[id] ? visible.has(id) : true) && !folded[id] && !hidden.has(id)));
   const atTop = d => !opens.has(g.childOf[d.id]);
 
   if (DIAGRAM.group_by_type) {
@@ -312,6 +392,7 @@ async function render() {
   history.replaceState(null, "", hashFor(s) || location.pathname);
   const { source, visible, tips } = mermaidSource(s);
   renderInfo(s, visible);
+  refreshToggles();
   const run = ++renderCount;
   try {
     const { svg, bindFunctions } = await mermaid.render("diagram-" + run, source);
@@ -456,7 +537,7 @@ const chip = type => { const t = MODEL.types[type]; return `<span class="chip" s
 
 function renderInfo(s, visible) {
   const legend = '<div class="legend">' + Object.keys(MODEL.types).map(chip).join("") + "</div>";
-  const howTo = `<h3>How to read</h3><p class="hint">An arrow from A to B means A depends on B. Upstream is at the top. The outer boxes are domains, the coloured boxes inside them are bounded contexts. Every container can be expanded (the boxes inside it), collapsed (one box), or hidden; the header has a select for each, and a dashed underline marks a cluster's. Click a box to focus on it.</p>`;
+  const howTo = `<h3>How to read</h3><p class="hint">An arrow from A to B means A depends on B. Upstream is at the top. The outer boxes are domains, the coloured boxes inside them are bounded contexts. The Show &amp; hide form in the right panel has a control for every domain and cluster: a multi-context domain or a cluster can be expanded (the boxes inside it), collapsed (one box), or hidden — a dashed underline marks a cluster's — and a one-box domain hides with a toggle. Focusing on a domain or a cluster lists what it holds, and each item there can be hidden too. Click a box to focus on it.</p>`;
   if (!s.focus) {
     $("info").innerHTML = `<h2>Whole system</h2><p class="hint">${visible.size} items shown. Pick a domain, cluster or bounded context to see only what it touches.</p>
       <p><a href="mermaid/index.html">Static diagrams</a></p>${legend}${howTo}`;
@@ -464,17 +545,22 @@ function renderInfo(s, visible) {
   }
   const id = s.focus;
   const item = contextById[id] || domainById[id] || clusterById[id];
+  const itemWith = item_id => {
+    const hiddenHere = s.hide.has(item_id);
+    const toggle = `<a data-${hiddenHere ? "show" : "hide"}="${item_id}" class="toggle">${hiddenHere ? "show" : "hide"}</a>`;
+    return `<li>${link(item_id)} ${hiddenHere ? `<span class="hint">(hidden)</span> ` : ""}${toggle}</li>`;
+  };
   let html;
   if (clusterById[id]) {
     html = `<h2>${escapeHtml(item.name)}</h2><span class="hint">Cluster</span>
       <p><a href="mermaid/index.html">All diagrams</a></p>
-      <h3>Members</h3>${list(item.members)}`;
+      <h3>Members</h3><ul>${item.members.map(itemWith).join("")}</ul>`;
   } else {
-    html = `<h2>${escapeHtml(item.name)}</h2>${chip(item.type)} <span class="hint">${isMulti(id) ? "Domain" : "Bounded context"}</span>
+    html = `<h2>${escapeHtml(item.name)}</h2>${chip(item.type)} <span class="hint">${domainById[id] ? "Domain" : "Bounded context"}</span>
       <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>`;
     if (item.description) html += `<p class="hint">${escapeHtml(item.description)}</p>`;
     if (isMulti(id)) {
-      html += `<h3>Bounded contexts</h3>${list(domainById[id].contexts)}`;
+      html += `<h3>Bounded contexts</h3><ul>${domainById[id].contexts.map(itemWith).join("")}</ul>`;
     } else if (isMulti(owner[id])) {
       html += `<h3>Domain</h3>${list([owner[id]])}`;
     }
@@ -492,11 +578,24 @@ function renderInfo(s, visible) {
   $("info").innerHTML = html + `<h3>Legend</h3>${legend}${howTo}`;
 }
 
-$("info").addEventListener("click", ev => {
+const setHidden = (id, hide) => {
+  hiddenContexts[hide ? "add" : "delete"](id);
+  if (displaySels[id]) displaySels[id].value = hide ? "hidden" : defaultMode(id);
+};
+$("panel").addEventListener("click", ev => {
+  const hideToggle = ev.target.closest("[data-hide]");
+  if (hideToggle) { setHidden(hideToggle.dataset.hide, true); render(); return; }
+  const showToggle = ev.target.closest("[data-show]");
+  if (showToggle) { setHidden(showToggle.dataset.show, false); render(); return; }
   const go = ev.target.closest("[data-go]");
   if (go) { focusSel.value = go.dataset.go; render(); }
 });
-[levelSel, focusSel, depthSel, dirSel, ...Object.values(displaySels)].forEach(el => el.addEventListener("change", render));
+[levelSel, focusSel, depthSel, dirSel].forEach(el => el.addEventListener("change", render));
+// A container's select takes over from a hide the moment it is touched.
+Object.entries(displaySels).forEach(([id, sel]) => sel.addEventListener("change", () => {
+  hiddenContexts.delete(id);
+  render();
+}));
 $("reset").addEventListener("click", () => { history.replaceState(null, "", location.pathname); readHash(); render(); });
 window.addEventListener("hashchange", () => { readHash(); render(); });
 

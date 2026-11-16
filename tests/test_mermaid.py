@@ -18,6 +18,7 @@ def test_settings_fills_in_the_defaults():
     assert cfg["defaults"]["level"] == "context"
     assert cfg["defaults"]["depth"] == 1
     assert cfg["defaults"]["dir"] == "both"
+    assert cfg["defaults"]["hide"] == []
     assert cfg["defaults"]["child_labels"] is True
     assert cfg["defaults"]["group_by_type"] is False
 
@@ -125,6 +126,22 @@ def test_settings_rejects_the_old_view_option_name():
     assert any("unknown option" in err for err in errors), errors
 
 
+def test_settings_accepts_a_hide_list():
+    cfg, errors = mermaid.settings({"defaults": {"hide": ["crm"]}, "views": [{"id": "one", "hide": ["orders"]}]})
+    assert errors == []
+    assert cfg["defaults"]["hide"] == ["crm"]
+    assert cfg["views"][0]["hide"] == ["orders"]
+
+
+@pytest.mark.parametrize("where, config", [
+    ("defaults", {"defaults": {"hide": "crm"}}),
+    ("views.one", {"views": [{"id": "one", "hide": "crm"}]}),
+])
+def test_settings_rejects_a_hide_that_is_not_a_list(where, config):
+    _, errors = mermaid.settings(config)
+    assert any(f"mermaid.{where}.hide must be a list" in err for err in errors), errors
+
+
 # --- check ------------------------------------------------------------------
 
 
@@ -163,6 +180,22 @@ def test_check_rejects_a_display_for_an_unknown_container(example_data):
     assert any("unknown container 'nowhere'" in err for err in errors), errors
 
 
+@pytest.mark.parametrize("where, config", [
+    ("defaults", {"defaults": {"hide": ["nowhere"]}}),
+    ("views.one", {"views": [{"id": "one", "hide": ["nowhere"]}]}),
+])
+def test_check_rejects_a_hide_for_an_unknown_id(example_data, where, config):
+    cfg, _ = mermaid.settings(config)
+    errors = mermaid.check(example_data, cfg)
+    assert any(f"mermaid.{where}.hide: unknown id 'nowhere'" in err for err in errors), errors
+
+
+def test_check_accepts_a_hide_of_any_kind(example_data):
+    """Domains, bounded contexts and clusters can all be hidden."""
+    cfg, _ = mermaid.settings({"defaults": {"hide": ["catalog", "orders", "checkout", "foundations"]}})
+    assert mermaid.check(example_data, cfg) == []
+
+
 # --- page_items and views ---------------------------------------------------
 
 
@@ -189,9 +222,9 @@ def test_page_items_with_domains_and_contexts(example_data):
 
 def test_views_put_the_named_views_first(example_data, example_cfg):
     views = mermaid.views(example_data, example_cfg)
-    assert [view["id"] for view in views[:3]] == [
-        "overview", "foundations-detail", "checkout-upstreams"]
-    assert len(views) == 12
+    assert [view["id"] for view in views[:4]] == [
+        "overview", "foundations-detail", "checkout-upstreams", "orders-detail"]
+    assert len(views) == 13
 
 
 def test_views_add_one_page_per_item(example_data, example_cfg):
@@ -267,12 +300,93 @@ def test_render_uses_the_markdown_layout_only_for_markdown(example_data, example
     assert '"layout": "dagre"' in markdown_source
 
 
+# --- hide --------------------------------------------------------------------
+
+
+def test_render_hides_a_domain_in_the_whole_system(example_data, example_cfg):
+    view = {**example_cfg["defaults"], "id": "whole", "hide": ["crm"]}
+    source = mermaid.render(example_data, example_cfg, view)
+    assert "crm" not in source
+    assert "CRM" not in source
+    assert "--> orders" not in source      # the CRM -> orders dependency goes too
+    assert 'subgraph orders["Orders"]' in source
+
+
+def test_render_hides_a_cluster_and_its_members(example_data, example_cfg):
+    view = {**example_cfg["defaults"], "id": "whole", "hide": ["foundations"]}
+    source = mermaid.render(example_data, example_cfg, view)
+    assert "foundations" not in source
+    assert "Identity" not in source and "Payments" not in source
+
+
+def test_render_hides_a_bounded_context_in_a_domain_view(example_data, example_cfg):
+    """The point of `hide`: a domain page without one of its bounded contexts."""
+    view = {**example_cfg["defaults"], "id": "orders-detail", "focus": "orders", "hide": ["fulfillment"]}
+    source = mermaid.render(example_data, example_cfg, view)
+    assert "fulfillment" not in source
+    assert "Fulfillment" not in source
+    assert 'checkout["Checkout"]' in source
+    assert 'subgraph orders["Orders"]' in source
+
+
+def test_render_does_not_reach_through_a_hidden_context(tiny_data):
+    cfg, _ = mermaid.settings({})
+    view = {**cfg["defaults"], "id": "web-view", "focus": "web", "depth": 1, "hide": ["web_ui"]}
+    source = mermaid.render(tiny_data, cfg, view)
+    assert "web_ui" not in source
+    assert "core_lib" not in source       # it was only reachable through Web UI
+    assert 'web_api["Web API"]' in source
+
+
+def test_render_never_hides_the_focus_itself(example_data, example_cfg):
+    view = {**example_cfg["defaults"], "id": "crm-page", "focus": "crm", "hide": ["crm"]}
+    source = mermaid.render(example_data, example_cfg, view)
+    assert 'crm["CRM"]' in source
+    assert "class crm focus" in source
+
+
+def test_render_draws_a_focused_context_inside_its_domain(example_data, example_cfg):
+    """A bounded-context focus appears, in its domain box with what the domain holds."""
+    view = {**example_cfg["defaults"], "id": "checkout-page", "focus": "checkout"}
+    source = mermaid.render(example_data, example_cfg, view)
+    assert 'subgraph orders["Orders"]' in source
+    assert 'checkout["Checkout"]' in source
+    assert 'fulfillment["Fulfillment"]' in source
+    assert "class checkout focus" in source
+    assert "checkout -.-> catalog" in source      # its own dependency draws too
+    assert "crm" not in source                    # but the domain's own relations stay out
+
+
+def test_render_hides_a_member_of_a_focused_cluster(example_data, example_cfg):
+    view = {**example_cfg["defaults"], "id": "foundations-view", "focus": "foundations", "hide": ["identity"]}
+    source = mermaid.render(example_data, example_cfg, view)
+    assert 'subgraph foundations["Shared Foundations"]' in source
+    assert 'payments["Payments"]' in source
+    assert "Identity" not in source
+
+
+def test_render_keeps_a_focused_cluster_whose_members_are_all_hidden(example_data, example_cfg):
+    view = {**example_cfg["defaults"], "id": "foundations-view", "focus": "foundations",
+            "hide": ["identity", "payments"]}
+    source = mermaid.render(example_data, example_cfg, view)
+    assert 'foundations["Shared Foundations"]' in source
+    assert "class foundations focus" in source
+    assert "Identity" not in source and "Payments" not in source
+
+
+def test_render_leaves_a_hidden_context_out_of_a_collapsed_label(example_data, example_cfg):
+    view = {**example_cfg["defaults"], "id": "whole", "display": {"orders": "collapsed"}, "hide": ["fulfillment"]}
+    source = mermaid.render(example_data, example_cfg, view)
+    assert "Fulfillment" not in source
+    assert "<b>Orders</b><br/>Checkout" in source
+
+
 # --- build ------------------------------------------------------------------
 
 
 def test_build_writes_a_page_for_every_view(tmp_path, example_data, example_style, example_cfg):
     count = mermaid.build(example_data, example_style["mermaid"], tmp_path)
-    assert count == 12
+    assert count == 13
     for view in mermaid.views(example_data, example_cfg):
         assert (tmp_path / "mermaid" / f"{view['id']}.html").exists()
         assert (tmp_path / "markdown" / f"{view['id']}.md").exists()
@@ -325,6 +439,11 @@ def test_describe_of_a_cluster_says_what_it_holds(example_data):
 def test_describe_without_a_focus_is_about_the_arrows(example_data):
     description = mermaid.describe(example_data, {"depth": 1, "dir": "both"})
     assert "Arrows point to what something depends on." in description
+
+
+def test_describe_says_when_items_are_hidden(example_data):
+    description = mermaid.describe(example_data, {"focus": "orders", "depth": 1, "dir": "both", "hide": ["fulfillment"]})
+    assert "Some items are hidden in this view." in description
 
 
 def test_item_description_is_the_description_of_the_focused_item(example_data):

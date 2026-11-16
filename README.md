@@ -74,7 +74,7 @@ At domain level, context dependencies are lifted to their domains and merged, an
 
 | Output | What it is |
 | --- | --- |
-| `<out>/index.html` | Interactive view. Switch between bounded contexts and domains, click anything to focus on it, hover a box or an arrow for the details. |
+| `<out>/index.html` | Interactive view. Switch between bounded contexts and domains, click anything to focus on it, hide anything from the side panel, hover a box or an arrow for the details. |
 | `<out>/mermaid/*.html` | One static Mermaid page per domain, per bounded context, and per named view. Click a box to jump to its page. |
 | `<out>/markdown/*.md` | The same diagrams as Markdown. GitLab renders them natively, and they can go to Confluence. |
 
@@ -106,7 +106,7 @@ context-map:
 
 A style also fills in a readable text `color` when you don't set one.
 
-The rest lives in the `mermaid` section. Every style in it is a map of the same Mermaid attributes as above, so `focus_style`, `domain_style` and `edge_styles` read like `types`, `clusters` and `context-map`. It styles the interactive page (`index.html`) and the static pages alike, since both are drawn with Mermaid. The interactive page uses the view `defaults` (such as `display`) as its starting state. Unknown keys fail the build, so a typo tells you instead of doing nothing.
+The rest lives in the `mermaid` section. Every style in it is a map of the same Mermaid attributes as above, so `focus_style`, `domain_style` and `edge_styles` read like `types`, `clusters` and `context-map`. It styles the interactive page (`index.html`) and the static pages alike, since both are drawn with Mermaid. The interactive page uses the view `defaults` (such as `display` and `hide`) as its starting state. Unknown keys fail the build, so a typo tells you instead of doing nothing.
 
 | Option | Values | What it does |
 | --- | --- | --- |
@@ -131,6 +131,7 @@ These can be set under `defaults` and overridden per view:
 | `depth` | number, `99` for all | Hops out from the focus. |
 | `dir` | `both`, `up`, `down` | Depends on, used by, or both. |
 | `display` | `expanded`, `collapsed`, `contents`, `hidden`, or a map from container id to one of those | How containers first render. A single value applies to every container; a map leaves the rest to their own `defaultDisplay` in the style file. |
+| `hide` | a list of ids | What the view never draws, no matter what: hiding a domain or a cluster takes everything inside it, hiding a bounded context only its own box and arrows. In the whole system that trims domains and clusters; in a domain's view it leaves out bounded contexts; in a cluster's view, members. The focus itself is never hidden. |
 | `child_labels` | `true`, `false` | A collapsed container names what it holds, in the box and on each arrow that reaches it. |
 | `group_by_type` | `true`, `false` | Wrap Core, Supporting and Generic in their own boxes. |
 
@@ -141,6 +142,7 @@ A view can also set `id`, `title`, `focus` (a domain, context or cluster id), `d
       title: Catalog in detail
       focus: catalog
       display: contents                # or { foundations: contents }
+      hide: [search]                   # never draw the Search context here
       direction: LR
 ```
 
@@ -166,6 +168,7 @@ pages:
 - `index.html#focus=checkout`: interactive, Checkout and its direct neighbors
 - `index.html#focus=foundations`: interactive, the foundations cluster, opened, and what its members touch
 - `index.html#level=domain&focus=orders`: interactive, the Orders domain and its neighbors
-- Other hash options: `depth=1|2|99`, `dir=both|up|down`, `display.<domain id>=expanded|collapsed|contents|hidden`
+- `index.html#focus=orders&hide.fulfillment=1`: interactive, the Orders domain without the Fulfillment context
+- Other hash options: `depth=1|2|99`, `dir=both|up|down`, `display.<domain id>=expanded|collapsed|contents|hidden`, `hide.<id>=1|0`
 - `mermaid/checkout.html`: static diagram for Checkout
 - `mermaid/index.html`: all static diagrams

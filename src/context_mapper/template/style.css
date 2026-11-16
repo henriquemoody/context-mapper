@@ -32,7 +32,15 @@ aside a:hover { text-decoration: underline; }
 .chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; border: 1px solid; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px; }
 .hint { color: var(--muted); font-size: 13px; }
+/* The panel's "Show & hide" form: a name on the left, its control on the right. */
+#display h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 14px 0 4px; }
+#display .row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 2px 0; font-size: 13px; }
+#display .row .name { color: var(--ink); }
+#display .row select { font-size: 13px; padding: 2px 6px; }
+#display .row.off .name { color: var(--muted); }
 #display .cluster { border-bottom: 2px dashed var(--muted); }
+aside .toggle { color: var(--muted); font-size: 13px; }
+aside .toggle::before { content: "· "; color: var(--line); }
 @media (max-width: 800px) {
   main { grid-template-columns: 1fr; grid-template-rows: 60vh auto; height: auto; }
   aside { border-left: 0; border-top: 1px solid var(--line); }

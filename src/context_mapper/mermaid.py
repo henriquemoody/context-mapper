@@ -15,6 +15,7 @@ VIEW_DEFAULTS = {
     "depth": 1,
     "dir": "both",
     "display": None,
+    "hide": [],
     "child_labels": True,
     "group_by_type": False,
 }
@@ -87,6 +88,9 @@ def settings(config):
             if mode is not None and mode not in ALLOWED["display"]:
                 errors.append(f"mermaid.{where}.display must be one of {', '.join(sorted(ALLOWED['display']))}, "
                               "or a map from domain id to one of those")
+        hide = view.get("hide")
+        if hide is not None and not isinstance(hide, list):
+            errors.append(f"mermaid.{where}.hide must be a list of ids, such as `hide: [crm]`")
 
     # Styles are written like the ones in `types`, `clusters` and `context-map`: a map of
     # Mermaid attributes. Past this point they are classDef strings, which is what the
@@ -162,6 +166,7 @@ def client_settings(cfg):
         "domain_style": cfg["domain_style"],
         "edge_styles": cfg["edge_styles"],
         "display": defaults["display"],
+        "hide": defaults["hide"],
         "child_labels": defaults["child_labels"],
         "group_by_type": defaults["group_by_type"],
     }
@@ -191,7 +196,17 @@ def render(data, cfg, view, links=None, markdown=False):
     containers.update({cluster["id"]: cluster for cluster in data["clusters"]})
     display_states = {container_id: ("expanded" if container_id in starts else display_mode(view, containers[container_id]))
                       for container_id in containers}
-    hidden = graph.descendants(level_graph, {container_id for container_id, mode in display_states.items() if mode == "hidden"})
+
+    # `hide` names what this view never draws: a domain or cluster goes with
+    # everything inside it, a bounded context with just its own box. The focus
+    # itself is never hidden — a page still shows what it is a page of.
+    hidden = graph.descendants(level_graph,
+                               {container_id for container_id, mode in display_states.items() if mode == "hidden"}
+                               | set(view.get("hide") or []))
+    if view.get("focus"):
+        starts = (starts - hidden) | {view["focus"]}
+        if level == "domain" and view["focus"] in owner:
+            starts.add(owner[view["focus"]])
     visible = graph.walk(level_graph, starts, view["depth"], view["dir"], hidden)
 
     # What a container holds at this level, and what folded into a collapsed one.
@@ -253,7 +268,7 @@ def render(data, cfg, view, links=None, markdown=False):
         """Lines for one container: a plain box, a wrapper with the boxes inside it,
         the boxes inside it without a wrapper of its own, or nothing."""
         container_id = container["id"]
-        if container_id in folded:
+        if container_id in folded or (container_id in hidden and container_id != view.get("focus")):
             return []
         mode = display_states.get(container_id, "expanded")
         if mode == "hidden":
@@ -264,18 +279,26 @@ def render(data, cfg, view, links=None, markdown=False):
         inside = [child_id for child_id in kids if child_id in visible and child_id not in folded]
         if is_cluster:
             # A cluster isn't a node in the walk: it draws only through what it holds.
+            # The focus is the exception: with everything it holds hidden, it is
+            # still one box of its own.
             if mode == "collapsed" and not folded_kids:
                 return []
-            if mode == "expanded" and not inside:
+            if mode == "expanded" and not inside and container_id != view.get("focus"):
                 return []
-        elif container_id not in visible and not folded_kids:
+        elif container_id not in visible and not folded_kids \
+                and not any(child_id in starts for child_id in kids):
+            # Not reached itself, and it holds no start either. A domain that
+            # holds one — the focus of a bounded-context view, say — still
+            # draws, so the start has a box to appear in.
             return []
         if mode == "contents":
             return [line for child_id in inside for line in draw_child(child_id, indent)]
         if mode == "expanded" and kids:
-            if not inside:
-                # Reached as a whole, so show what is inside it.
-                inside = [child_id for child_id in kids if child_id not in folded]
+            if not inside or container_id not in visible:
+                # Reached as a whole — or through a start it holds — so show
+                # what is inside it. A start is never hidden, not even by `hide`.
+                inside = [child_id for child_id in kids
+                          if child_id not in folded and (child_id not in hidden or child_id in starts)]
             if inside:
                 entry_lines = [f'{indent}subgraph {node_id(container_id)}["{text(container["name"])}"]']
                 for child_id in inside:
@@ -290,7 +313,8 @@ def render(data, cfg, view, links=None, markdown=False):
         # A plain box: the container alone. With `child_labels`, it names what it holds.
         label = text(container["name"])
         if view["child_labels"] and not container.get("single", False):
-            named = sorted(names[child_id] for child_id in container.get("contexts", []) if child_id != container_id)
+            named = sorted(names[child_id] for child_id in container.get("contexts", [])
+                           if child_id != container_id and child_id not in hidden)
             named += sorted(names[member] for member in container.get("members", []) if folded.get(member) == container_id)
             if named:
                 label = f"<b>{label}</b><br/>{text(', '.join(named))}"
@@ -301,7 +325,7 @@ def render(data, cfg, view, links=None, markdown=False):
 
     # A domain drawn inside another container comes from that container's own drawing.
     opens = {container_id for container_id, mode in display_states.items()
-             if mode in ("expanded", "contents") and container_id not in folded
+             if mode in ("expanded", "contents") and container_id not in folded and container_id not in hidden
              and (container_id not in domains or container_id in visible)}
 
     def at_top(container):
@@ -414,6 +438,8 @@ def check(data, cfg):
     for where, view in [("defaults", cfg["defaults"]), *((f"views.{view['id']}", view) for view in cfg["views"])]:
         if isinstance(view.get("display"), dict):
             errors += [f"mermaid.{where}.display: unknown container '{item_id}'" for item_id in view["display"] if item_id not in container_ids]
+        errors += [f"mermaid.{where}.hide: unknown id '{item_id}'" for item_id in (view.get("hide") or [])
+                   if item_id not in names and item_id not in {cluster["id"] for cluster in data["clusters"]}]
     return errors
 
 
@@ -478,6 +504,8 @@ def describe(data, view):
     domains, contexts, _, names = graph.index(data)
     reading = "Arrows point to what something depends on. "
     reading += "Upstream is at the top." if view.get("direction", "BT") == "BT" else ""
+    if view.get("hide"):
+        reading += " Some items are hidden in this view."
     focus = view.get("focus")
     if not focus:
         return reading
