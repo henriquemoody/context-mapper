@@ -10,17 +10,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # setuptools-scm reads the version from the git tags
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
-      - name: Check the tag matches the package version
-        if: github.event_name == 'release'
-        run: |
-          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml', 'rb'))['project']['version'])")
-          if [ "v$version" != "${{ github.event.release.tag_name }}" ]; then
-            echo "Tag ${{ github.event.release.tag_name }} does not match pyproject.toml version $version"
-            exit 1
-          fi
       - name: Build the package
         run: |
           python -m pip install --upgrade pip build

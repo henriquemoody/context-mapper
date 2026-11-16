@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=77"]
+requires = ["setuptools>=77", "setuptools-scm>=8"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "context-mapper"
-version = "0.20.2"
+dynamic = ["version"]
 description = "Builds an interactive context map and Mermaid diagrams from a YAML domain model."
 readme = "README.md"
 license = "ISC"
@@ -43,6 +43,8 @@ Issues = "https://github.com/henriquemoody/context-mapper/issues"
 
 [project.scripts]
 context-mapper = "context_mapper.build:main"
+
+[tool.setuptools_scm]
 
 [tool.setuptools.packages.find]
 where = ["src"]
