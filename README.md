@@ -2,6 +2,10 @@
 
 Builds a context map: an interactive page plus static Mermaid diagrams of your domains, bounded contexts, and the dependencies between them, from two YAML files. `context-map.yml` says what the map describes; `context-map.style.yml` says how it looks.
 
+[![Interactive context map](docs/screenshot.png)](https://henriquemoody.github.io/context-mapper/)
+
+The interactive page built from the [`example/`](example/) model, published by GitHub Actions — click the picture, or go straight to <https://henriquemoody.github.io/context-mapper/>.
+
 The build fails on unknown ids, duplicates, dependency cycles between bounded contexts, and unknown or invalid `context-map.style.yml` options, so a bad change breaks the build instead of the picture. It warns when two domains depend on each other.
 
 - `src/context_mapper/build.py` validates the model and builds everything.
