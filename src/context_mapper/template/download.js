@@ -31,6 +31,11 @@ function standaloneSvg(svg) {
   clone.setAttribute("width", Math.round(width));
   clone.setAttribute("height", Math.round(height));
   clone.removeAttribute("style");
+  // The font the labels show on the page is the page's own — Mermaid writes
+  // no font-family into the drawing — and the page's stylesheet doesn't
+  // travel with the file. Bake in the family the live diagram computes, so
+  // the download keeps what the screen shows.
+  clone.style.fontFamily = getComputedStyle(svg).fontFamily;
   // The page paints the diagram's background; a file of its own needs one of
   // its own, the same color, or a dark slide or a dark-mode README turns it
   // into dark text on a dark page. The viewBox need not start at 0, so the

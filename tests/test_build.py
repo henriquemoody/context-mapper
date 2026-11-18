@@ -227,6 +227,7 @@ def test_the_interactive_page_can_download_the_diagram(tmp_path):
     assert '<option value="svg">SVG</option>' in text
     assert '<button id="download">Download</button>' in text
     assert "function downloadDiagram" in text                 # the shared export script, spliced in
+    assert "getComputedStyle(svg).fontFamily" in text         # the page's font travels with the file
     assert "/*__DOWNLOAD__*/" not in text                     # never left behind
 
 

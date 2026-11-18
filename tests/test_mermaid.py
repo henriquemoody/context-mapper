@@ -535,6 +535,7 @@ def test_build_writes_the_download_links_into_the_page(tmp_path, example_data, e
     assert 'data-download="png"' in page
     assert 'data-download="svg"' in page
     assert "function downloadDiagram" in page    # the shared export script, spliced in
+    assert "getComputedStyle(svg).fontFamily" in page    # the page's font travels with the file
     assert "__DOWNLOAD__" not in page            # never left behind
     assert 'downloadDiagram(svg, a.dataset.download, "overview")' in page
 
