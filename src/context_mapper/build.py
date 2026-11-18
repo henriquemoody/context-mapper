@@ -133,7 +133,7 @@ def build_site(args):
     data, mermaid_section, links = load(args.model, args.diagrams)
     mermaid_cfg, _ = mermaid.settings(mermaid_section)
     payload = json.dumps({**data, "mermaid": mermaid.client_settings(mermaid_cfg), "links": links},
-                         ensure_ascii=False).replace("</", "<\\/")
+                         ensure_ascii=False, default=str).replace("</", "<\\/")
     html = render_index(payload)
     index = args.out / "index.html"
     args.out.mkdir(parents=True, exist_ok=True)

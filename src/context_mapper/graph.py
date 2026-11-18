@@ -9,15 +9,16 @@ Two levels:
 Three kinds of thing, in three sections: `types` is the role vocabulary of the
 model (a domain or bounded context has one, and it colors the box), `clusters`
 names a set of domains or contexts treated together (members point at one with
-`cluster:`), and `context-map` maps each id to what it is. A cluster holds
-members; a domain holds bounded contexts; neither can be depended on or hold
-the other's children. How anything first renders comes from `defaultDisplay` in
-the style file: a domain or a cluster can be expanded, collapsed, contents or
-hidden; a bounded context — a domain no context points at is one too — is one
-box with nothing inside, so it can only be expanded or hidden. No type name is
-special.
+`cluster:`), and `context-map` maps each id to what it is. An optional
+`attributes` section declares the attributes any entry can set, typed and
+checked by the build. A cluster holds members; a domain holds bounded
+contexts; neither can be depended on or hold the other's children. How anything
+first renders comes from `defaultDisplay` in the style file: a domain or a
+cluster can be expanded, collapsed, contents or hidden; a bounded context — a
+domain no context points at is one too — is one box with nothing inside, so it
+can only be expanded or hidden. No type name is special.
 """
-
+import datetime
 
 # Mermaid classDef attributes a box style may set, in `types`, `clusters` and
 # `context-map` alike. The build checks them, so a typo fails the build instead
@@ -25,6 +26,11 @@ special.
 BOX_STYLE_KEYS = {"color", "fill", "fill-opacity", "font-family", "font-size",
                   "font-weight", "opacity", "stroke", "stroke-dasharray",
                   "stroke-opacity", "stroke-width"}
+
+# The types an attribute can take. `text` is one value, `list` a list of
+# them, `map` label-to-value pairs, and `any` whatever shape the model wants:
+# the escape hatch, for an attribute a model declares for itself.
+ATTRIBUTE_TYPES = ("any", "list", "map", "text")
 
 # How a container first renders. expanded: the box and the boxes inside it.
 # collapsed: the box alone, the inside hidden. contents: the inside alone, the
@@ -48,6 +54,89 @@ def classdef(attrs, defaults=TEXT_DEFAULTS):
     return ",".join(f"{key}:{value}" for key, value in items)
 
 
+def is_scalar(value):
+    """A single value, not a list or a map: what a text attribute takes and
+    what a list or a map holds. A date counts, and a datetime is a date."""
+    return isinstance(value, (str, int, float, bool, datetime.date))
+
+
+def display_text(value):
+    """One value as the text to show: a bool reads as true or false, a date as
+    its ISO form, anything else as its own text."""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, datetime.date):
+        return value.isoformat()
+    return str(value)
+
+
+def any_value(value):
+    """An `any` value as the plain text, list and map the pages can show:
+    strings all the way down, and the parts with no value left out."""
+    if isinstance(value, dict):
+        return {str(key): any_value(item) for key, item in value.items() if item is not None}
+    if isinstance(value, list):
+        return [any_value(item) for item in value if item is not None]
+    return display_text(value)
+
+
+def check_attributes(where, values, definitions, errors):
+    """Check the attributes one entry sets and return them, coerced for
+    display. A bad attribute is an error and is left out; the others are kept,
+    so one typo does not hide the rest of the entry."""
+    if values is None:
+        return None
+    if not isinstance(values, dict):
+        errors.append(f"{where}.attributes: must be a map from attribute to value")
+        return None
+    if not values:
+        errors.append(f"{where}.attributes is empty")
+        return None
+    attributes = {}
+    for attribute_id, value in values.items():
+        definition = definitions.get(attribute_id)
+        if definition is None:
+            errors.append(f"{where}.attributes.{attribute_id}: unknown attribute, it is not in `attributes`")
+            continue
+        if value is None:
+            errors.append(f"{where}.attributes.{attribute_id}: must have a value")
+            continue
+        kind = definition["type"]
+        if kind == "text":
+            if isinstance(value, (dict, list)):
+                errors.append(f"{where}.attributes.{attribute_id}: a text attribute takes a single value")
+                continue
+            attributes[attribute_id] = display_text(value)
+        elif kind == "list":
+            if not isinstance(value, list):
+                errors.append(f"{where}.attributes.{attribute_id}: a list attribute takes a list of values")
+                continue
+            if not value:
+                errors.append(f"{where}.attributes.{attribute_id}: needs at least one value")
+                continue
+            if not all(is_scalar(item) for item in value):
+                errors.append(f"{where}.attributes.{attribute_id}: list values must be single values")
+                continue
+            attributes[attribute_id] = [display_text(item) for item in value]
+        elif kind == "map":
+            if not isinstance(value, dict):
+                errors.append(f"{where}.attributes.{attribute_id}: a map attribute takes a map from label to value")
+                continue
+            if not value:
+                errors.append(f"{where}.attributes.{attribute_id}: needs at least one value")
+                continue
+            if not all(is_scalar(item) for item in value.values()):
+                errors.append(f"{where}.attributes.{attribute_id} values must be single values")
+                continue
+            attributes[attribute_id] = {str(key): display_text(item) for key, item in value.items()}
+        else:  # any: whatever shape, as long as it can be shown
+            if isinstance(value, (dict, list)) and not value:
+                errors.append(f"{where}.attributes.{attribute_id}: needs at least one value")
+                continue
+            attributes[attribute_id] = any_value(value)
+    return attributes
+
+
 def box_style(section, item_id, style, defaults, required, errors, allowed=None,
               display_states=DISPLAY_STATES):
     """Check one box style map and return its classDef string, or None when there is nothing to draw."""
@@ -69,8 +158,8 @@ def box_style(section, item_id, style, defaults, required, errors, allowed=None,
 
 
 def normalize(model, styles=None):
-    """Turn context-map.yml and context-map.style.yml into {types, clusters, domains, contexts, edges}
-    plus a list of errors.
+    """Turn context-map.yml and context-map.style.yml into {types, clusters, domains, contexts, edges,
+    attributes} plus a list of errors.
 
     `styles` is the parsed context-map.style.yml. Its sections mirror the model's —
     `types`, `clusters`, `context-map` — keyed by the same ids.
@@ -87,7 +176,8 @@ def normalize(model, styles=None):
         if not model.get(section):
             errors.append(f"context-map.yml: `{section}` is missing or empty")
     if errors:
-        return {"types": {}, "clusters": [], "domains": [], "contexts": [], "edges": []}, errors
+        return ({"types": {}, "clusters": [], "domains": [], "contexts": [], "edges": [], "attributes": {}},
+                errors)
 
     types = {}
     for type_id, type_entry in model["types"].items():
@@ -106,6 +196,32 @@ def normalize(model, styles=None):
         if type_id not in model["types"]:
             errors.append(f"context-map.style.yml: types.{type_id}: unknown type, it is not in context-map.yml")
 
+    # Attributes: what an entry may set, declared once for the whole model.
+    # The build checks every value against these, so an attribute nobody
+    # declared, or a value of the wrong shape, fails the build instead of hiding.
+    attributes = {}
+    raw_attributes = model.get("attributes") or {}
+    if not isinstance(raw_attributes, dict):
+        errors.append("context-map.yml: `attributes` must be a map from attribute id to its definition")
+        raw_attributes = {}
+    for attribute_id, definition in raw_attributes.items():
+        if not isinstance(definition, dict):
+            errors.append(f"context-map.yml: attributes.{attribute_id}: needs a map with `type`")
+            continue
+        for key in definition:
+            if key not in ("name", "type"):
+                errors.append(f"context-map.yml: attributes.{attribute_id}.{key}: unknown option. Known: name, type")
+        kind = definition.get("type")
+        if kind is None:
+            errors.append(f"context-map.yml: attributes.{attribute_id}: needs a type")
+            continue
+        if kind not in ATTRIBUTE_TYPES:
+            errors.append(f"context-map.yml: attributes.{attribute_id}.type: must be one of "
+                          f"{', '.join(ATTRIBUTE_TYPES)}")
+            continue
+        attributes[attribute_id] = {"name": definition.get("name") or attribute_id[:1].upper() + attribute_id[1:],
+                                    "type": kind}
+
     # A cluster names a set of domains or contexts treated together. It holds
     # members, never bounded contexts, and nothing can depend on it.
     raw_entries = model.get("context-map") or {}
@@ -123,8 +239,9 @@ def normalize(model, styles=None):
             errors.append(f"context-map.yml: clusters.{cluster_id}: needs a map with `name`")
             continue
         for key in cluster:
-            if key != "name":
-                errors.append(f"context-map.yml: clusters.{cluster_id}.{key}: unknown option. Known: name")
+            if key not in ("name", "attributes"):
+                errors.append(f"context-map.yml: clusters.{cluster_id}.{key}: unknown option. "
+                              f"Known: {', '.join(sorted(('name', 'attributes')))}")
         if not cluster.get("name"):
             errors.append(f"context-map.yml: clusters.{cluster_id}: needs a name")
         if cluster_id in raw_entries:
@@ -164,7 +281,8 @@ def normalize(model, styles=None):
             errors.append(f"context-map.{entry_id}: needs a map with `name` and `type`")
             continue
         if "domain" in entry:
-            check_keys(entry_id, entry, ("name", "domain", "type", "cluster", "downstreams", "description"))
+            check_keys(entry_id, entry, ("name", "domain", "type", "cluster", "downstreams", "description",
+                                         "attributes"))
             if entry.get("cluster") is not None:
                 errors.append(f"context-map.{entry_id}: a bounded context is inside its domain "
                               "already, it can't also be in a cluster")
@@ -173,7 +291,7 @@ def normalize(model, styles=None):
                 errors.append(f"context-map.{entry_id}: unknown domain '{entry.get('domain')}'")
             raw_contexts.append((entry_id, entry))
         else:
-            check_keys(entry_id, entry, ("name", "type", "cluster", "downstreams", "description"))
+            check_keys(entry_id, entry, ("name", "type", "cluster", "downstreams", "description", "attributes"))
             check_cluster(entry_id, entry.get("cluster"))
             if entry.get("cluster") is not None:
                 member_of[entry_id] = entry["cluster"]
@@ -199,10 +317,15 @@ def normalize(model, styles=None):
             context_mermaid_style = box_style("context-map", context_id, context_style, TEXT_DEFAULTS, (), errors,
                                               allowed=BOX_STYLE_KEYS | {"defaultDisplay"},
                                               display_states=BOX_DISPLAY_STATES)
-            contexts.append({"id": context_id, "name": context_name, "type": context_type, "domain": domain_id,
+            context_entry = {"id": context_id, "name": context_name, "type": context_type, "domain": domain_id,
                              "description": context.get("description"),
                              "mermaid_style": context_mermaid_style,
-                             "defaultDisplay": context_style.get("defaultDisplay")})
+                             "defaultDisplay": context_style.get("defaultDisplay")}
+            context_attributes = check_attributes(f"context-map.{context_id}", context.get("attributes"),
+                                                 attributes, errors)
+            if context_attributes:
+                context_entry["attributes"] = context_attributes
+            contexts.append(context_entry)
             context_ids.append(context_id)
             if "downstreams" in context:
                 pending.append((context_id, f"context-map.{context_id}", context["downstreams"]))
@@ -211,14 +334,24 @@ def normalize(model, styles=None):
         mermaid_style = box_style("context-map", domain_id, domain_style, TEXT_DEFAULTS, (), errors,
                                   allowed=BOX_STYLE_KEYS | {"defaultDisplay"},
                                   display_states=DISPLAY_STATES if context_ids else BOX_DISPLAY_STATES)
-        domains.append({"id": domain_id, "name": domain.get("name"), "type": domain_type, "cluster": cluster,
+        domain_entry = {"id": domain_id, "name": domain.get("name"), "type": domain_type, "cluster": cluster,
                         "contexts": context_ids, "single": not context_ids,
                         "mermaid_style": mermaid_style, "defaultDisplay": domain_style.get("defaultDisplay"),
-                        "description": domain.get("description")})
+                        "description": domain.get("description")}
+        domain_attributes = check_attributes(f"context-map.{domain_id}", domain.get("attributes"),
+                                             attributes, errors)
+        if domain_attributes:
+            domain_entry["attributes"] = domain_attributes
+        domains.append(domain_entry)
         if not context_ids:
-            contexts.append({"id": domain_id, "name": domain.get("name"), "type": domain_type, "domain": domain_id,
-                             "description": domain.get("description"),
-                             "defaultDisplay": domain_style.get("defaultDisplay")})
+            # The domain is its own bounded context, and it takes the attributes
+            # the domain sets, as it takes its description.
+            single_context = {"id": domain_id, "name": domain.get("name"), "type": domain_type, "domain": domain_id,
+                              "description": domain.get("description"),
+                              "defaultDisplay": domain_style.get("defaultDisplay")}
+            if domain_attributes:
+                single_context["attributes"] = domain_attributes
+            contexts.append(single_context)
 
     clusters = []
     for cluster_id, cluster in raw_clusters.items():
@@ -228,9 +361,15 @@ def normalize(model, styles=None):
         members = [member for member, member_cluster in member_of.items() if member_cluster == cluster_id]
         if isinstance(cluster, dict) and not members and not errors:
             errors.append(f"context-map.yml: clusters.{cluster_id}: no entry points at it with `cluster:`")
-        clusters.append({"id": cluster_id, "name": cluster.get("name") if isinstance(cluster, dict) else None,
+        cluster_entry = {"id": cluster_id, "name": cluster.get("name") if isinstance(cluster, dict) else None,
                          "members": members, "mermaid_style": mermaid_style,
-                         "defaultDisplay": style.get("defaultDisplay")})
+                         "defaultDisplay": style.get("defaultDisplay")}
+        cluster_attributes = check_attributes(f"context-map.yml: clusters.{cluster_id}",
+                                              cluster.get("attributes") if isinstance(cluster, dict) else None,
+                                              attributes, errors)
+        if cluster_attributes:
+            cluster_entry["attributes"] = cluster_attributes
+        clusters.append(cluster_entry)
 
     seen = set(raw_entries)
 
@@ -261,7 +400,8 @@ def normalize(model, styles=None):
                     errors.append(f"unknown domain or context '{endpoint}' in {where}.downstreams")
             edges.append({"from": downstream, "to": owner, "style": edge_style, "comment": comment})
 
-    data = {"types": types, "clusters": clusters, "domains": domains, "contexts": contexts, "edges": edges}
+    data = {"types": types, "clusters": clusters, "domains": domains, "contexts": contexts, "edges": edges,
+            "attributes": attributes}
     if not errors:
         cycle = find_cycle(level_graph(data, "context"))
         if cycle:

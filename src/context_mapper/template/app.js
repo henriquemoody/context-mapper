@@ -522,9 +522,10 @@ function bindEdgeHover(svg, tips) {
   });
 }
 
-// Hovering a box shows its description, when it has one. The domain box that
-// wraps several bounded contexts is left out: there it is only background, and
-// its description has its own place on the domain view.
+// Hovering a box shows its description, when it has one, and the attributes
+// it sets. The domain box that wraps several bounded contexts is left out:
+// there it is only background, and its description has its own place on the
+// domain view.
 function bindBoxTips(svg) {
   const boxes = Object.entries(boxMapOf(svg)).filter(([, g]) => !g.classList.contains("cluster"));
   const innermost = target => {
@@ -536,8 +537,8 @@ function bindBoxTips(svg) {
   };
   svg.addEventListener("mousemove", ev => {
     if (ev.target.closest(".edge-hit")) return;  // the arrow's own tooltip owns the pointer here
-    const item = itemOfNode[innermost(ev.target) || ""];
-    if (item?.description) showTip([{ title: item.name, text: item.description }], ev);
+    const entries = boxTipEntries(itemOfNode[innermost(ev.target) || ""]);
+    if (entries.length) showTip(entries, ev);
     else hideTip();
   });
   svg.addEventListener("pointerleave", hideTip);
@@ -555,6 +556,17 @@ function showTip(note, ev) {
   if (!note.length) return hideTip();
   tip.replaceChildren(...note.map(n => {
     const p = document.createElement("p");
+    if (n.kind === "attr") {
+      // An attribute reads as a data row: a small field label, its value after
+      // it — not a second name. The hairline above the first one is CSS.
+      p.className = "attr";
+      const label = document.createElement("span");
+      label.className = "k";
+      label.textContent = n.title;
+      p.append(label, " ", n.text);
+      return p;
+    }
+    if (n.kind) p.className = n.kind;
     const title = document.createElement("b");
     title.textContent = n.title;
     p.append(title, document.createElement("br"), n.text);
@@ -573,6 +585,45 @@ const link = id => `<a data-go="${id}">${escapeHtml(nameOf(id))}</a>`;
 const list = ids => ids.length ? "<ul>" + ids.map(id => `<li>${link(id)}</li>`).join("") + "</ul>" : '<p class="hint">None</p>';
 const chip = type => { const t = MODEL.types[type]; return `<span class="chip" style="background:${t.fill};border-color:${t.stroke}">${t.name}</span>`; };
 
+// An attribute's value as the text to show: a list as its items, a map as
+// label-to-value pairs, anything else as it is.
+const attributeText = v => Array.isArray(v) ? v.map(attributeText).join(", ")
+  : (v && typeof v === "object" ? Object.entries(v).map(([k, item]) => `${k}: ${attributeText(item)}`).join(" · ")
+  : String(v));
+
+// The attributes the item sets, in the order the model declared them: the id,
+// the label to show and the value. An item that sets none has none.
+const attributeEntries = item => Object.entries(MODEL.attributes || {})
+  .filter(([id]) => item.attributes && id in item.attributes)
+  .map(([id, def]) => ({ id, label: def.name, value: item.attributes[id] }));
+
+// The attributes the item sets, one line each, in the order the model
+// declared them. An item that sets none shows nothing.
+const attributeRows = item => `<ul>
+  ${attributeEntries(item)
+    .map(({ label, value }) => `<li class="hint"><b>${escapeHtml(label)}:</b> ${escapeHtml(attributeText(value))}</li>`)
+    .join("")}
+</ul>`;
+
+// The attributes of the item, under a heading like the panel's other sections.
+// An item that sets none shows neither the heading nor the rows.
+const attributeSection = item => {
+  const rows = attributeRows(item);
+  return rows ? "<h3>Attributes</h3>" + rows : "";
+};
+
+// The tooltip entries of a box: its description first, then one entry per
+// attribute it sets, in the order the model declared them. The attribute
+// entries carry `kind: "attr"` so the tooltip can dress them as data rather
+// than as names — under a hairline, in the panel's small-label style. A model
+// can leave the attributes out of the tooltips with `attribute_tooltips: false`.
+const boxTipEntries = item => {
+  if (!item) return [];
+  const entries = item.description ? [{ kind: "desc", title: item.name, text: item.description }] : [];
+  if (!DIAGRAM.attribute_tooltips) return entries;
+  return entries.concat(attributeEntries(item).map(({ label, value }) => ({ kind: "attr", title: label, text: attributeText(value) })));
+};
+
 function renderInfo(s, visible) {
   const legend = '<div class="legend">' + Object.keys(MODEL.types).map(chip).join("") + "</div>";
   if (!s.focus) {
@@ -590,12 +641,14 @@ function renderInfo(s, visible) {
   let html;
   if (clusterById[id]) {
     html = `<h2>${escapeHtml(item.name)}</h2><span class="hint">Cluster</span>
-      <p><a href="mermaid/index.html">All diagrams</a></p>
-      <h3>Members</h3><ul>${item.members.map(itemWith).join("")}</ul>`;
+      <p><a href="mermaid/index.html">All diagrams</a></p>`;
+    html += attributeSection(item);
+    html += `<h3>Members</h3><ul>${item.members.map(itemWith).join("")}</ul>`;
   } else {
     html = `<h2>${escapeHtml(item.name)}</h2>${chip(item.type)} <span class="hint">${domainById[id] ? "Domain" : "Bounded context"}</span>
       <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>`;
     if (item.description) html += `<p class="hint">${escapeHtml(item.description)}</p>`;
+    html += attributeSection(item);
     if (isMulti(id)) {
       html += `<h3>Bounded contexts</h3><ul>${domainById[id].contexts.map(itemWith).join("")}</ul>`;
     } else if (isMulti(owner[id])) {

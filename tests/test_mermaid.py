@@ -15,6 +15,7 @@ def test_settings_fills_in_the_defaults():
     assert cfg["look"] == "classic"
     assert cfg["curve"] == "basis"
     assert cfg["pages"] == "all"
+    assert cfg["attribute_tooltips"] is True
     assert cfg["defaults"]["level"] == "context"
     assert cfg["defaults"]["depth"] == 1
     assert cfg["defaults"]["dir"] == "both"
@@ -29,6 +30,18 @@ def test_settings_keeps_what_the_style_file_says():
     assert cfg["direction"] == "LR"
     assert cfg["layout"] == "elk"
     assert cfg["curve"] == "step"
+
+
+def test_settings_accepts_attribute_tooltips_off():
+    cfg, errors = mermaid.settings({"attribute_tooltips": False})
+    assert errors == []
+    assert cfg["attribute_tooltips"] is False
+    assert mermaid.client_settings(cfg)["attribute_tooltips"] is False
+
+
+def test_settings_rejects_an_attribute_tooltips_that_is_not_a_boolean():
+    _, errors = mermaid.settings({"attribute_tooltips": "show"})
+    assert any("mermaid.attribute_tooltips must be true or false" in err for err in errors), errors
 
 
 def test_settings_turns_style_maps_into_classdef_strings():
@@ -538,6 +551,35 @@ def test_build_writes_the_download_links_into_the_page(tmp_path, example_data, e
     assert "getComputedStyle(svg).fontFamily" in page    # the page's font travels with the file
     assert "__DOWNLOAD__" not in page            # never left behind
     assert 'downloadDiagram(svg, a.dataset.download, "overview")' in page
+
+
+# --- attributes --------------------------------------------------------------
+
+
+def test_build_writes_the_attributes_into_the_page(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "checkout.html").read_text()
+    assert '<p class="hint"><b>Service:</b> checkout-service</p>' in page
+    assert "<b>Aggregates:</b> Order, Cart" in page
+
+
+def test_build_writes_the_attributes_into_the_markdown(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    markdown = (tmp_path / "markdown" / "checkout.md").read_text()
+    assert "**Service:** checkout-service" in markdown
+    assert "**Aggregates:** Order, Cart" in markdown
+
+
+def test_build_leaves_out_the_attributes_of_an_item_that_sets_none(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "search.html").read_text()
+    assert "<b>Service:</b>" not in page
+
+
+def test_attribute_text_shows_a_list_and_a_map_inline():
+    assert mermaid.attribute_text("one") == "one"
+    assert mermaid.attribute_text(["one", "two"]) == "one, two"
+    assert mermaid.attribute_text({"owner": "team", "on-call": "#team"}) == "owner: team · on-call: #team"
 
 
 # --- describe and item_description -------------------------------------------

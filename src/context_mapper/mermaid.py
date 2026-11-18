@@ -34,6 +34,7 @@ TOP_DEFAULTS = {
     "focus_style": {"stroke-width": "4px", "font-weight": "bold"},
     "domain_style": {"fill": "#ffffff", "stroke": "#b0b0b0"},
     "edge_styles": {},
+    "attribute_tooltips": True,
     "pages": "all",
     "views": [],
 }
@@ -68,6 +69,9 @@ def settings(config):
     for key in ("direction", "layout", "look", "curve"):
         if cfg[key] not in ALLOWED[key]:
             errors.append(f"mermaid.{key} must be one of: {', '.join(sorted(ALLOWED[key]))}")
+
+    if not isinstance(cfg["attribute_tooltips"], bool):
+        errors.append("mermaid.attribute_tooltips must be true or false")
 
     for key in cfg["defaults"]:
         if key not in VIEW_DEFAULTS:
@@ -166,6 +170,7 @@ def client_settings(cfg):
         "focus_style": cfg["focus_style"],
         "domain_style": cfg["domain_style"],
         "edge_styles": cfg["edge_styles"],
+        "attribute_tooltips": cfg["attribute_tooltips"],
         "display": defaults["display"],
         "hide": defaults["hide"],
         "child_labels": defaults["child_labels"],
@@ -550,6 +555,35 @@ def item_description(data, view):
     return (item or {}).get("description")
 
 
+def attribute_text(value):
+    """An attribute's value as the text to show: a list as its items, a map
+    as label-to-value pairs, anything else as it is."""
+    if isinstance(value, list):
+        return ", ".join(attribute_text(item) for item in value)
+    if isinstance(value, dict):
+        return " · ".join(f"{key}: {attribute_text(item)}" for key, item in value.items())
+    return str(value)
+
+
+def attribute_rows(data, focus):
+    """The attributes the focused item sets, as (label, text) pairs, in the
+    order the model declared them."""
+    if not focus:
+        return []
+    domains, contexts, _, _ = graph.index(data)
+    clusters = {cluster["id"]: cluster for cluster in data["clusters"]}
+    item = domains.get(focus) or contexts.get(focus) or clusters.get(focus)
+    if not item:
+        return []
+    values = item.get("attributes") or {}
+    rows = []
+    for attribute_id, definition in (data.get("attributes") or {}).items():
+        if attribute_id not in values:
+            continue
+        rows.append((definition.get("name") or attribute_id, attribute_text(values[attribute_id])))
+    return rows
+
+
 def facts(data, view):
     """Membership and direct relations for a focused page, as (heading, [ids]) pairs."""
     focus = view.get("focus")
@@ -627,9 +661,13 @@ def build(data, config, out):
             name=json.dumps(view["id"]),
         )
         body = body.replace("__DOWNLOAD__", textwrap.indent(DOWNLOAD_JS, "  "))
+        rows = attribute_rows(data, view.get("focus"))
+        about_html = f'<p class="hint">{html.escape(about)}</p>' if about else ""
+        about_html += "".join(f'<p class="hint"><b>{html.escape(label)}:</b> {html.escape(text)}</p>'
+                              for label, text in rows)
         (html_dir / f"{view['id']}.html").write_text(PAGE.format(
             title=html.escape(title),
-            about=f'<p class="hint">{html.escape(about)}</p>' if about else "",
+            about=about_html,
             description=html.escape(desc), interactive=interactive, body=body))
 
         def md_link(item_id):
@@ -638,6 +676,8 @@ def build(data, config, out):
         md = [f"# {title}", ""]
         if about:
             md += [about, ""]
+        for label, text in rows:
+            md += [f"**{label}:** {text}", ""]
         md += [desc, "", "```mermaid", render(data, cfg, view, markdown=True).rstrip(), "```", ""]
         for heading, item_ids in facts(data, view):
             md += [f"**{heading}:** " + (", ".join(md_link(item_id) for item_id in item_ids) or "None"), ""]

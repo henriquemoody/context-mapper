@@ -18,6 +18,16 @@ def example_style_without_links(tmp_path, extra=""):
     style.write_text(yaml.safe_dump(sections, sort_keys=False) + extra)
     return style
 
+
+def example_style_with_mermaid(tmp_path, **options):
+    """The example style file with the given options set in its `mermaid` section."""
+    sections = yaml.safe_load(EXAMPLE_STYLE.read_text())
+    sections["mermaid"].update(options)
+    style = tmp_path / "style.yml"
+    style.write_text(yaml.safe_dump(sections, sort_keys=False))
+    return style
+
+
 CYCLE_MODEL = """\
 types:
   core: { name: Core }
@@ -237,6 +247,64 @@ def test_main_puts_the_links_in_the_page(tmp_path):
     build.main(["--model", str(EXAMPLE_MODEL), "--diagrams", str(style), "--out", str(out)])
     text = (out / "index.html").read_text()
     assert '"links": {"Repository": "https://github.com/org/repo"}' in text
+
+
+def test_main_puts_the_attributes_in_the_page(tmp_path):
+    out = tmp_path / "public"
+    build.main(["--model", str(EXAMPLE_MODEL), "--diagrams", str(EXAMPLE_STYLE), "--out", str(out)])
+    text = (out / "index.html").read_text()
+    assert '"attributes": {"service": {"name": "Service", "type": "text"}' in text
+    assert '"attributes": {"service": "checkout-service", "aggregates": ["Order", "Cart"]}' in text
+    assert '"aggregates": ["Product", "Inventory"]' in text
+
+
+DATE_MODEL = """\
+types:
+  core: { name: Core }
+attributes:
+  metadata: { type: any }
+context-map:
+  alpha:
+    name: Alpha
+    type: core
+    attributes:
+      metadata: { released: 2026-11-18 }
+"""
+
+
+def test_main_builds_a_model_with_a_date_in_an_attribute(tmp_path):
+    """A YAML date is a date, not a string: the build shows it as its ISO form."""
+    model = tmp_path / "model.yml"
+    model.write_text(DATE_MODEL)
+    style = tmp_path / "style.yml"
+    style.write_text(STYLE)
+    out = tmp_path / "public"
+    build.main(["--model", str(model), "--diagrams", str(style), "--out", str(out)])
+    text = (out / "index.html").read_text()
+    assert '"metadata": {"released": "2026-11-18"}' in text
+
+
+def test_main_puts_the_attribute_tooltips_in_the_page(tmp_path):
+    out = tmp_path / "public"
+    build.main(["--model", str(EXAMPLE_MODEL), "--diagrams", str(EXAMPLE_STYLE), "--out", str(out)])
+    text = (out / "index.html").read_text()
+    assert '"attribute_tooltips": true' in text
+
+
+def test_main_turns_the_attribute_tooltips_off(tmp_path):
+    style = example_style_with_mermaid(tmp_path, attribute_tooltips=False)
+    out = tmp_path / "public"
+    build.main(["--model", str(EXAMPLE_MODEL), "--diagrams", str(style), "--out", str(out)])
+    text = (out / "index.html").read_text()
+    assert '"attribute_tooltips": false' in text
+
+
+def test_the_panel_shows_the_attributes_under_a_heading(tmp_path):
+    out = tmp_path / "public"
+    build.main(["--model", str(EXAMPLE_MODEL), "--diagrams", str(EXAMPLE_STYLE), "--out", str(out)])
+    text = (out / "index.html").read_text()
+    assert "<h3>Attributes</h3>" in text
+    assert "const attributeSection" in text
 
 
 def test_main_refuses_a_model_file_that_is_not_there(tmp_path):

@@ -31,6 +31,11 @@ main { display: grid; grid-template-columns: 1fr 320px; height: calc(100vh - 58p
 #tip { display: none; position: fixed; z-index: 10; max-width: 320px; padding: 8px 10px; border-radius: 6px; background: var(--ink); color: #fff; font-size: 13px; pointer-events: none; box-shadow: 0 2px 8px rgba(0,0,0,.25); }
 #tip p { margin: 0; }
 #tip p + p { margin-top: 6px; }
+/* Box tooltips: the item's attributes sit apart from its name, under a hairline,
+   as data rows — a small uppercase label in the panel's section-heading style,
+   then the value. Arrow tooltips carry no attribute entries, so they are untouched. */
+#tip p.desc + p.attr { margin-top: 9px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.22); }
+#tip p.attr .k { font-size: 11px; letter-spacing: .04em; color: rgba(255,255,255,.6); margin-right: 2px; }
 aside { border-left: 1px solid var(--line); background: var(--panel); padding: 16px; overflow: auto; }
 aside h2 { font-size: 20px; margin: 0 0 4px; }
 aside h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 18px 0 6px; }

@@ -20,6 +20,13 @@
 # Every entry can also carry a `description`: the interactive page shows it as
 # a tooltip when you hover over its box, and the item's page shows it in text.
 #
+# Entries can also set `attributes`: the ones the `attributes` section
+# below declares. The build fails on an attribute that was never declared,
+# or a value of the wrong shape for the one it declares, so a typo breaks
+# the build instead of hiding. An attribute of `type: any` takes whatever
+# shape: one named `metadata` is the free-form way, there when a model
+# wants it and not built in.
+#
 # A dependency can point at a domain when we don't know yet which of its
 # contexts is involved. Move it to the right context once we know.
 #
@@ -34,6 +41,15 @@ types:
 clusters:
   foundations: { name: Shared Foundations }
 
+# Attributes, declared once: any entry in `context-map` or `clusters` can
+# set them with `attributes:`. `text` takes a single value, `list` a list
+# of them, `map` label-to-value pairs, `any` whatever shape. The item's page
+# and the interactive panel show them under the description.
+attributes:
+  service:    { name: Service, type: text }
+  aggregates: { name: Aggregates, type: list }
+  metadata:   { type: any }
+
 # A context takes its domain's `type` unless it sets its own.
 context-map:
   # Shared foundations: used by most domains.
@@ -42,6 +58,8 @@ context-map:
     type: generic
     cluster: foundations
     description: Accounts and logins. Everyone signs in here.
+    attributes:
+      service: identity-service
     downstreams:
       checkout: Creates an account for guests who check out.
       crm:                                          # a bare key: depends on it, no comment yet
@@ -49,6 +67,9 @@ context-map:
     name: Payments
     type: generic
     cluster: foundations
+    attributes:
+      service: payments-service
+      metadata: { owned by: Payments platform, on-call: "#payments-support" }
     downstreams:
       checkout: Charges the payment method and signals whether it went through.
       fulfillment: Captures the payment once the order ships, and refunds returns.
@@ -57,6 +78,8 @@ context-map:
     name: Catalog
     type: core
     description: Everything that can be bought, with its prices and availability.
+    attributes:
+      aggregates: [Product, Inventory]
     downstreams:                                    # the whole catalog: we don't know which context yet
       checkout:
         comment: Reads prices and availability at checkout time.
@@ -64,6 +87,7 @@ context-map:
   browsing:
     name: Browsing
     domain: catalog
+    attributes: { aggregates: [Session Cart] }
   search:
     name: Search
     domain: catalog
@@ -77,10 +101,16 @@ context-map:
     name: Checkout
     domain: orders
     description: Takes a cart and turns it into a paid order.
+    attributes:
+      service: checkout-service
+      aggregates: [Order, Cart]
   fulfillment:
     name: Fulfillment
     domain: orders
     type: supporting                                # a context can override its domain's type
+    attributes:
+      service: fulfillment-service
+      aggregates: [Shipment, Return]
 
   crm:
     name: CRM

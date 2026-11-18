@@ -1,4 +1,6 @@
 """The model logic: normalization, levels, walks and relations."""
+import datetime
+
 import pytest
 
 from context_mapper import graph
@@ -94,15 +96,121 @@ def test_normalize_carries_the_descriptions_through(example_data):
 
 
 def test_normalize_accepts_the_current_names_only():
-    """`label` was the old name for a type's name; it is an unknown option now."""
+    """`label` was the old name for a type's name; it is an unknown option now.
+    An attribute is declared in the `attributes` section, not on a type."""
     errors = errors_of({
         "types": {"core": {"name": "Core", "label": "Core"}},
         "context-map": {"alpha": {"name": "Alpha", "type": "core"}},
     })
     assert any("types.core.label" in e and "unknown option" in e for e in errors), errors
+    errors = errors_of({
+        "types": {"core": {"name": "Core", "attributes": {"service": "x"}}},
+        "context-map": {"alpha": {"name": "Alpha", "type": "core"}},
+    })
+    assert any("types.core.attributes" in e and "unknown option" in e for e in errors), errors
+
+
+# --- normalize, attributes ---------------------------------------------------
+
+
+def test_normalize_reads_the_attributes_the_example_declares(example_data):
+    attributes = example_data["attributes"]
+    assert attributes["service"] == {"name": "Service", "type": "text"}
+    assert attributes["aggregates"] == {"name": "Aggregates", "type": "list"}
+    assert attributes["metadata"] == {"name": "Metadata", "type": "any"}
+
+
+def test_normalize_has_no_attributes_when_the_model_declares_none(tiny_data):
+    assert tiny_data["attributes"] == {}
+
+
+def test_normalize_carries_the_attributes_of_a_context(example_data):
+    contexts = {c["id"]: c for c in example_data["contexts"]}
+    assert contexts["checkout"]["attributes"] == {"service": "checkout-service",
+                                                  "aggregates": ["Order", "Cart"]}
+
+
+def test_normalize_carries_the_attributes_of_a_domain(example_data):
+    domains = {d["id"]: d for d in example_data["domains"]}
+    assert domains["catalog"]["attributes"] == {"aggregates": ["Product", "Inventory"]}
+
+
+def test_normalize_carries_the_attributes_of_a_single_domain_to_its_context(example_data):
+    """A domain with no bounded contexts is one itself, and it keeps its attributes."""
+    domains = {d["id"]: d for d in example_data["domains"]}
+    contexts = {c["id"]: c for c in example_data["contexts"]}
+    assert domains["payments"]["attributes"] == {
+        "service": "payments-service",
+        "metadata": {"owned by": "Payments platform", "on-call": "#payments-support"},
+    }
+    assert contexts["payments"]["attributes"] == domains["payments"]["attributes"]
+
+
+def test_normalize_leaves_out_the_attributes_an_entry_does_not_set(example_data):
+    contexts = {c["id"]: c for c in example_data["contexts"]}
+    assert "attributes" not in contexts["search"]
+
+
+def test_normalize_attaches_the_attributes_of_a_cluster(tiny_model, tiny_style):
+    tiny_model["attributes"] = {"owner": {"name": "Owner", "type": "text"}}
+    tiny_model["clusters"]["base"]["attributes"] = {"owner": "platform"}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    clusters = {c["id"]: c for c in data["clusters"]}
+    assert clusters["base"]["attributes"] == {"owner": "platform"}
+
+
+def test_normalize_names_an_attribute_after_itself_when_no_name_is_given():
+    data, errors = graph.normalize({
+        "types": {"core": {"name": "Core"}},
+        "attributes": {"service": {"type": "text"}},
+        "context-map": {"alpha": {"name": "Alpha", "type": "core"}},
+    }, STYLE)
+    assert errors == []
+    assert data["attributes"]["service"] == {"name": "Service", "type": "text"}
+
+
+def test_normalize_coerces_the_values_of_an_attribute():
+    """Everything an attribute holds is shown as text: a bool reads as true or
+    false, a number as its digits, a date as its ISO form."""
+    data, errors = graph.normalize({
+        "types": {"core": {"name": "Core"}},
+        "attributes": {
+            "flag": {"type": "text"},
+            "count": {"type": "text"},
+            "day": {"type": "text"},
+            "labels": {"type": "map"},
+            "anything": {"type": "any"},
+        },
+        "context-map": {"alpha": {"name": "Alpha", "type": "core", "attributes": {
+            "flag": True,
+            "count": 3,
+            "day": datetime.date(2026, 11, 18),
+            "labels": {1: "one"},
+            "anything": {"a": [1, True, {"b": datetime.date(2026, 11, 18)}], "c": None},
+        }}},
+    }, STYLE)
+    assert errors == []
+    contexts = {c["id"]: c for c in data["contexts"]}
+    attributes = contexts["alpha"]["attributes"]
+    assert attributes["flag"] == "true"
+    assert attributes["count"] == "3"
+    assert attributes["day"] == "2026-11-18"
+    assert attributes["labels"] == {"1": "one"}
+    assert attributes["anything"] == {"a": ["1", "true", {"b": "2026-11-18"}]}
 
 
 # --- normalize, the error matrix --------------------------------------------
+
+
+def attributes_model(attributes, values):
+    """A one-type model declaring the given attributes, and one entry that
+    sets the given values."""
+    return {
+        "types": {"core": {"name": "Core"}},
+        "attributes": attributes,
+        "context-map": {"alpha": {"name": "Alpha", "type": "core", "attributes": values}},
+    }
 
 
 @pytest.mark.parametrize("model, style, expected", [
@@ -258,6 +366,193 @@ def test_normalize_accepts_the_current_names_only():
         ),
         {**STYLE, "context-map": {"ctx": {"bogus": 1}}},
         "context-map.ctx.bogus: unknown option",
+    ),
+    (
+        attributes_model({"service": {"type": "text"}}, ["checkout-service"]),
+        STYLE,
+        "context-map.alpha.attributes: must be a map from attribute to value",
+    ),
+    (
+        attributes_model({"service": {"type": "text"}}, {}),
+        STYLE,
+        "context-map.alpha.attributes is empty",
+    ),
+    (
+        attributes_model({"service": {"type": "text"}}, {"ghost": "x"}),
+        STYLE,
+        "context-map.alpha.attributes.ghost: unknown attribute, it is not in `attributes`",
+    ),
+    (
+        attributes_model({"service": {"type": "text"}}, {"service": ["a", "b"]}),
+        STYLE,
+        "context-map.alpha.attributes.service: a text attribute takes a single value",
+    ),
+    (
+        attributes_model({"service": {"type": "text"}}, {"service": {"a": "b"}}),
+        STYLE,
+        "context-map.alpha.attributes.service: a text attribute takes a single value",
+    ),
+    (
+        attributes_model({"tags": {"type": "list"}}, {"tags": "one"}),
+        STYLE,
+        "context-map.alpha.attributes.tags: a list attribute takes a list of values",
+    ),
+    (
+        attributes_model({"tags": {"type": "list"}}, {"tags": {"a": "b"}}),
+        STYLE,
+        "context-map.alpha.attributes.tags: a list attribute takes a list of values",
+    ),
+    (
+        attributes_model({"tags": {"type": "list"}}, {"tags": ["a", ["b"]]}),
+        STYLE,
+        "context-map.alpha.attributes.tags: list values must be single values",
+    ),
+    (
+        attributes_model({"tags": {"type": "list"}}, {"tags": []}),
+        STYLE,
+        "context-map.alpha.attributes.tags: needs at least one value",
+    ),
+    (
+        attributes_model({"labels": {"type": "map"}}, {"labels": "one"}),
+        STYLE,
+        "context-map.alpha.attributes.labels: a map attribute takes a map from label to value",
+    ),
+    (
+        attributes_model({"labels": {"type": "map"}}, {"labels": ["a"]}),
+        STYLE,
+        "context-map.alpha.attributes.labels: a map attribute takes a map from label to value",
+    ),
+    (
+        attributes_model({"labels": {"type": "map"}}, {"labels": {"a": ["b"]}}),
+        STYLE,
+        "context-map.alpha.attributes.labels values must be single values",
+    ),
+    (
+        attributes_model({"labels": {"type": "map"}}, {"labels": {}}),
+        STYLE,
+        "context-map.alpha.attributes.labels: needs at least one value",
+    ),
+    (
+        attributes_model({"service": {"type": "text"}}, {"service": None}),
+        STYLE,
+        "context-map.alpha.attributes.service: must have a value",
+    ),
+    (
+        {
+            "types": {"core": {"name": "Core"}},
+            "attributes": {"service": {"type": "text"}},
+            "clusters": {"grp": {"name": "Group", "attributes": {"ghost": "x"}}},
+            "context-map": {"alpha": {"name": "Alpha", "type": "core", "cluster": "grp"}},
+        },
+        {**STYLE, "clusters": {"grp": {"fill": "#fff", "stroke": "#000"}}},
+        "context-map.yml: clusters.grp.attributes.ghost: unknown attribute, it is not in `attributes`",
+    ),
+    (
+        {
+            "types": {"core": {"name": "Core"}},
+            "attributes": {"service": {"type": "text"}},
+            "context-map": {"alpha": {"name": "Alpha", "type": "core", "customFields": {"service": "x"}}},
+        },
+        STYLE,
+        "context-map.alpha.customFields: unknown option. "
+        "Known: attributes, cluster, description, downstreams, name, type",
+    ),
+    (
+        {
+            "types": {"core": {"name": "Core"}},
+            "attributes": {"service": {"type": "text"}},
+            "context-map": {"alpha": {"name": "Alpha", "type": "core", "properties": {"service": "x"}}},
+        },
+        STYLE,
+        "context-map.alpha.properties: unknown option. "
+        "Known: attributes, cluster, description, downstreams, name, type",
+    ),
+    (
+        {
+            "types": {"core": {"name": "Core"}},
+            "attributes": {"service": {"type": "text"}},
+            "context-map": {
+                "dom": {"name": "Dom", "type": "core"},
+                "ctx": {"name": "Ctx", "domain": "dom", "type": "core", "customFields": {"service": "x"}},
+            },
+        },
+        STYLE,
+        "context-map.ctx.customFields: unknown option. "
+        "Known: attributes, cluster, description, domain, downstreams, name, type",
+    ),
+    (
+        {
+            "types": {"core": {"name": "Core"}},
+            "attributes": {"service": {"type": "text"}},
+            "clusters": {"grp": {"name": "Group", "customFields": {"service": "x"}}},
+            "context-map": {"alpha": {"name": "Alpha", "type": "core", "cluster": "grp"}},
+        },
+        {**STYLE, "clusters": {"grp": {"fill": "#fff", "stroke": "#000"}}},
+        "context-map.yml: clusters.grp.customFields: unknown option. Known: attributes, name",
+    ),
+    (
+        {
+            "types": {"core": {"name": "Core"}},
+            "attributes": {"service": {"type": "text"}},
+            "clusters": {"grp": {"name": "Group", "properties": {"service": "x"}}},
+            "context-map": {"alpha": {"name": "Alpha", "type": "core", "cluster": "grp"}},
+        },
+        {**STYLE, "clusters": {"grp": {"fill": "#fff", "stroke": "#000"}}},
+        "context-map.yml: clusters.grp.properties: unknown option. Known: attributes, name",
+    ),
+    (
+        {
+            "types": {"core": {"name": "Core"}},
+            "attributes": ["service"],
+            "context-map": {"alpha": {"name": "Alpha", "type": "core"}},
+        },
+        STYLE,
+        "context-map.yml: `attributes` must be a map from attribute id to its definition",
+    ),
+    (
+        {
+            "types": {"core": {"name": "Core"}},
+            "attributes": "service",
+            "context-map": {"alpha": {"name": "Alpha", "type": "core"}},
+        },
+        STYLE,
+        "context-map.yml: `attributes` must be a map from attribute id to its definition",
+    ),
+    (
+        {
+            "types": {"core": {"name": "Core"}},
+            "attributes": {"service": "text"},
+            "context-map": {"alpha": {"name": "Alpha", "type": "core"}},
+        },
+        STYLE,
+        "context-map.yml: attributes.service: needs a map with `type`",
+    ),
+    (
+        {
+            "types": {"core": {"name": "Core"}},
+            "attributes": {"service": {"name": "Service"}},
+            "context-map": {"alpha": {"name": "Alpha", "type": "core"}},
+        },
+        STYLE,
+        "context-map.yml: attributes.service: needs a type",
+    ),
+    (
+        {
+            "types": {"core": {"name": "Core"}},
+            "attributes": {"service": {"type": "number"}},
+            "context-map": {"alpha": {"name": "Alpha", "type": "core"}},
+        },
+        STYLE,
+        "context-map.yml: attributes.service.type: must be one of any, list, map, text",
+    ),
+    (
+        {
+            "types": {"core": {"name": "Core"}},
+            "attributes": {"service": {"type": "text", "unit": "x"}},
+            "context-map": {"alpha": {"name": "Alpha", "type": "core"}},
+        },
+        STYLE,
+        "context-map.yml: attributes.service.unit: unknown option. Known: name, type",
     ),
 ])
 def test_normalize_rejects_a_broken_model(model, style, expected):

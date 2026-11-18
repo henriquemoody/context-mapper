@@ -6,7 +6,7 @@ Builds a context map: an interactive page plus static Mermaid diagrams of your d
 
 The interactive page built from the [`example/`](example/) model, published by GitHub Actions — click the picture, or go straight to <https://henriquemoody.github.io/context-mapper/>.
 
-The build fails on unknown ids, duplicates, dependency cycles between bounded contexts, and unknown or invalid `context-map.style.yml` options, so a bad change breaks the build instead of the picture. It warns when two domains depend on each other.
+The build fails on unknown ids, duplicates, dependency cycles between bounded contexts, attributes that were never declared or hold the wrong shape, and unknown or invalid `context-map.style.yml` options, so a bad change breaks the build instead of the picture. It warns when two domains depend on each other.
 
 - `src/context_mapper/build.py` validates the model and builds everything.
 - `src/context_mapper/graph.py` holds the model logic: levels, lifting context dependencies to domains, and the focus walk.
@@ -76,6 +76,34 @@ A domain no context points at is a single bounded context with the same name.
 
 At domain level, context dependencies are lifted to their domains and merged, and dependencies inside a domain disappear.
 
+## Attributes
+
+An optional `attributes` section declares what extra data the model carries: which service a context is, the aggregates inside it, anything. Nothing is built in — a model declares its own attributes, one type each, and any entry in `context-map` or `clusters` carries its values under `attributes:` too. The build fails on an attribute that was never declared or a value of the wrong shape, so a typo in the data breaks the build instead of hiding. A declared attribute no entry sets is fine, like a type nobody uses.
+
+```yaml
+attributes:
+  service:    { name: Service, type: text }
+  aggregates: { name: Aggregates, type: list }
+  metadata:   { type: any }            # the free-form way, for a model that wants one
+
+context-map:
+  checkout:
+    name: Checkout
+    domain: orders
+    attributes:
+      service: checkout-service
+      aggregates: [Order, Cart]
+```
+
+| Type | A value |
+| --- | --- |
+| `text` | A single value. |
+| `list` | A list of single values. |
+| `map` | A map from label to single value. |
+| `any` | Any shape, nesting included. |
+
+The label is the declared `name`, or the attribute id with its first letter uppercased, and the attributes show in the order they were declared. The item's page shows them under the description — the Markdown page too — and so does the interactive page's panel for the focused item, under an Attributes heading: one line per attribute, a list joined with commas, a map as `label: value` pairs. Hovering a box shows them as tooltips too, unless the style file turns that off with `mermaid.attribute_tooltips: false`. `type: any` is the escape hatch: there is no free-form key by default, but a model that wants one declares an attribute named `metadata` and writes whatever it likes there.
+
 ## What gets built
 
 | Output | What it is |
@@ -134,6 +162,7 @@ The rest lives in the `mermaid` section. Every style in it is a map of the same 
 | `theme_variables` | map | Passed to Mermaid as-is (fonts, colors). |
 | `config` | map | Any other [Mermaid config](https://mermaid.js.org/config/schema-docs/config.html), merged over the above. For example `elk.nodePlacementStrategy`. |
 | `markdown_config` | map | Merged over everything for `<out>/markdown/*.md` only. GitLab's built-in Mermaid has no ELK, so the example sets `layout: dagre` here. |
+| `attribute_tooltips` | `true`, `false` | Whether hovering a box shows its attributes too. The interactive page only; `true` by default. |
 | `focus_style` | map of Mermaid attributes | How the focused item is highlighted. |
 | `domain_style` | map of Mermaid attributes | Style of the box around a domain's bounded contexts. A domain with its own style under `context-map` overrides it — and its type colors, when drawn as one box. |
 | `edge_styles.solid`, `edge_styles.dotted` | map of Mermaid attributes | Line styles. Dotted comes from `style: dotted` on a downstream. |
