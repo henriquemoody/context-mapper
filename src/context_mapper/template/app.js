@@ -114,6 +114,20 @@ const levelSel = $("level"), focusSel = $("focus"), depthSel = $("depth"), dirSe
     group(`Bounded contexts: ${d.name}`, MODEL.contexts.filter(c => c.domain === d.id && !domainById[c.id])));
 })();
 
+// Header links from the style file: every label goes in as text, never as
+// HTML, in the order the file lists them. With nothing to show, the nav
+// leaves the header entirely, so no empty flex child holds a stray gap.
+(function fillLinks() {
+  const nav = $("links");
+  Object.entries(MODEL.links || {}).forEach(([label, url]) => {
+    const a = document.createElement("a");
+    a.href = url;
+    a.textContent = label;
+    nav.appendChild(a);
+  });
+  if (!nav.childElementCount) nav.remove();
+})();
+
 const DIAGRAM = MODEL.mermaid;
 
 // A container first renders as the view says, else as its own `defaultDisplay` says, else expanded.

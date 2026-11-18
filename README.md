@@ -114,6 +114,14 @@ context-map:
 
 A style also fills in a readable text `color` when you don't set one.
 
+Links sit in a `links` section of their own: a map from the link's text to where it goes, shown in the header of the interactive page in the order written. A repository — on GitHub, GitLab or anywhere else — an issue tracker, a document, anything. Without the section, the header shows none.
+
+```yaml
+links:
+  Repository: https://github.com/henriquemoody/context-mapper
+  Issues: https://github.com/henriquemoody/context-mapper/issues
+```
+
 The rest lives in the `mermaid` section. Every style in it is a map of the same Mermaid attributes as above, so `focus_style`, `domain_style` and `edge_styles` read like `types`, `clusters` and `context-map`. It styles the interactive page (`index.html`) and the static pages alike, since both are drawn with Mermaid. The interactive page uses the view `defaults` (such as `display` and `hide`) as its starting state. Unknown keys fail the build, so a typo tells you instead of doing nothing.
 
 | Option | Values | What it does |

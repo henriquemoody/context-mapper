@@ -4,9 +4,19 @@ import sys
 from pathlib import Path
 
 import pytest
+import yaml
 from conftest import EXAMPLE_MODEL, EXAMPLE_STYLE
 
 from context_mapper import build
+
+
+def example_style_without_links(tmp_path, extra=""):
+    """The example style file with its `links` section taken out, plus `extra` YAML."""
+    sections = yaml.safe_load(EXAMPLE_STYLE.read_text())
+    sections.pop("links", None)
+    style = tmp_path / "style.yml"
+    style.write_text(yaml.safe_dump(sections, sort_keys=False) + extra)
+    return style
 
 CYCLE_MODEL = """\
 types:
@@ -97,12 +107,37 @@ def test_parse_args_takes_the_flags():
 
 
 def test_load_reads_the_example():
-    data, mermaid_config = build.load(EXAMPLE_MODEL, EXAMPLE_STYLE)
+    data, mermaid_config, links = build.load(EXAMPLE_MODEL, EXAMPLE_STYLE)
     assert len(data["domains"]) == 5
     assert len(data["contexts"]) == 7
     assert len(data["edges"]) == 6
     assert mermaid_config["direction"] == "BT"
     assert len(mermaid_config["views"]) == 4
+    assert links == {"Repository": "https://github.com/henriquemoody/context-mapper",
+                     "Issues": "https://github.com/henriquemoody/context-mapper/issues"}
+
+
+def test_load_reads_the_links_section(tmp_path):
+    style = example_style_without_links(tmp_path, "links:\n  Repository: https://github.com/org/repo\n"
+                                               "  Issue tracker: https://github.com/org/repo/issues\n")
+    _, _, links = build.load(EXAMPLE_MODEL, style)
+    assert list(links) == ["Repository", "Issue tracker"]  # in the order written
+    assert links["Repository"] == "https://github.com/org/repo"
+    assert links["Issue tracker"] == "https://github.com/org/repo/issues"
+
+
+def test_load_refuses_links_that_are_not_a_map(tmp_path, capsys):
+    style = example_style_without_links(tmp_path, "links:\n  - https://github.com/org/repo\n")
+    with pytest.raises(SystemExit):
+        build.load(EXAMPLE_MODEL, style)
+    assert "links must be a map from label to URL" in capsys.readouterr().err
+
+
+def test_load_refuses_a_link_without_a_url(tmp_path, capsys):
+    style = example_style_without_links(tmp_path, "links:\n  Repository:\n")
+    with pytest.raises(SystemExit):
+        build.load(EXAMPLE_MODEL, style)
+    assert "links.Repository: must be a URL string" in capsys.readouterr().err
 
 
 def test_load_warns_when_the_domains_depend_on_each_other(tmp_path, capsys):
@@ -110,7 +145,7 @@ def test_load_warns_when_the_domains_depend_on_each_other(tmp_path, capsys):
     model.write_text(CYCLE_MODEL)
     style = tmp_path / "style.yml"
     style.write_text(STYLE)
-    data, _ = build.load(model, style)
+    data, _, _ = build.load(model, style)
     assert len(data["domains"]) == 2
     assert "domains depend on each other" in capsys.readouterr().err
 
@@ -181,6 +216,14 @@ def test_box_tooltips_map_node_ids_back_to_items(tmp_path):
     assert 'itemOfNode[nodeId(item.id)] = item' in text        # the node id -> item map
     assert 'itemOfNode[innermost(ev.target) || ""]' in text    # box tooltips go through it
     assert "descriptionOf" not in text                         # no lookup by SVG id left
+
+
+def test_main_puts_the_links_in_the_page(tmp_path):
+    style = example_style_without_links(tmp_path, "links:\n  Repository: https://github.com/org/repo\n")
+    out = tmp_path / "public"
+    build.main(["--model", str(EXAMPLE_MODEL), "--diagrams", str(style), "--out", str(out)])
+    text = (out / "index.html").read_text()
+    assert '"links": {"Repository": "https://github.com/org/repo"}' in text
 
 
 def test_main_refuses_a_model_file_that_is_not_there(tmp_path):

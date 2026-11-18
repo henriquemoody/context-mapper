@@ -25,6 +25,13 @@ clusters:
 context-map:
   catalog: { fill: "#f7f7ff", stroke: "#6631d7" }
 
+# Links the interactive page shows in its header, in this order: the link's
+# text, then where it goes — a repository, an issue tracker, anything.
+# Without this section the header shows no links.
+links:
+  Repository: https://github.com/henriquemoody/context-mapper
+  Issues: https://github.com/henriquemoody/context-mapper/issues
+
 mermaid:
   direction: BT          # BT: upstream on top. Also TB, LR, RL.
   theme: base            # base, default, neutral, dark, forest
