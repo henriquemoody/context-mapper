@@ -570,10 +570,9 @@ const chip = type => { const t = MODEL.types[type]; return `<span class="chip" s
 
 function renderInfo(s, visible) {
   const legend = '<div class="legend">' + Object.keys(MODEL.types).map(chip).join("") + "</div>";
-  const howTo = `<h3>How to read</h3><p class="hint">An arrow from A to B means A depends on B. Upstream is at the top. The outer boxes are domains, the coloured boxes inside them are bounded contexts. The Show &amp; hide form in the right panel has a control for every domain and cluster: a multi-context domain or a cluster can be expanded (the boxes inside it), collapsed (one box), or hidden — a dashed underline marks a cluster's — and a one-box domain hides with a toggle. Focusing on a domain or a cluster lists what it holds, and each item there can be hidden too. Click a box to focus on it.</p>`;
   if (!s.focus) {
     $("info").innerHTML = `<h2>Whole system</h2><p class="hint">${visible.size} items shown. Pick a domain, cluster or bounded context to see only what it touches.</p>
-      <p><a href="mermaid/index.html">Static diagrams</a></p>${legend}${howTo}`;
+      <p><a href="mermaid/index.html">Static diagrams</a></p>${legend}`;
     return;
   }
   const id = s.focus;
@@ -608,7 +607,7 @@ function renderInfo(s, visible) {
       if (dDowns.length) html += `<h3>${pname} as a whole is used by</h3>${list(dDowns)}`;
     }
   }
-  $("info").innerHTML = html + `<h3>Legend</h3>${legend}${howTo}`;
+  $("info").innerHTML = html + `<h3>Legend</h3>${legend}`;
 }
 
 const setHidden = (id, hide) => {
@@ -632,5 +631,15 @@ Object.entries(displaySels).forEach(([id, sel]) => sel.addEventListener("change"
 $("reset").addEventListener("click", () => { history.replaceState(null, "", location.pathname); readHash(); render(); });
 window.addEventListener("hashchange", () => { readHash(); render(); });
 
+// Downloading the diagram as it stands, named after what it shows.
+$("download").addEventListener("click", () => {
+  const svg = $("graph").querySelector("svg");
+  if (!svg) return;  // nothing rendered to download
+  const s = state();
+  const name = ["context-map", s.focus, s.level === "domain" ? "domain" : null].filter(Boolean).join("-");
+  downloadDiagram(svg, $("image").value, name);
+});
+
 readHash();
 render();
+/*__DOWNLOAD__*/

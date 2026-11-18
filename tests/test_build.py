@@ -218,6 +218,18 @@ def test_box_tooltips_map_node_ids_back_to_items(tmp_path):
     assert "descriptionOf" not in text                         # no lookup by SVG id left
 
 
+def test_the_interactive_page_can_download_the_diagram(tmp_path):
+    out = tmp_path / "public"
+    build.main(["--model", str(EXAMPLE_MODEL), "--diagrams", str(EXAMPLE_STYLE), "--out", str(out)])
+    text = (out / "index.html").read_text()
+    assert '<select id="image">' in text                      # PNG or SVG
+    assert '<option value="png">PNG</option>' in text
+    assert '<option value="svg">SVG</option>' in text
+    assert '<button id="download">Download</button>' in text
+    assert "function downloadDiagram" in text                 # the shared export script, spliced in
+    assert "/*__DOWNLOAD__*/" not in text                     # never left behind
+
+
 def test_main_puts_the_links_in_the_page(tmp_path):
     style = example_style_without_links(tmp_path, "links:\n  Repository: https://github.com/org/repo\n")
     out = tmp_path / "public"

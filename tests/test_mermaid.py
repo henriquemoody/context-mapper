@@ -529,6 +529,16 @@ def test_build_writes_the_diagram_into_the_page(tmp_path, example_data, example_
     assert "```mermaid" in markdown
 
 
+def test_build_writes_the_download_links_into_the_page(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "overview.html").read_text()
+    assert 'data-download="png"' in page
+    assert 'data-download="svg"' in page
+    assert "function downloadDiagram" in page    # the shared export script, spliced in
+    assert "__DOWNLOAD__" not in page            # never left behind
+    assert 'downloadDiagram(svg, a.dataset.download, "overview")' in page
+
+
 # --- describe and item_description -------------------------------------------
 
 

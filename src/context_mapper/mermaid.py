@@ -6,6 +6,7 @@ there and the README for every option. build.py calls `build(data, config, out)`
 import html
 import json
 import re
+import textwrap
 from pathlib import Path
 
 from . import graph
@@ -451,6 +452,10 @@ def check(data, cfg):
     return errors
 
 
+# The download script is shared with the interactive page: build.py splices it
+# into app.js, here it goes into every static diagram page's script.
+DOWNLOAD_JS = (Path(__file__).parent / "template" / "download.js").read_text().strip()
+
 PAGE = """<!doctype html>
 <html lang="en">
 <head>
@@ -485,7 +490,8 @@ PAGE = """<!doctype html>
 </html>
 """
 
-DIAGRAM = """<div id="diagram">Loading diagram...</div>
+DIAGRAM = """<p class="hint">Download: <a href="#" data-download="png">PNG</a> · <a href="#" data-download="svg">SVG</a></p>
+<div id="diagram">Loading diagram...</div>
 {relations}
 <details><summary>Mermaid source</summary><pre>{escaped}</pre></details>
 <script type="text/plain" id="source">{raw}</script>
@@ -502,6 +508,12 @@ DIAGRAM = """<div id="diagram">Loading diagram...</div>
   }} catch (err) {{
     el.textContent = "Could not render this diagram: " + err.message;
   }}
+  document.querySelectorAll("[data-download]").forEach(a => a.addEventListener("click", ev => {{
+    ev.preventDefault();
+    const svg = el.querySelector("svg");
+    if (svg) downloadDiagram(svg, a.dataset.download, {name});
+  }}));
+__DOWNLOAD__
 </script>"""
 
 ELK = ('const { default: elkLayouts } = await import("https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs");\n'
@@ -612,7 +624,9 @@ def build(data, config, out):
             escaped=html.escape(source),
             raw=source,
             elk=ELK if uses_elk(cfg) else "",
+            name=json.dumps(view["id"]),
         )
+        body = body.replace("__DOWNLOAD__", textwrap.indent(DOWNLOAD_JS, "  "))
         (html_dir / f"{view['id']}.html").write_text(PAGE.format(
             title=html.escape(title),
             about=f'<p class="hint">{html.escape(about)}</p>' if about else "",

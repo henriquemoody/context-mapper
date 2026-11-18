@@ -80,8 +80,8 @@ At domain level, context dependencies are lifted to their domains and merged, an
 
 | Output | What it is |
 | --- | --- |
-| `<out>/index.html` | Interactive view. Switch between bounded contexts and domains, click anything to focus on it, hide anything from the side panel, hover a box or an arrow for the details. |
-| `<out>/mermaid/*.html` | One static Mermaid page per domain, per bounded context, and per named view. Click a box to jump to its page. |
+| `<out>/index.html` | Interactive view. Switch between bounded contexts and domains, click anything to focus on it, hide anything from the side panel, hover a box or an arrow for the details, download the view as a PNG or SVG image. |
+| `<out>/mermaid/*.html` | One static Mermaid page per domain, per bounded context, and per named view. Click a box to jump to its page, download the diagram as a PNG or SVG image. |
 | `<out>/markdown/*.md` | The same diagrams as Markdown. GitLab renders them natively, and they can go to Confluence. |
 
 ## Run locally

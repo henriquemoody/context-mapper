@@ -119,7 +119,9 @@ def render_index(payload):
     """The interactive page: the skeleton with the stylesheet, the script and the model spliced in."""
     html = (TEMPLATE_DIR / "index.html").read_text()
     css = (TEMPLATE_DIR / "style.css").read_text().strip()
-    js = (TEMPLATE_DIR / "app.js").read_text().replace("/*__MODEL__*/null", payload).strip()
+    download = (TEMPLATE_DIR / "download.js").read_text().strip()
+    js = (TEMPLATE_DIR / "app.js").read_text().replace("/*__MODEL__*/null", payload)
+    js = js.replace("/*__DOWNLOAD__*/", download).strip()
     return html.replace("/*__STYLE__*/", css).replace("/*__SCRIPT__*/", js)
 
 
