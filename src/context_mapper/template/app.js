@@ -96,7 +96,7 @@ function relations(id) {
 }
 
 const $ = id => document.getElementById(id);
-const levelSel = $("level"), focusSel = $("focus"), depthSel = $("depth"), dirSel = $("dir");
+const levelSel = $("level"), focusSel = $("focus"), depthIn = $("depth"), dirSel = $("dir");
 
 (function fillFocus() {
   const byName = (a, b) => a.name.localeCompare(b.name);
@@ -216,8 +216,13 @@ if (DIAGRAM.elk) {
 }
 mermaid.initialize({ startOnLoad: false, securityLevel: "loose" });
 
+// The depth field takes any whole number of hops; anything else — empty,
+// fractional, negative — falls back to the nearest whole hop, at least 1.
+const clampDepth = raw => Math.max(1, Math.trunc(Number(raw) || 1));
+
 function state() {
-  return { level: levelSel.value, focus: focusSel.value, depth: Number(depthSel.value), dir: dirSel.value,
+  depthIn.value = clampDepth(depthIn.value);  // the field snaps to what it stands for
+  return { level: levelSel.value, focus: focusSel.value, depth: Number(depthIn.value), dir: dirSel.value,
            display: displayModes(), hide: new Set(hiddenContexts) };
 }
 
@@ -225,7 +230,7 @@ function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   levelSel.value = p.get("level") === "domain" ? "domain" : "context";
   focusSel.value = p.has("focus") && (owner[p.get("focus")] || clusterById[p.get("focus")]) ? p.get("focus") : "";
-  depthSel.value = p.get("depth") || "1";
+  depthIn.value = clampDepth(p.get("depth"));
   dirSel.value = p.get("dir") || "both";
   Object.entries(displaySels).forEach(([id, sel]) => {
     const m = p.get("display." + id);
@@ -622,7 +627,7 @@ $("panel").addEventListener("click", ev => {
   const go = ev.target.closest("[data-go]");
   if (go) { focusSel.value = go.dataset.go; render(); }
 });
-[levelSel, focusSel, depthSel, dirSel].forEach(el => el.addEventListener("change", render));
+[levelSel, focusSel, depthIn, dirSel].forEach(el => el.addEventListener("change", render));
 // A container's select takes over from a hide the moment it is touched.
 Object.entries(displaySels).forEach(([id, sel]) => sel.addEventListener("change", () => {
   hiddenContexts.delete(id);

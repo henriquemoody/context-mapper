@@ -144,7 +144,7 @@ These can be set under `defaults` and overridden per view:
 | Option | Values | What it does |
 | --- | --- | --- |
 | `level` | `context`, `domain` | Bounded contexts inside domain boxes, or one box per domain. |
-| `depth` | number, `99` for all | Hops out from the focus. |
+| `depth` | whole number, `99` for all | Hops out from the focus. |
 | `dir` | `both`, `up`, `down` | Depends on, used by, or both. |
 | `display` | `expanded`, `collapsed`, `contents`, `hidden`, or a map from container id to one of those | How containers first render. A single value applies to every container; a map leaves the rest to their own `defaultDisplay` in the style file. |
 | `hide` | a list of ids | What the view never draws, no matter what: hiding a domain or a cluster takes everything inside it, hiding a bounded context only its own box and arrows. In the whole system that trims domains and clusters; in a domain's view it leaves out bounded contexts; in a cluster's view, members. The focus itself is never hidden. |
@@ -185,6 +185,6 @@ pages:
 - `index.html#focus=foundations`: interactive, the foundations cluster, opened, and what its members touch
 - `index.html#level=domain&focus=orders`: interactive, the Orders domain and its neighbors
 - `index.html#focus=orders&hide.fulfillment=1`: interactive, the Orders domain without the Fulfillment context
-- Other hash options: `depth=1|2|99`, `dir=both|up|down`, `display.<domain id>=expanded|collapsed|contents|hidden`, `hide.<id>=1|0`
+- Other hash options: `depth=<n>`, `dir=both|up|down`, `display.<domain id>=expanded|collapsed|contents|hidden`, `hide.<id>=1|0`
 - `mermaid/checkout.html`: static diagram for Checkout
 - `mermaid/index.html`: all static diagrams
