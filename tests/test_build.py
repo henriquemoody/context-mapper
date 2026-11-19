@@ -307,6 +307,15 @@ def test_the_panel_shows_the_attributes_under_a_heading(tmp_path):
     assert "const attributeSection" in text
 
 
+def test_the_panel_shows_a_list_attribute_as_a_list(tmp_path):
+    """A list attribute renders as a <ul>, one <li> per item, not text joined
+    with commas. The tooltips keep the inline form: they are data rows."""
+    out = tmp_path / "public"
+    build.main(["--model", str(EXAMPLE_MODEL), "--diagrams", str(EXAMPLE_STYLE), "--out", str(out)])
+    text = (out / "index.html").read_text()
+    assert "Array.isArray(v)" in text  # the list case, ahead of the inline one
+
+
 def test_main_refuses_a_model_file_that_is_not_there(tmp_path):
     with pytest.raises(SystemExit) as excinfo:
         build.main([

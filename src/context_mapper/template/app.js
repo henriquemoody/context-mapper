@@ -597,11 +597,17 @@ const attributeEntries = item => Object.entries(MODEL.attributes || {})
   .filter(([id]) => item.attributes && id in item.attributes)
   .map(([id, def]) => ({ id, label: def.name, value: item.attributes[id] }));
 
+// An attribute's value as the panel shows it: a list as a list, one line
+// per item, under the attribute's label. Anything else is the inline text.
+const attributeValue = v => Array.isArray(v)
+  ? "<ul>" + v.map(item => `<li>${escapeHtml(attributeText(item))}</li>`).join("") + "</ul>"
+  : escapeHtml(attributeText(v));
+
 // The attributes the item sets, one line each, in the order the model
 // declared them. An item that sets none shows nothing.
 const attributeRows = item => `<ul>
   ${attributeEntries(item)
-    .map(({ label, value }) => `<li class="hint"><b>${escapeHtml(label)}:</b> ${escapeHtml(attributeText(value))}</li>`)
+    .map(({ label, value }) => `<li class="hint"><b>${escapeHtml(label)}:</b> ${attributeValue(value)}</li>`)
     .join("")}
 </ul>`;
 

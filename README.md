@@ -106,7 +106,7 @@ context-map:
 | `map` | A map from label to single value. |
 | `any` | Any shape, nesting included. |
 
-The label is the declared `name`, or the attribute id with its first letter uppercased, and the attributes show in the order they were declared. The item's page shows them under the description — the Markdown page too — and so does the interactive page's panel for the focused item, under an Attributes heading: one line per attribute, a list joined with commas, a map as `label: value` pairs. Hovering a box shows them as tooltips too, unless the style file turns that off with `mermaid.attribute_tooltips: false`. `type: any` is the escape hatch: there is no free-form key by default, but a model that wants one declares an attribute named `metadata` and writes whatever it likes there.
+The label is the declared `name`, or the attribute id with its first letter uppercased, and the attributes show in the order they were declared. The item's page shows them under the description — the Markdown page too — and so does the interactive page's panel for the focused item, under an Attributes heading: one line per attribute, a map as `label: value` pairs. In the panel a list attribute shows as a list, one item per line; everywhere else — the item's page, the Markdown page, the tooltips — it reads inline, joined with commas. Hovering a box shows them as tooltips too, unless the style file turns that off with `mermaid.attribute_tooltips: false`. `type: any` is the escape hatch: there is no free-form key by default, but a model that wants one declares an attribute named `metadata` and writes whatever it likes there.
 
 ## What gets built
 

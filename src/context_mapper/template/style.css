@@ -40,6 +40,8 @@ aside { border-left: 1px solid var(--line); background: var(--panel); padding: 1
 aside h2 { font-size: 20px; margin: 0 0 4px; }
 aside h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 18px 0 6px; }
 aside ul { margin: 0; padding-left: 18px; }
+/* A list attribute in the panel: its items under the label, a touch apart. */
+aside li ul { margin-top: 4px; }
 aside a { color: var(--accent); text-decoration: none; cursor: pointer; }
 aside a:hover { text-decoration: underline; }
 .chip { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; border: 1px solid; }
