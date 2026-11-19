@@ -9,9 +9,15 @@ import mermaid, { elkLayouts } from "./mermaid.js";
 
 // src/context_mapper/template/core/model.js
 var MODEL = globalThis.contextMapperModel ?? null;
-var domainById = Object.fromEntries(MODEL.domains.map((d2) => [d2.id, d2]));
-var contextById = Object.fromEntries(MODEL.contexts.map((c2) => [c2.id, c2]));
-var clusterById = Object.fromEntries(MODEL.clusters.map((c2) => [c2.id, c2]));
+var domainById = Object.fromEntries(
+  MODEL.domains.map((d2) => [d2.id, d2])
+);
+var contextById = Object.fromEntries(
+  MODEL.contexts.map((c2) => [c2.id, c2])
+);
+var clusterById = Object.fromEntries(
+  MODEL.clusters.map((c2) => [c2.id, c2])
+);
 var owner = {};
 MODEL.contexts.forEach((c2) => owner[c2.id] = c2.domain);
 MODEL.domains.forEach((d2) => owner[d2.id] = d2.id);
@@ -25,7 +31,12 @@ var defaultMode = (id) => {
   if (d2 === null || d2 === void 0) return defaultDisplayOf(id);
   return typeof d2 === "object" ? d2[id] || defaultDisplayOf(id) : d2;
 };
-var MODES = [["expanded", "Expanded"], ["collapsed", "Collapsed"], ["contents", "Contents"], ["hidden", "Hidden"]];
+var MODES = [
+  ["expanded", "Expanded"],
+  ["collapsed", "Collapsed"],
+  ["contents", "Contents"],
+  ["hidden", "Hidden"]
+];
 var DEFAULT_HIDE = /* @__PURE__ */ new Set([
   ...STYLE_HIDE,
   ...MODEL.contexts.filter((c2) => c2.defaultDisplay === "hidden").map((c2) => c2.id)
@@ -40,7 +51,8 @@ function hashFor(s2) {
   if (s2.depth !== 1) p2.set("depth", s2.depth);
   if (s2.dir !== "both") p2.set("dir", s2.dir);
   Object.entries(s2.display).forEach(([id, mode]) => {
-    if (mode !== defaultMode(id) && !s2.hide.has(id)) p2.set("display." + id, mode);
+    if (mode !== defaultMode(id) && !s2.hide.has(id))
+      p2.set("display." + id, mode);
   });
   s2.hide.forEach((id) => {
     if (!DEFAULT_HIDE.has(id)) p2.set("hide." + id, "1");
@@ -53,7 +65,10 @@ function hashFor(s2) {
 }
 function parseHash(hash) {
   const p2 = new URLSearchParams(hash);
-  const containers = [...MODEL.domains.filter((d2) => !d2.single).map((d2) => d2.id), ...MODEL.clusters.map((c2) => c2.id)];
+  const containers = [
+    ...MODEL.domains.filter((d2) => !d2.single).map((d2) => d2.id),
+    ...MODEL.clusters.map((c2) => c2.id)
+  ];
   const hide = new Set(DEFAULT_HIDE);
   for (const [key, value] of p2) {
     const m2 = /^hide\.(.+)$/.exec(key);
@@ -61,10 +76,12 @@ function parseHash(hash) {
     if (value === "1") hide.add(m2[1]);
     else if (value === "0") hide.delete(m2[1]);
   }
-  const display = Object.fromEntries(containers.map((id) => {
-    const m2 = p2.get("display." + id);
-    return [id, MODES.some(([value]) => value === m2) ? m2 : defaultMode(id)];
-  }));
+  const display = Object.fromEntries(
+    containers.map((id) => {
+      const m2 = p2.get("display." + id);
+      return [id, MODES.some(([value]) => value === m2) ? m2 : defaultMode(id)];
+    })
+  );
   containers.forEach((id) => {
     if (hide.has(id)) display[id] = "hidden";
   });
@@ -83,16 +100,29 @@ function levelGraph(level) {
   const childOf = {};
   MODEL.domains.filter((d2) => d2.cluster).forEach((d2) => childOf[d2.id] = d2.cluster);
   if (level === "context") {
-    const nodes = /* @__PURE__ */ new Set([...MODEL.contexts.map((c2) => c2.id), ...MODEL.domains.filter((d2) => !d2.single).map((d2) => d2.id)]);
+    const nodes = /* @__PURE__ */ new Set([
+      ...MODEL.contexts.map((c2) => c2.id),
+      ...MODEL.domains.filter((d2) => !d2.single).map((d2) => d2.id)
+    ]);
     MODEL.contexts.filter((c2) => !domainById[c2.domain].single).forEach((c2) => childOf[c2.id] = c2.domain);
-    return { nodes, childOf, edges: MODEL.edges.map((e2) => ({ from: e2.from, to: e2.to, styles: /* @__PURE__ */ new Set([e2.style]), via: [e2] })) };
+    return {
+      nodes,
+      childOf,
+      edges: MODEL.edges.map((e2) => ({
+        from: e2.from,
+        to: e2.to,
+        styles: /* @__PURE__ */ new Set([e2.style]),
+        via: [e2]
+      }))
+    };
   }
   const merged = /* @__PURE__ */ new Map();
   MODEL.edges.forEach((e2) => {
     const a2 = owner[e2.from], b2 = owner[e2.to];
     if (a2 === b2) return;
     const key = a2 + "|" + b2;
-    if (!merged.has(key)) merged.set(key, { from: a2, to: b2, styles: /* @__PURE__ */ new Set(), via: [] });
+    if (!merged.has(key))
+      merged.set(key, { from: a2, to: b2, styles: /* @__PURE__ */ new Set(), via: [] });
     merged.get(key).styles.add(e2.style);
     merged.get(key).via.push(e2);
   });
@@ -102,10 +132,15 @@ function levelGraph(level) {
     edges: [...merged.values()]
   };
 }
-var GRAPHS = { context: levelGraph("context"), domain: levelGraph("domain") };
+var GRAPHS = {
+  context: levelGraph("context"),
+  domain: levelGraph("domain")
+};
 function descendants(g2, ids) {
   const kids = {};
-  Object.entries(g2.childOf).forEach(([c2, p2]) => (kids[p2] = kids[p2] || []).push(c2));
+  Object.entries(g2.childOf).forEach(
+    ([c2, p2]) => (kids[p2] = kids[p2] || []).push(c2)
+  );
   const out = /* @__PURE__ */ new Set();
   const stack = [...ids];
   while (stack.length) {
@@ -120,7 +155,10 @@ function focusSet(level, focus) {
   if (!focus) return /* @__PURE__ */ new Set();
   if (clusterById[focus]) {
     const starts = /* @__PURE__ */ new Set([focus, ...clusterById[focus].members]);
-    if (level === "context") clusterById[focus].members.forEach((m2) => domainById[m2].contexts.forEach((c2) => starts.add(c2)));
+    if (level === "context")
+      clusterById[focus].members.forEach(
+        (m2) => domainById[m2].contexts.forEach((c2) => starts.add(c2))
+      );
     return starts;
   }
   if (level === "domain") return /* @__PURE__ */ new Set([owner[focus]]);
@@ -144,12 +182,16 @@ function walk(g2, starts, depth, dir, hidden) {
     let frontier = [...starts];
     for (let i2 = 0; i2 < depth && frontier.length; i2++) {
       const nf = [];
-      frontier.forEach((n2) => (next[n2] || []).forEach((m2) => descendants(g2, [m2]).forEach((r2) => {
-        if (!seen.has(r2) && allowed(r2)) {
-          seen.add(r2);
-          nf.push(r2);
-        }
-      })));
+      frontier.forEach(
+        (n2) => (next[n2] || []).forEach(
+          (m2) => descendants(g2, [m2]).forEach((r2) => {
+            if (!seen.has(r2) && allowed(r2)) {
+              seen.add(r2);
+              nf.push(r2);
+            }
+          })
+        )
+      );
       frontier = nf;
     }
   };
@@ -170,14 +212,24 @@ function relations(id) {
 var nodeId = (id) => id.replace(/\W/g, "_");
 var quote = (value) => value.replaceAll('"', "#quot;");
 var itemOfNode = {};
-[...MODEL.contexts, ...MODEL.domains, ...MODEL.clusters].forEach((item) => itemOfNode[nodeId(item.id)] = item);
+[...MODEL.contexts, ...MODEL.domains, ...MODEL.clusters].forEach(
+  (item) => itemOfNode[nodeId(item.id)] = item
+);
 function mermaidSource(s2) {
   const g2 = GRAPHS[s2.level];
   let starts = focusSet(s2.level, s2.focus);
-  const containers = [...MODEL.domains.filter((d2) => !d2.single), ...MODEL.clusters];
+  const containers = [
+    ...MODEL.domains.filter((d2) => !d2.single),
+    ...MODEL.clusters
+  ];
   const state2 = {};
-  containers.forEach((d2) => state2[d2.id] = starts.has(d2.id) ? "expanded" : s2.display[d2.id] || defaultMode(d2.id));
-  const hidden = descendants(g2, [...containers.filter((d2) => state2[d2.id] === "hidden").map((d2) => d2.id), ...s2.hide]);
+  containers.forEach(
+    (d2) => state2[d2.id] = starts.has(d2.id) ? "expanded" : s2.display[d2.id] || defaultMode(d2.id)
+  );
+  const hidden = descendants(g2, [
+    ...containers.filter((d2) => state2[d2.id] === "hidden").map((d2) => d2.id),
+    ...s2.hide
+  ]);
   if (s2.focus) {
     starts = new Set([...starts].filter((id) => !hidden.has(id)));
     starts.add(s2.focus);
@@ -185,7 +237,9 @@ function mermaidSource(s2) {
   }
   const visible = walk(g2, starts, s2.depth, s2.dir, hidden);
   const kidsOf = {};
-  Object.entries(g2.childOf).forEach(([c2, p2]) => (kidsOf[p2] = kidsOf[p2] || []).push(c2));
+  Object.entries(g2.childOf).forEach(
+    ([c2, p2]) => (kidsOf[p2] = kidsOf[p2] || []).push(c2)
+  );
   const held = (d2) => (s2.level === "context" ? (d2.contexts || []).filter((c2) => c2 !== d2.id) : []).concat((d2.members || []).filter((m2) => m2 !== d2.id));
   const folded = {};
   const fold = (cid, into) => (kidsOf[cid] || []).forEach((child) => {
@@ -202,8 +256,15 @@ function mermaidSource(s2) {
     return false;
   };
   containers.filter((d2) => state2[d2.id] === "collapsed" && !collapsedAncestor(d2.id)).forEach((d2) => fold(d2.id, d2.id));
-  const lines = ["---", JSON.stringify({ config: DIAGRAM.config }), "---", `flowchart ${DIAGRAM.direction}`];
-  Object.entries(MODEL.types).forEach(([id, t2]) => lines.push(`  classDef ${id} ${t2.mermaid_style}`));
+  const lines = [
+    "---",
+    JSON.stringify({ config: DIAGRAM.config }),
+    "---",
+    `flowchart ${DIAGRAM.direction}`
+  ];
+  Object.entries(MODEL.types).forEach(
+    ([id, t2]) => lines.push(`  classDef ${id} ${t2.mermaid_style}`)
+  );
   lines.push(`  classDef focus ${DIAGRAM.focus_style}`);
   const plainNodes = [];
   const drawn = /* @__PURE__ */ new Set();
@@ -214,8 +275,11 @@ function mermaidSource(s2) {
   };
   const drawChild = (c2, indent) => {
     if (contextById[c2] && !domainById[c2]) {
-      const out = [box(c2, quote(contextById[c2].name), contextById[c2].type, indent)];
-      if (contextById[c2].mermaid_style) out.push(`${indent}style ${nodeId(c2)} ${contextById[c2].mermaid_style}`);
+      const out = [
+        box(c2, quote(contextById[c2].name), contextById[c2].type, indent)
+      ];
+      if (contextById[c2].mermaid_style)
+        out.push(`${indent}style ${nodeId(c2)} ${contextById[c2].mermaid_style}`);
       return out;
     }
     return drawEntry(domainById[c2], indent);
@@ -238,7 +302,9 @@ function mermaidSource(s2) {
     if (st === "expanded" && kids.length) {
       let show = inside;
       if (!show.length) {
-        show = kids.filter((c2) => !folded[c2] && (!hidden.has(c2) || starts.has(c2)));
+        show = kids.filter(
+          (c2) => !folded[c2] && (!hidden.has(c2) || starts.has(c2))
+        );
       }
       if (show.length) {
         drawn.add(d2.id);
@@ -254,18 +320,29 @@ function mermaidSource(s2) {
     let label = quote(d2.name);
     if (DIAGRAM.child_labels && !d2.single) {
       const named = (d2.contexts || []).filter((c2) => c2 !== d2.id && !hidden.has(c2)).map(nameOf).concat((d2.members || []).filter((m2) => folded[m2] === d2.id).map(nameOf)).sort();
-      if (named.length) label = `<b>${label}</b><br/>${quote(named.join(", "))}`;
+      if (named.length)
+        label = `<b>${label}</b><br/>${quote(named.join(", "))}`;
     }
     const out = [box(d2.id, label, d2.type, indent)];
-    if (d2.mermaid_style) out.push(`${indent}style ${nodeId(d2.id)} ${d2.mermaid_style}`);
+    if (d2.mermaid_style)
+      out.push(`${indent}style ${nodeId(d2.id)} ${d2.mermaid_style}`);
     return out;
   }
-  const opens = new Set(Object.entries(state2).filter(([, st]) => st === "expanded" || st === "contents").map(([id]) => id).filter((id) => (domainById[id] ? visible.has(id) : true) && !folded[id] && !hidden.has(id)));
+  const opens = new Set(
+    Object.entries(state2).filter(([, st]) => st === "expanded" || st === "contents").map(([id]) => id).filter(
+      (id) => (domainById[id] ? visible.has(id) : true) && !folded[id] && !hidden.has(id)
+    )
+  );
   const atTop = (d2) => !opens.has(g2.childOf[d2.id]);
   if (DIAGRAM.group_by_type) {
     Object.entries(MODEL.types).forEach(([typeId, t2]) => {
       const block = MODEL.domains.filter((d2) => d2.type === typeId && atTop(d2)).flatMap((d2) => drawEntry(d2, "    "));
-      if (block.length) lines.push(`  subgraph type_${typeId}["${quote(t2.name)}"]`, ...block, "  end");
+      if (block.length)
+        lines.push(
+          `  subgraph type_${typeId}["${quote(t2.name)}"]`,
+          ...block,
+          "  end"
+        );
     });
   } else {
     MODEL.domains.filter(atTop).forEach((d2) => lines.push(...drawEntry(d2, "  ")));
@@ -279,7 +356,8 @@ function mermaidSource(s2) {
     const a2 = target(e2.from), b2 = target(e2.to);
     if (a2 === b2 || !drawn.has(a2) || !drawn.has(b2)) return;
     const key = a2 + "|" + b2;
-    if (!merged.has(key)) merged.set(key, { a: a2, b: b2, styles: /* @__PURE__ */ new Set(), names: /* @__PURE__ */ new Set(), via: [] });
+    if (!merged.has(key))
+      merged.set(key, { a: a2, b: b2, styles: /* @__PURE__ */ new Set(), names: /* @__PURE__ */ new Set(), via: [] });
     const entry = merged.get(key);
     e2.styles.forEach((x2) => entry.styles.add(x2));
     entry.via.push(...e2.via);
@@ -287,24 +365,36 @@ function mermaidSource(s2) {
     else if (foldedBoxes.has(a2)) entry.names.add(nameOf(e2.from));
   });
   const byStyle = {};
-  const tips = [...merged.values()].map((entry) => entry.via.filter((e2) => e2.comment).map(tipEntry));
+  const tips = [...merged.values()].map(
+    (entry) => entry.via.filter((e2) => e2.comment).map(tipEntry)
+  );
   [...merged.values()].forEach((entry, i2) => {
     const style = entry.styles.has("solid") ? "solid" : [...entry.styles].sort()[0];
     const label = entry.names.size && DIAGRAM.child_labels ? `|"${quote([...entry.names].sort().join(", "))}"|` : "";
-    lines.push(`  ${nodeId(entry.a)} ${style === "dotted" ? "-.->" : "-->"}${label} ${nodeId(entry.b)}`);
+    lines.push(
+      `  ${nodeId(entry.a)} ${style === "dotted" ? "-.->" : "-->"}${label} ${nodeId(entry.b)}`
+    );
     (byStyle[style] = byStyle[style] || []).push(i2);
   });
-  Object.entries(byStyle).forEach(([style, indexes]) => lines.push(`  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${DIAGRAM.edge_styles[style] || ""}`.trimEnd()));
+  Object.entries(byStyle).forEach(
+    ([style, indexes]) => lines.push(
+      `  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${DIAGRAM.edge_styles[style] || ""}`.trimEnd()
+    )
+  );
   const highlight = s2.level === "domain" && owner[s2.focus] ? owner[s2.focus] : s2.focus;
   plainNodes.forEach((n2) => {
     if (n2 === highlight) lines.push(`  class ${nodeId(n2)} focus`);
   });
   plainNodes.forEach((n2) => {
-    if (owner[n2] || clusterById[n2]) lines.push(`  click ${nodeId(n2)} href "${hashFor({ ...s2, focus: n2 })}"`);
+    if (owner[n2] || clusterById[n2])
+      lines.push(`  click ${nodeId(n2)} href "${hashFor({ ...s2, focus: n2 })}"`);
   });
   return { source: lines.join("\n") + "\n", visible, tips };
 }
-var tipEntry = (dep) => ({ title: `${nameOf(dep.from)} \u2192 ${nameOf(dep.to)}`, text: dep.comment });
+var tipEntry = (dep) => ({
+  title: `${nameOf(dep.from)} \u2192 ${nameOf(dep.to)}`,
+  text: dep.comment
+});
 
 // src/context_mapper/template/core/attributes.js
 var attributeText = (v2) => Array.isArray(v2) ? v2.map(attributeText).join(", ") : v2 && typeof v2 === "object" ? Object.entries(v2).map(([k2, item]) => `${k2}: ${attributeText(item)}`).join(" \xB7 ") : String(v2);
@@ -313,7 +403,13 @@ var boxTipEntries = (item) => {
   if (!item) return [];
   const entries = item.description ? [{ kind: "desc", title: item.name, text: item.description }] : [];
   if (!DIAGRAM.attribute_tooltips) return entries;
-  return entries.concat(attributeEntries(item).map(({ label, value }) => ({ kind: "attr", title: label, text: attributeText(value) })));
+  return entries.concat(
+    attributeEntries(item).map(({ label, value }) => ({
+      kind: "attr",
+      title: label,
+      text: attributeText(value)
+    }))
+  );
 };
 
 // node_modules/htm/preact/standalone.module.js
@@ -730,11 +826,18 @@ var fe = function(e2) {
 }.bind(a);
 
 // src/context_mapper/template/components/attributes.js
-var attributeValue = (v2) => Array.isArray(v2) ? fe`<ul>${v2.map((item) => fe`<li>${attributeText(item)}</li>`)}</ul>` : attributeText(v2);
-var attributeRows = (item) => fe`<ul>${attributeEntries(item).map(({ label, value }) => fe`<li class="hint"><b>${label}:</b> ${attributeValue(value)}</li>`)}</ul>`;
+var attributeValue = (v2) => Array.isArray(v2) ? fe`<ul>
+        ${v2.map((item) => fe`<li>${attributeText(item)}</li>`)}
+      </ul>` : attributeText(v2);
+var attributeRows = (item) => fe`<ul>
+    ${attributeEntries(item).map(
+  ({ label, value }) => fe`<li class="hint"><b>${label}:</b> ${attributeValue(value)}</li>`
+)}
+  </ul>`;
 var attributeSection = (item) => {
   const rows = attributeRows(item);
-  return rows ? fe`<h3>Attributes</h3>${rows}` : "";
+  return rows ? fe`<h3>Attributes</h3>
+        ${rows}` : "";
 };
 
 // src/context_mapper/template/dom/query.js
@@ -782,7 +885,10 @@ var Panel = ({ s: s2, visible }) => {
       <h3>Legend</h3>${legend}`;
 };
 function renderInfo(s2, visible) {
-  render(html`<${Panel} key=${s2.focus || "all"} s=${s2} visible=${visible} />`, $2("info"));
+  render(
+    html`<${Panel} key=${s2.focus || "all"} s=${s2} visible=${visible} />`,
+    $2("info")
+  );
 }
 
 // src/context_mapper/template/dom/tips.js
@@ -791,22 +897,24 @@ tip.id = "tip";
 document.body.appendChild(tip);
 function showTip(note, ev) {
   if (!note.length) return hideTip();
-  tip.replaceChildren(...note.map((n2) => {
-    const p2 = document.createElement("p");
-    if (n2.kind === "attr") {
-      p2.className = "attr";
-      const label = document.createElement("span");
-      label.className = "k";
-      label.textContent = n2.title;
-      p2.append(label, " ", n2.text);
+  tip.replaceChildren(
+    ...note.map((n2) => {
+      const p2 = document.createElement("p");
+      if (n2.kind === "attr") {
+        p2.className = "attr";
+        const label = document.createElement("span");
+        label.className = "k";
+        label.textContent = n2.title;
+        p2.append(label, " ", n2.text);
+        return p2;
+      }
+      if (n2.kind) p2.className = n2.kind;
+      const title = document.createElement("b");
+      title.textContent = n2.title;
+      p2.append(title, document.createElement("br"), n2.text);
       return p2;
-    }
-    if (n2.kind) p2.className = n2.kind;
-    const title = document.createElement("b");
-    title.textContent = n2.title;
-    p2.append(title, document.createElement("br"), n2.text);
-    return p2;
-  }));
+    })
+  );
   tip.style.display = "block";
   const x2 = Math.min(ev.clientX + 14, window.innerWidth - tip.offsetWidth - 8);
   const y2 = ev.clientY + 18 + tip.offsetHeight > window.innerHeight ? ev.clientY - tip.offsetHeight - 12 : ev.clientY + 18;
@@ -823,7 +931,8 @@ function boxMapOf(svg) {
   svg.querySelectorAll("g[id]").forEach((g2) => {
     const m2 = /-flowchart-(.+)-\d+$/.exec(g2.id);
     if (m2) boxes[m2[1]] = g2;
-    else if (g2.classList.contains("cluster")) boxes[g2.id.slice(svg.id.length + 1)] = g2;
+    else if (g2.classList.contains("cluster"))
+      boxes[g2.id.slice(svg.id.length + 1)] = g2;
   });
   Object.values(boxes).forEach((g2) => g2.classList.add("box"));
   return boxes;
@@ -836,7 +945,8 @@ function bindEdgeHover(svg, tips) {
   const endsOf = (path) => {
     const rest = path.id.slice(svg.id.length + 3).replace(/_\d+$/, "");
     for (const from of Object.keys(boxes)) {
-      if (rest.startsWith(from + "_") && boxes[rest.slice(from.length + 1)]) return [boxes[from], boxes[rest.slice(from.length + 1)]];
+      if (rest.startsWith(from + "_") && boxes[rest.slice(from.length + 1)])
+        return [boxes[from], boxes[rest.slice(from.length + 1)]];
     }
     return [];
   };
@@ -890,7 +1000,9 @@ function bindEdgeHover(svg, tips) {
   });
 }
 function bindBoxTips(svg) {
-  const boxes = Object.entries(boxMapOf(svg)).filter(([, g2]) => !g2.classList.contains("cluster"));
+  const boxes = Object.entries(boxMapOf(svg)).filter(
+    ([, g2]) => !g2.classList.contains("cluster")
+  );
   const innermost = (target) => {
     let best = null;
     boxes.forEach(([id, g2]) => {
@@ -923,7 +1035,12 @@ var dirSel = $2("dir");
   };
   group("Domains", [...MODEL.domains]);
   group("Clusters", [...MODEL.clusters]);
-  [...MODEL.domains].sort(byName).forEach((d2) => group(`Bounded contexts: ${d2.name}`, MODEL.contexts.filter((c2) => c2.domain === d2.id && !domainById[c2.id])));
+  [...MODEL.domains].sort(byName).forEach(
+    (d2) => group(
+      `Bounded contexts: ${d2.name}`,
+      MODEL.contexts.filter((c2) => c2.domain === d2.id && !domainById[c2.id])
+    )
+  );
 })();
 (function fillLinks() {
   const nav = $2("links");
@@ -974,12 +1091,16 @@ function buildControls() {
     $2("display").appendChild(heading);
   };
   sub("Domains");
-  MODEL.domains.forEach((d2) => (d2.single ? addToggle : addSelect)(d2.id, d2.name));
+  MODEL.domains.forEach(
+    (d2) => (d2.single ? addToggle : addSelect)(d2.id, d2.name)
+  );
   sub("Clusters");
   MODEL.clusters.forEach((c2) => addSelect(c2.id, c2.name, true));
 }
 buildControls();
-var displayModes = () => Object.fromEntries(Object.entries(displaySels).map(([id, sel]) => [id, sel.value]));
+var displayModes = () => Object.fromEntries(
+  Object.entries(displaySels).map(([id, sel]) => [id, sel.value])
+);
 var hiddenContexts = new Set(DEFAULT_HIDE);
 var refreshToggles = () => Object.entries(toggles).forEach(([id, t2]) => {
   const hidden = hiddenContexts.has(id);
@@ -1015,7 +1136,8 @@ function readHash() {
 }
 var setHidden = (id, hide) => {
   hiddenContexts[hide ? "add" : "delete"](id);
-  if (displaySels[id]) displaySels[id].value = hide ? "hidden" : defaultMode(id);
+  if (displaySels[id])
+    displaySels[id].value = hide ? "hidden" : defaultMode(id);
 };
 
 // src/context_mapper/template/download.js
@@ -1042,7 +1164,10 @@ function standaloneSvg(svg) {
   clone.setAttribute("height", Math.round(height));
   clone.removeAttribute("style");
   clone.style.fontFamily = getComputedStyle(svg).fontFamily;
-  const background = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+  const background = document.createElementNS(
+    "http://www.w3.org/2000/svg",
+    "rect"
+  );
   if (parts.length === 4) {
     background.setAttribute("x", parts[0]);
     background.setAttribute("y", parts[1]);
@@ -1050,7 +1175,10 @@ function standaloneSvg(svg) {
   background.setAttribute("width", "100%");
   background.setAttribute("height", "100%");
   const pageBg = getComputedStyle(document.body).backgroundColor;
-  background.setAttribute("fill", pageBg === "rgba(0, 0, 0, 0)" ? "#ffffff" : pageBg);
+  background.setAttribute(
+    "fill",
+    pageBg === "rgba(0, 0, 0, 0)" ? "#ffffff" : pageBg
+  );
   clone.insertBefore(background, clone.firstChild);
   return {
     text: '<?xml version="1.0" encoding="UTF-8"?>\n' + new XMLSerializer().serializeToString(clone),
@@ -1068,7 +1196,10 @@ function saveBlob(blob, filename) {
 function downloadDiagram(svg, format, name) {
   const { text, width, height } = standaloneSvg(svg);
   if (format === "svg") {
-    saveBlob(new Blob([text], { type: "image/svg+xml;charset=utf-8" }), name + ".svg");
+    saveBlob(
+      new Blob([text], { type: "image/svg+xml;charset=utf-8" }),
+      name + ".svg"
+    );
     return;
   }
   const scale = Math.min(2, 16384 / Math.max(width, height));
@@ -1099,7 +1230,10 @@ async function render2() {
   refreshToggles();
   const run = ++renderCount;
   try {
-    const { svg, bindFunctions } = await mermaid.render("diagram-" + run, source);
+    const { svg, bindFunctions } = await mermaid.render(
+      "diagram-" + run,
+      source
+    );
     if (run !== renderCount) return;
     $2("graph").innerHTML = svg;
     bindFunctions?.($2("graph"));
@@ -1107,7 +1241,8 @@ async function render2() {
     bindEdgeHover(svgEl, tips);
     bindBoxTips(svgEl);
   } catch (err) {
-    if (run === renderCount) $2("graph").textContent = "Could not render this diagram: " + err.message;
+    if (run === renderCount)
+      $2("graph").textContent = "Could not render this diagram: " + err.message;
   }
 }
 $2("panel").addEventListener("click", (ev) => {
@@ -1129,11 +1264,15 @@ $2("panel").addEventListener("click", (ev) => {
     render2();
   }
 });
-[levelSel, focusSel, depthIn, dirSel].forEach((el) => el.addEventListener("change", render2));
-Object.entries(displaySels).forEach(([id, sel]) => sel.addEventListener("change", () => {
-  hiddenContexts.delete(id);
-  render2();
-}));
+[levelSel, focusSel, depthIn, dirSel].forEach(
+  (el) => el.addEventListener("change", render2)
+);
+Object.entries(displaySels).forEach(
+  ([id, sel]) => sel.addEventListener("change", () => {
+    hiddenContexts.delete(id);
+    render2();
+  })
+);
 $2("reset").addEventListener("click", () => {
   history.replaceState(null, "", location.pathname);
   readHash();

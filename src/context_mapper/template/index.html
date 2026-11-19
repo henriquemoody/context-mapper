@@ -1,63 +1,81 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Context Map</title>
-<style>
-/*__STYLE__*/
-</style>
-</head>
-<body>
-<header>
-  <h1>Context Map</h1>
-  <nav id="links"></nav>
-  <label>Show
-    <select id="level">
-      <option value="context">Bounded contexts</option>
-      <option value="domain">Domains</option>
-    </select>
-  </label>
-  <label>Focus
-    <select id="focus"><option value="">Whole system</option></select>
-  </label>
-  <label>Depth
-    <input type="number" id="depth" min="1" step="1" value="1">
-  </label>
-  <label>Direction
-    <select id="dir">
-      <option value="both">Both</option>
-      <option value="up">Depends on (upstream)</option>
-      <option value="down">Used by (downstream)</option>
-    </select>
-  </label>
-  <button id="reset">Reset</button>
-</header>
-<main>
-  <div id="graph"></div>
-  <aside id="panel">
-    <div id="info"></div>
-    <div id="export">
-      <h3>Download</h3>
-      <div class="row">
-        <label>Image
-          <select id="image">
-            <option value="png">PNG</option>
-            <option value="svg">SVG</option>
-          </select>
-        </label>
-        <button id="download">Download</button>
-      </div>
-    </div>
-    <div id="display"><h3>Show &amp; hide</h3></div>
-    <div id="howto">
-      <h3>How to read</h3>
-      <p class="hint">An arrow from A to B means A depends on B. Upstream is at the top. The outer boxes are domains, the coloured boxes inside them are bounded contexts. The Show &amp; hide form in the right panel has a control for every domain and cluster: a multi-context domain or a cluster can be expanded (the boxes inside it), collapsed (one box), or hidden — a dashed underline marks a cluster's — and a one-box domain hides with a toggle. Focusing on a domain or a cluster lists what it holds, and each item there can be hidden too. Click a box to focus on it. Download saves the diagram you are looking at as a PNG or SVG image.</p>
-    </div>
-  </aside>
-</main>
-<script type="module">
-/*__SCRIPT__*/
-</script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Context Map</title>
+    <style>
+      /*__STYLE__*/
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Context Map</h1>
+      <nav id="links"></nav>
+      <label
+        >Show
+        <select id="level">
+          <option value="context">Bounded contexts</option>
+          <option value="domain">Domains</option>
+        </select>
+      </label>
+      <label
+        >Focus
+        <select id="focus">
+          <option value="">Whole system</option>
+        </select>
+      </label>
+      <label
+        >Depth
+        <input type="number" id="depth" min="1" step="1" value="1" />
+      </label>
+      <label
+        >Direction
+        <select id="dir">
+          <option value="both">Both</option>
+          <option value="up">Depends on (upstream)</option>
+          <option value="down">Used by (downstream)</option>
+        </select>
+      </label>
+      <button id="reset">Reset</button>
+    </header>
+    <main>
+      <div id="graph"></div>
+      <aside id="panel">
+        <div id="info"></div>
+        <div id="export">
+          <h3>Download</h3>
+          <div class="row">
+            <label
+              >Image
+              <select id="image">
+                <option value="png">PNG</option>
+                <option value="svg">SVG</option>
+              </select>
+            </label>
+            <button id="download">Download</button>
+          </div>
+        </div>
+        <div id="display"><h3>Show &amp; hide</h3></div>
+        <div id="howto">
+          <h3>How to read</h3>
+          <p class="hint">
+            An arrow from A to B means A depends on B. Upstream is at the top.
+            The outer boxes are domains, the coloured boxes inside them are
+            bounded contexts. The Show &amp; hide form in the right panel has a
+            control for every domain and cluster: a multi-context domain or a
+            cluster can be expanded (the boxes inside it), collapsed (one box),
+            or hidden — a dashed underline marks a cluster's — and a one-box
+            domain hides with a toggle. Focusing on a domain or a cluster lists
+            what it holds, and each item there can be hidden too. Click a box to
+            focus on it. Download saves the diagram you are looking at as a PNG
+            or SVG image.
+          </p>
+        </div>
+      </aside>
+    </main>
+    <script type="module">
+      /*__SCRIPT__*/
+    </script>
+  </body>
 </html>

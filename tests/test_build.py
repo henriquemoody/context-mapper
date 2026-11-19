@@ -306,7 +306,7 @@ def test_the_panel_shows_the_attributes_under_a_heading(tmp_path):
     out = tmp_path / "public"
     build.main(["--model", str(EXAMPLE_MODEL), "--diagrams", str(EXAMPLE_STYLE), "--out", str(out)])
     text = (out / "index.html").read_text()
-    assert "render(html" in text  # the panel renders through preact
+    assert "var Panel = " in text  # the preact panel is in the page
     assert "var attributeSection" in text
 
 

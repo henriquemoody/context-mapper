@@ -3,8 +3,12 @@ import { readFileSync } from "node:fs";
 import assert from "node:assert/strict";
 import test from "node:test";
 
-globalThis.contextMapperModel = JSON.parse(readFileSync(new URL("./fixture.json", import.meta.url), "utf8"));
-const expected = JSON.parse(readFileSync(new URL("./expected.json", import.meta.url), "utf8"));
+globalThis.contextMapperModel = JSON.parse(
+  readFileSync(new URL("./fixture.json", import.meta.url), "utf8"),
+);
+const expected = JSON.parse(
+  readFileSync(new URL("./expected.json", import.meta.url), "utf8"),
+);
 const api = {
   ...(await import("../../src/context_mapper/template/core/model.js")),
   ...(await import("../../src/context_mapper/template/core/graph.js")),
@@ -15,4 +19,5 @@ const api = {
 };
 const { CASES } = await import("./cases.mjs");
 for (const { name, fn } of CASES.diagram)
-  test(`diagram: ${name}`, () => assert.deepEqual(fn(api), expected[`diagram/${name}`]));
+  test(`diagram: ${name}`, () =>
+    assert.deepEqual(fn(api), expected[`diagram/${name}`]));

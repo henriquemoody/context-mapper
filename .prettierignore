@@ -1,0 +1,5 @@
+# Generated artifacts: their generators own their formatting.
+src/context_mapper/template/page.js
+src/context_mapper/template/mermaid.js
+tests/js/expected.json
+tests/js/fixture.json

@@ -39,6 +39,8 @@ jobs:
           node-version: "22"
       - name: Install
         run: npm ci
+      - name: Formatting
+        run: npm run format:check
       - name: Test
         run: npm test
       - name: The bundled page matches its source

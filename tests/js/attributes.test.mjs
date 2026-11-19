@@ -4,8 +4,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { installDom } from "./dom-env.mjs";
 
-globalThis.contextMapperModel = JSON.parse(readFileSync(new URL("./fixture.json", import.meta.url), "utf8"));
-const expected = JSON.parse(readFileSync(new URL("./expected.json", import.meta.url), "utf8"));
+globalThis.contextMapperModel = JSON.parse(
+  readFileSync(new URL("./fixture.json", import.meta.url), "utf8"),
+);
+const expected = JSON.parse(
+  readFileSync(new URL("./expected.json", import.meta.url), "utf8"),
+);
 const api = {
   ...(await import("../../src/context_mapper/template/core/model.js")),
   ...(await import("../../src/context_mapper/template/core/graph.js")),
@@ -19,4 +23,5 @@ const { CASES } = await import("./cases.mjs");
 // be there before the cases run.
 installDom();
 for (const { name, fn } of CASES.attributes)
-  test(`attributes: ${name}`, () => assert.deepEqual(fn(api), expected[`attributes/${name}`]));
+  test(`attributes: ${name}`, () =>
+    assert.deepEqual(fn(api), expected[`attributes/${name}`]));

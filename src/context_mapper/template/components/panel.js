@@ -1,4 +1,12 @@
-import { MODEL, domainById, contextById, clusterById, owner, nameOf, isMulti } from "../core/model.js";
+import {
+  MODEL,
+  domainById,
+  contextById,
+  clusterById,
+  owner,
+  nameOf,
+  isMulti,
+} from "../core/model.js";
 import { GRAPHS, relations } from "../core/graph.js";
 import { attributeSection } from "./attributes.js";
 import { $ } from "../dom/query.js";
@@ -9,11 +17,15 @@ import { $ } from "../dom/query.js";
 import * as preact from "htm/preact/standalone";
 const { html, render } = preact;
 
-const link = id => html`<a data-go="${id}">${nameOf(id)}</a>`;
-const list = ids => ids.length
-  ? html`<ul>${ids.map(id => html`<li>${link(id)}</li>`)}</ul>`
-  : html`<p class="hint">None</p>`;
-const chip = type => { const t = MODEL.types[type]; return html`<span class="chip" style="background:${t.fill};border-color:${t.stroke}">${t.name}</span>`; };
+const link = (id) => html`<a data-go="${id}">${nameOf(id)}</a>`;
+const list = (ids) =>
+  ids.length
+    ? html`<ul>${ids.map((id) => html`<li>${link(id)}</li>`)}</ul>`
+    : html`<p class="hint">None</p>`;
+const chip = (type) => {
+  const t = MODEL.types[type];
+  return html`<span class="chip" style="background:${t.fill};border-color:${t.stroke}">${t.name}</span>`;
+};
 
 // The side panel: one component over the view state. The templates read
 // like the HTML they render; interpolations are values, never markup.
@@ -25,7 +37,7 @@ const Panel = ({ s, visible }) => {
       <p><a href="mermaid/index.html">Static diagrams</a></p>${legend}`;
   const id = s.focus;
   const item = contextById[id] || domainById[id] || clusterById[id];
-  const itemWith = item_id => {
+  const itemWith = (item_id) => {
     const hiddenHere = s.hide.has(item_id);
     const toggle = hiddenHere
       ? html`<a data-show="${item_id}" class="toggle">show</a>`
@@ -38,8 +50,8 @@ const Panel = ({ s, visible }) => {
   const r = relations(id);
   const parent = owner[id];
   const own = GRAPHS.context.edges;
-  const dUps = own.filter(e => e.from === parent).map(e => e.to);
-  const dDowns = own.filter(e => e.to === parent).map(e => e.from);
+  const dUps = own.filter((e) => e.from === parent).map((e) => e.to);
+  const dDowns = own.filter((e) => e.to === parent).map((e) => e.from);
   const pname = nameOf(parent);
   return html`<h2>${item.name}</h2>${chip(item.type)} <span class="hint">${domainById[id] ? "Domain" : "Bounded context"}</span>
       <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>
@@ -58,5 +70,8 @@ const Panel = ({ s, visible }) => {
 // another panel, and preact builds it afresh — reusing the elements of the
 // last one would keep the attributes they lost, an empty style among them.
 export function renderInfo(s, visible) {
-  render(html`<${Panel} key=${s.focus || "all"} s=${s} visible=${visible} />`, $("info"));
+  render(
+    html`<${Panel} key=${s.focus || "all"} s=${s} visible=${visible} />`,
+    $("info"),
+  );
 }

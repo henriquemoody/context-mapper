@@ -7,7 +7,9 @@ import assert from "node:assert/strict";
 import { installDom } from "./dom-env.mjs";
 import { CASES } from "./cases.mjs";
 
-globalThis.contextMapperModel = JSON.parse(readFileSync(new URL("./fixture.json", import.meta.url), "utf8"));
+globalThis.contextMapperModel = JSON.parse(
+  readFileSync(new URL("./fixture.json", import.meta.url), "utf8"),
+);
 installDom();
 const api = {
   ...(await import("../../src/context_mapper/template/core/model.js")),
@@ -25,7 +27,8 @@ const plain = (v, path) => {
   if (v instanceof Set || v instanceof Map || typeof v === "function")
     throw new Error(`not JSON-shaped at ${path}`);
   if (Array.isArray(v)) v.forEach((x, i) => plain(x, `${path}[${i}]`));
-  else if (v && typeof v === "object") Object.entries(v).forEach(([k, x]) => plain(x, `${path}.${k}`));
+  else if (v && typeof v === "object")
+    Object.entries(v).forEach(([k, x]) => plain(x, `${path}.${k}`));
 };
 
 const out = {};

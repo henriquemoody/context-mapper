@@ -7,6 +7,8 @@
     "build": "npm run build:vendor && npm run build:page",
     "build:vendor": "esbuild src/context_mapper/template/vendor-entry.js --bundle --format=esm --minify --outfile=src/context_mapper/template/mermaid.js",
     "build:page": "esbuild src/context_mapper/template/app.js --bundle --format=esm --external:./mermaid.js --outfile=src/context_mapper/template/page.js",
+    "format": "prettier --write \"src/context_mapper/template/**/*.{js,css,html}\" \"tests/js/**/*.mjs\"",
+    "format:check": "prettier --check \"src/context_mapper/template/**/*.{js,css,html}\" \"tests/js/**/*.mjs\"",
     "test": "node --test \"tests/js/*.test.mjs\""
   },
   "dependencies": {
@@ -16,6 +18,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.2",
-    "happy-dom": "^21.0.4"
+    "happy-dom": "^21.0.4",
+    "prettier": "^3.10.1"
   }
 }
