@@ -14,6 +14,10 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 - `src/context_mapper/template/` is the interactive page: `index.html`, `style.css` and `app.js`, spliced into one file when it builds.
 - `example/` is a small working model you can build right away.
 
+## A personal project
+
+This is living personal software: I build it for my own needs, and it's purely vibe coded. The focus is meeting my needs, not enabling others. **Anyone is free to use it, copy it, and change it under the ISC license — but I don't intend to maintain it.** Pin the version you install, because anything here can change without notice.
+
 ## Install
 
 Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
