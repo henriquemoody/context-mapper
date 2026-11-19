@@ -183,12 +183,15 @@ def test_main_builds_the_site(tmp_path, capsys):
     index = out / "index.html"
     assert index.exists()
     text = index.read_text()
-    assert "/*__MODEL__*/null" not in text
+    assert "globalThis.contextMapperModel" not in text
     assert "/*__STYLE__*/" not in text
     assert "/*__SCRIPT__*/" not in text
-    assert "const MODEL = {" in text
+    assert "var MODEL = {" in text
     assert "--accent: #305bab" in text        # style.css is inlined
     assert "function mermaidSource(" in text  # app.js is inlined
+    assert (out / "mermaid.js").exists()     # the vendored renderer, written next to the pages
+    assert "jsdelivr" not in text            # the page renders from its own bytes, not a CDN
+    assert 'from "./mermaid.js"' in text      # ... and says so where it imports it
     assert (out / "mermaid" / "index.html").exists()
     assert (out / "markdown" / "README.md").exists()
     assert (out / "mermaid" / "overview.html").exists()
@@ -303,8 +306,8 @@ def test_the_panel_shows_the_attributes_under_a_heading(tmp_path):
     out = tmp_path / "public"
     build.main(["--model", str(EXAMPLE_MODEL), "--diagrams", str(EXAMPLE_STYLE), "--out", str(out)])
     text = (out / "index.html").read_text()
-    assert "<h3>Attributes</h3>" in text
-    assert "const attributeSection" in text
+    assert "render(html" in text  # the panel renders through preact
+    assert "var attributeSection" in text
 
 
 def test_the_panel_shows_a_list_attribute_as_a_list(tmp_path):
@@ -313,7 +316,7 @@ def test_the_panel_shows_a_list_attribute_as_a_list(tmp_path):
     out = tmp_path / "public"
     build.main(["--model", str(EXAMPLE_MODEL), "--diagrams", str(EXAMPLE_STYLE), "--out", str(out)])
     text = (out / "index.html").read_text()
-    assert "Array.isArray(v)" in text  # the list case, ahead of the inline one
+    assert "Array.isArray(" in text  # the list case, ahead of the inline one
 
 
 def test_main_refuses_a_model_file_that_is_not_there(tmp_path):

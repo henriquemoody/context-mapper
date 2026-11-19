@@ -1,4 +1,4 @@
-// Downloading the rendered diagram as an image. build.py splices this into
+// Downloading the rendered diagram as an image. The bundler takes it into
 // app.js for the interactive page; mermaid.py splices it into the script of
 // every static diagram page, so both offer the same export.
 
@@ -66,7 +66,7 @@ function saveBlob(blob, filename) {
 // name without its extension. The PNG draws the SVG on a canvas at twice
 // its size, on the page's own background, so the image looks like the
 // diagram does on screen.
-function downloadDiagram(svg, format, name) {
+export function downloadDiagram(svg, format, name) {
   const { text, width, height } = standaloneSvg(svg);
   if (format === "svg") {
     saveBlob(new Blob([text], { type: "image/svg+xml;charset=utf-8" }), name + ".svg");

@@ -19,6 +19,7 @@ from . import graph, mermaid
 
 TEMPLATE_DIR = Path(__file__).parent / "template"
 DIAGRAMS_KEYS = {"types", "clusters", "context-map", "mermaid", "links"}
+MODEL_MARKER = "globalThis.contextMapperModel ?? null"
 
 
 class StrictLoader(yaml.SafeLoader):
@@ -116,12 +117,17 @@ def load(model_path, diagrams_path):
 
 
 def render_index(payload):
-    """The interactive page: the skeleton with the stylesheet, the script and the model spliced in."""
+    """The interactive page: the skeleton with the stylesheet, the bundled
+    script and the model spliced in."""
     html = (TEMPLATE_DIR / "index.html").read_text()
     css = (TEMPLATE_DIR / "style.css").read_text().strip()
-    download = (TEMPLATE_DIR / "download.js").read_text().strip()
-    js = (TEMPLATE_DIR / "app.js").read_text().replace("/*__MODEL__*/null", payload)
-    js = js.replace("/*__DOWNLOAD__*/", download).strip()
+    page = TEMPLATE_DIR / "page.js"
+    if not page.exists():
+        sys.exit(f"error: {page} not found. It is built from the template modules — run `npm run build`.")
+    js = page.read_text()
+    if js.count(MODEL_MARKER) != 1:
+        sys.exit("error: template/page.js lost the model splice marker — rebuild with `npm run build`")
+    js = js.replace(MODEL_MARKER, payload).strip()
     return html.replace("/*__STYLE__*/", css).replace("/*__SCRIPT__*/", js)
 
 
@@ -138,6 +144,10 @@ def build_site(args):
     index = args.out / "index.html"
     args.out.mkdir(parents=True, exist_ok=True)
     index.write_text(html)
+    vendor = TEMPLATE_DIR / "mermaid.js"
+    if not vendor.exists():
+        sys.exit(f"error: {vendor} not found. It is built from the npm packages — run `npm run build`.")
+    (args.out / "mermaid.js").write_text(vendor.read_text())
     print(f"built {index}: {len(data['domains'])} domains, "
           f"{len(data['contexts'])} bounded contexts, {len(data['edges'])} dependencies")
     count = mermaid.build(data, mermaid_section, args.out)

@@ -29,3 +29,19 @@ jobs:
           context-mapper
           test -f public/index.html
         working-directory: example
+
+  javascript:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: Install
+        run: npm ci
+      - name: Test
+        run: npm test
+      - name: The bundled page matches its source
+        run: |
+          npm run build
+          git diff --exit-code -- src/context_mapper/template/page.js src/context_mapper/template/mermaid.js

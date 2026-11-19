@@ -145,7 +145,7 @@ def test_serves_the_built_site(tmp_path):
     try:
         status, body = get(server.server_port, "/")
         assert status == 200
-        assert "const MODEL" in body
+        assert "var MODEL" in body
         assert "/__build_id" not in body            # no watch, no injected script
         status, _ = get(server.server_port, "/mermaid/index.html")
         assert status == 200

@@ -11,16 +11,16 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 - `src/context_mapper/build.py` validates the model and builds everything.
 - `src/context_mapper/graph.py` holds the model logic: levels, lifting context dependencies to domains, and the focus walk.
 - `src/context_mapper/mermaid.py` turns views into Mermaid.
-- `src/context_mapper/template/` is the interactive page: `index.html`, `style.css` and `app.js`, spliced into one file when it builds.
+- `src/context_mapper/template/` is the interactive page: `index.html`, `style.css`, and its script in three layers — `core/` the pure logic (the model, the graph walk, the URL-hash codec, the Mermaid source generator), `components/` the preact components that render the panel, `dom/` the imperative DOM around them, and `app.js` wiring it all. esbuild bundles `app.js` into `page.js`, and `vendor-entry.js` bundles Mermaid and its ELK loader from npm into `mermaid.js` — both generated, committed, and checked by CI to match their source; the Python build splices the page with the model injected and writes `mermaid.js` next to it.
 - `example/` is a small working model you can build right away.
 
 ## A personal project
 
-This is living personal software: I build it for my own needs, and it's purely vibe coded. The focus is meeting my needs, not enabling others. **Anyone is free to use it, copy it, and change it under the ISC license — but I don't intend to maintain it.** Pin the version you install, because anything here can change without notice.
+This is living personal software: I build it for my own needs, and it's purely vibe coded. The focus is meeting my needs, not enabling others. **Anyone is free to use it, copy it, and change it under the ISC license — but I don't intend to maintain it.** The interactive page's script bundles preact and htm (MIT and Apache-2.0). Pin the version you install, because anything here can change without notice.
 
 ## Install
 
-Requires Python 3.9+; Mermaid itself is loaded from a CDN when you view a page, so the only build dependency is PyYAML.
+Requires Python 3.9+, and the only build dependency is PyYAML — the Mermaid renderer ships as a pinned `mermaid.js` written next to the pages, so nothing is fetched from a CDN.
 
 ```sh
 pip install context-mapper
@@ -113,6 +113,7 @@ The label is the declared `name`, or the attribute id with its first letter uppe
 | Output | What it is |
 | --- | --- |
 | `<out>/index.html` | Interactive view. Switch between bounded contexts and domains, click anything to focus on it, hide anything from the side panel, hover a box or an arrow for the details, download the view as a PNG or SVG image. |
+| `<out>/mermaid.js` | The Mermaid renderer, vendored and pinned from npm — the one script the pages share. |
 | `<out>/mermaid/*.html` | One static Mermaid page per domain, per bounded context, and per named view. Click a box to jump to its page, download the diagram as a PNG or SVG image. |
 | `<out>/markdown/*.md` | The same diagrams as Markdown. GitLab renders them natively, and they can go to Confluence. |
 
@@ -127,6 +128,8 @@ context-mapper serve --watch
 ```
 
 `serve` builds the site and serves it at `http://127.0.0.1:8000/` (`--host` and `--port` to move it, `--out` for the directory). With `--watch`, saving the model or the style file rebuilds the site and the browser reloads the page by itself; a build that fails says why on the terminal and the page keeps showing the last good one, so a broken edit never takes the site down. The reload script is served on the wire only — the files stay exactly what a plain `context-mapper` writes, ready to publish.
+
+The Python tests run with `pytest` from the checkout. The page's script has a JavaScript toolchain of its own — developing it needs Node: `npm ci` to install, `npm test` to run its tests, `npm run build` to rebuild the bundled `page.js`. Using the tool does not need any of that.
 
 ## Customize the diagrams
 

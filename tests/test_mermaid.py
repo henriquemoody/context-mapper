@@ -551,6 +551,8 @@ def test_build_writes_the_download_links_into_the_page(tmp_path, example_data, e
     assert "getComputedStyle(svg).fontFamily" in page    # the page's font travels with the file
     assert "__DOWNLOAD__" not in page            # never left behind
     assert 'downloadDiagram(svg, a.dataset.download, "overview")' in page
+    assert 'from "../mermaid.js"' in page         # the renderer is vendored, not fetched
+    assert "jsdelivr" not in page                 # no CDN left anywhere on the page
 
 
 # --- attributes --------------------------------------------------------------

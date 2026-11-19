@@ -1,0 +1,62 @@
+import { MODEL, domainById, contextById, clusterById, owner, nameOf, isMulti } from "../core/model.js";
+import { GRAPHS, relations } from "../core/graph.js";
+import { attributeSection } from "./attributes.js";
+import { $ } from "../dom/query.js";
+// preact's runtime: the tagged-template html and the render that puts a tree
+// on the page. It comes in as a namespace so the bundled script keeps the
+// names `html` and `render` — the page shows the panel rendering through
+// preact.
+import * as preact from "htm/preact/standalone";
+const { html, render } = preact;
+
+const link = id => html`<a data-go="${id}">${nameOf(id)}</a>`;
+const list = ids => ids.length
+  ? html`<ul>${ids.map(id => html`<li>${link(id)}</li>`)}</ul>`
+  : html`<p class="hint">None</p>`;
+const chip = type => { const t = MODEL.types[type]; return html`<span class="chip" style="background:${t.fill};border-color:${t.stroke}">${t.name}</span>`; };
+
+// The side panel: one component over the view state. The templates read
+// like the HTML they render; interpolations are values, never markup.
+const Panel = ({ s, visible }) => {
+  const legend = html`<div class="legend">${Object.keys(MODEL.types).map(chip)}</div>`;
+  if (!s.focus)
+    return html`<h2>Whole system</h2>
+      <p class="hint">${visible.size} items shown. Pick a domain, cluster or bounded context to see only what it touches.</p>
+      <p><a href="mermaid/index.html">Static diagrams</a></p>${legend}`;
+  const id = s.focus;
+  const item = contextById[id] || domainById[id] || clusterById[id];
+  const itemWith = item_id => {
+    const hiddenHere = s.hide.has(item_id);
+    const toggle = hiddenHere
+      ? html`<a data-show="${item_id}" class="toggle">show</a>`
+      : html`<a data-hide="${item_id}" class="toggle">hide</a>`;
+    return html`<li>${link(item_id)} ${hiddenHere ? html`<span class="hint">(hidden)</span>` : null}${hiddenHere ? " " : null}${toggle}</li>`;
+  };
+  if (clusterById[id])
+    return html`<h2>${item.name}</h2><span class="hint">Cluster</span>
+      <p><a href="mermaid/index.html">All diagrams</a></p>${attributeSection(item)}<h3>Members</h3><ul>${item.members.map(itemWith)}</ul><h3>Legend</h3>${legend}`;
+  const r = relations(id);
+  const parent = owner[id];
+  const own = GRAPHS.context.edges;
+  const dUps = own.filter(e => e.from === parent).map(e => e.to);
+  const dDowns = own.filter(e => e.to === parent).map(e => e.from);
+  const pname = nameOf(parent);
+  return html`<h2>${item.name}</h2>${chip(item.type)} <span class="hint">${domainById[id] ? "Domain" : "Bounded context"}</span>
+      <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>
+      ${item.description ? html`<p class="hint">${item.description}</p>` : null}${attributeSection(item)}
+      ${isMulti(id) ? html`<h3>Bounded contexts</h3><ul>${domainById[id].contexts.map(itemWith)}</ul>` : null}
+      ${!isMulti(id) && isMulti(parent) ? html`<h3>Domain</h3>${list([parent])}` : null}
+      <h3>Depends on (${r.ups.length})</h3>${list(r.ups)}
+      <h3>Used by (${r.downs.length})</h3>${list(r.downs)}
+      ${!isMulti(id) && isMulti(parent) && dUps.length ? html`<h3>${pname} as a whole depends on</h3>${list(dUps)}` : null}
+      ${!isMulti(id) && isMulti(parent) && dDowns.length ? html`<h3>${pname} as a whole is used by</h3>${list(dDowns)}` : null}
+      <h3>Legend</h3>${legend}`;
+};
+
+// The same contract app.js always called: the panel of this view state,
+// rendered into #info. The key is the focus: a panel of another focus is
+// another panel, and preact builds it afresh — reusing the elements of the
+// last one would keep the attributes they lost, an empty style among them.
+export function renderInfo(s, visible) {
+  render(html`<${Panel} key=${s.focus || "all"} s=${s} visible=${visible} />`, $("info"));
+}

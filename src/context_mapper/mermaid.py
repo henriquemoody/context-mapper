@@ -457,9 +457,11 @@ def check(data, cfg):
     return errors
 
 
-# The download script is shared with the interactive page: build.py splices it
-# into app.js, here it goes into every static diagram page's script.
-DOWNLOAD_JS = (Path(__file__).parent / "template" / "download.js").read_text().strip()
+# The download script is shared with the interactive page: the bundler takes
+# it into app.js, here it goes into every static diagram page's script â€” as
+# plain functions, without the module syntax.
+DOWNLOAD_JS = (Path(__file__).parent / "template" / "download.js").read_text().strip().replace(
+    "export function downloadDiagram", "function downloadDiagram")
 
 PAGE = """<!doctype html>
 <html lang="en">
@@ -501,7 +503,7 @@ DIAGRAM = """<p class="hint">Download: <a href="#" data-download="png">PNG</a> Â
 <details><summary>Mermaid source</summary><pre>{escaped}</pre></details>
 <script type="text/plain" id="source">{raw}</script>
 <script type="module">
-  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+  import mermaid, {{ elkLayouts }} from "../mermaid.js";
   {elk}
   mermaid.initialize({{ startOnLoad: false, securityLevel: "loose" }});
   const src = document.getElementById("source").textContent;
@@ -521,8 +523,7 @@ DIAGRAM = """<p class="hint">Download: <a href="#" data-download="png">PNG</a> Â
 __DOWNLOAD__
 </script>"""
 
-ELK = ('const { default: elkLayouts } = await import("https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs");\n'
-       "  mermaid.registerLayoutLoaders(elkLayouts);")
+ELK = "  mermaid.registerLayoutLoaders(elkLayouts);"
 
 
 def describe(data, view):

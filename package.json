@@ -1,0 +1,21 @@
+{
+  "name": "context-mapper-page",
+  "private": true,
+  "description": "The interactive page's script: preact + htm, bundled by esbuild, tested with node --test.",
+  "type": "module",
+  "scripts": {
+    "build": "npm run build:vendor && npm run build:page",
+    "build:vendor": "esbuild src/context_mapper/template/vendor-entry.js --bundle --format=esm --minify --outfile=src/context_mapper/template/mermaid.js",
+    "build:page": "esbuild src/context_mapper/template/app.js --bundle --format=esm --external:./mermaid.js --outfile=src/context_mapper/template/page.js",
+    "test": "node --test \"tests/js/*.test.mjs\""
+  },
+  "dependencies": {
+    "@mermaid-js/layout-elk": "^0.2.3",
+    "htm": "^3.1.1",
+    "mermaid": "^11.17.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "happy-dom": "^21.0.4"
+  }
+}
