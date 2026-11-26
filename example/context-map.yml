@@ -40,12 +40,14 @@
 #         upstream: [OpenHostService, PublishedLanguage]
 #         downstream: [AnticorruptionLayer]
 #
-# Two entries can also have no direction between them at all, on purpose.
-# `partnerships` names the ones whose teams plan and ship together;
-# `sharedKernels` the ones that share part of the model itself, such as code,
-# types or a schema. Declare a pair once, on either entry: it is drawn as a line
-# with no heads, and the entry that declares it goes where an upstream goes.
-# Moving the line to the other entry flips it.
+# Two entries can also relate in ways that are not a direction.
+# `partnerships` names the ones whose teams plan and ship together, with no
+# direction between them on purpose; `sharedKernels` the ones that share part of
+# the model itself, such as code, types or a schema. Declare a pair once, on
+# either entry: it is drawn as a line with no heads, and the entry that declares
+# it goes where an upstream goes. Moving the line to the other entry flips it.
+# A shared kernel can sit beside a dependency between the same two: then the
+# dependency's arrow carries an SK badge, and the direction is its own.
 #
 #   voyage-scheduling:
 #     partnerships:
@@ -200,7 +202,9 @@ context-map:
     attributes:
       service: BookingService
       aggregates: [Cargo]
-    sharedKernels:                                  # no direction: both use the same part of the model
+    downstreams:
+      tracking: Gives the itinerary and the expected arrival.
+    sharedKernels:                                  # the two share part of the model, and Tracking still depends on Booking
       tracking: Both use the same Cargo, Itinerary and Delivery classes.
   tracking:
     name: Tracking

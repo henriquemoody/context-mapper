@@ -114,3 +114,50 @@ test("links: the role labels sit on the dependencies the source names", () => {
     assert.equal(kindOf(statements[Number(mark.split("=")[0])]), "dependency"),
   );
 });
+
+// A shared kernel beside a dependency rides on its arrow, so it takes no index
+// of its own: the violations and roles lines still name the right arrows.
+test("links: a kernel on an arrow is one edge, and the other indexes hold", () => {
+  const { source: focused, tips: focusedTips } = mermaidSource({
+    ...view,
+    focus: "fulfillment",
+    depth: 1,
+    display: { foundations: "expanded" },
+  });
+  const lines = focused
+    .split("\n")
+    .filter((line) => /^ {2}\w+ (-->|-\.->|<-->|---)/.test(line))
+    .map((line) => line.trim());
+  assert.deepEqual(lines, [
+    "fulfillment --> payments",
+    "fulfillment --- browsing",
+  ]);
+  const kernels = /%% kernels: ([\d,]+)/.exec(focused)[1].split(",");
+  assert.deepEqual(kernels, ["0"]);
+  // The arrow's tooltip holds the dependency and the kernel.
+  assert.deepEqual(
+    focusedTips[0].map((t) => t.title),
+    ["Fulfillment → Payments", "Fulfillment ↔ Payments (Shared Kernel)"],
+  );
+  // No separate line for the pair, and no middle label spelled out for it.
+  assert.ok(!lines.some((l) => l.endsWith(" payments") && l.includes("---")));
+  assert.ok(!focused.includes("Shared Kernel"));
+});
+
+test("links: a merged kernel and dependency keep the violation and role indexes right", () => {
+  const svg = drawn();
+  dropViolationHeads(svg, source);
+  drawRoleLabels(svg, source);
+  const paths = [...svg.querySelectorAll("path")];
+  const kernels = /%% kernels: ([\d,]+)/.exec(source)[1].split(",").map(Number);
+  assert.ok(kernels.length > 0);
+  kernels.forEach((i) =>
+    assert.notEqual(
+      kindOf(statements[i]),
+      "violation",
+      "kernel on a violation",
+    ),
+  );
+  assert.ok(svg.querySelectorAll(".role-labels text").length > 0);
+  assert.ok(paths.length === statements.length);
+});

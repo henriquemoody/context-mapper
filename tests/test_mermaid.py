@@ -83,7 +83,7 @@ def test_settings_default_styles_are_maps_too():
     assert cfg["focus_style"] == "stroke-width:4px,font-weight:bold"
     assert cfg["domain_style"] == "fill:#ffffff,stroke:#b0b0b0"
     assert cfg["edge_styles"] == {"violation": "stroke:#d32f2f,stroke-width:2px", "partnership": "",
-                                  "sharedKernel": "stroke-width:3px"}
+                                  "sharedKernel": ""}
 
 
 def test_settings_lets_the_style_file_restyle_the_violation_arrow():
@@ -639,7 +639,7 @@ def test_build_gives_every_static_page_the_script_that_draws_the_roles(tmp_path,
 # --- partnerships and shared kernels ---------------------------------------
 
 
-STATEMENT = re.compile(r"  \w+ (-->|-\.->|<-->|---|===)")
+STATEMENT = re.compile(r"  \w+ (-->|-\.->|<-->|---)")
 
 
 def statements_of(source):
@@ -655,7 +655,7 @@ def test_settings_gives_the_links_a_line_style_that_follows_solid():
     cfg, errors = mermaid.settings({"edge_styles": {"solid": {"stroke": "#313131", "stroke-width": "1.5px"}}})
     assert errors == []
     assert cfg["edge_styles"]["partnership"] == "stroke:#313131,stroke-width:1.5px"
-    assert cfg["edge_styles"]["sharedKernel"] == "stroke:#313131,stroke-width:3px"
+    assert cfg["edge_styles"]["sharedKernel"] == "stroke:#313131,stroke-width:1.5px"
 
 
 def test_settings_lets_the_style_file_restyle_the_links():
@@ -678,22 +678,28 @@ def test_settings_lists_the_link_styles_among_the_known_edge_styles():
 
 def test_render_draws_a_partnership_as_a_line_with_no_heads(example_data, example_cfg):
     source = mermaid.render(example_data, example_cfg, link_view(example_cfg))
-    assert 'checkout ---|"Partnership"| search' in statements_of(source)
+    assert 'checkout --- search' in statements_of(source)
 
 
-def test_render_draws_a_shared_kernel_as_a_thick_line(example_data, example_cfg):
+def test_render_draws_a_shared_kernel_as_a_plain_line_with_a_badge_mark(example_data, example_cfg):
+    """No middle label and no thick line: the page's script draws an SK badge on the arrow the line names."""
     view = {**example_cfg["defaults"], "id": "crm", "focus": "crm", "display": {"foundations": "expanded"}}
     source = mermaid.render(example_data, example_cfg, view)
-    assert 'payments ===|"Shared Kernel"| crm' in statements_of(source)
-    assert "interpolate step stroke:#313131,stroke-width:3px" in source
+    statements = statements_of(source)
+    assert statements[-1] == "payments --- crm"
+    kernels = re.search(r"  %% kernels: ([\d,]+)", source).group(1).split(",")
+    assert str(len(statements) - 1) in kernels
+    assert statements[int(kernels[0])] == "fulfillment --> payments"  # the kernel beside a dependency, on its arrow
+    assert "Shared Kernel" not in source
+    assert "stroke-width:3px" not in source
 
 
 def test_render_makes_the_declaring_entry_the_target_of_the_line(example_data, example_cfg):
     """Search declares the partnership, so it takes the upstream's place: the target, on top by default."""
     source = mermaid.render(example_data, example_cfg, link_view(example_cfg))
-    assert statements_of(source)[-1].endswith("| search")
+    assert statements_of(source)[-1].endswith(" search")
     flipped = mermaid.render(example_data, example_cfg, link_view(example_cfg, focus="checkout"))
-    assert 'checkout ---|"Partnership"| search' in statements_of(flipped)
+    assert 'checkout --- search' in statements_of(flipped)
 
 
 def test_render_moving_the_declaration_flips_the_line(example_model, example_style):
@@ -702,14 +708,14 @@ def test_render_moving_the_declaration_flips_the_line(example_model, example_sty
     data, errors = graph.normalize(example_model, example_style)
     assert errors == []
     cfg, _ = mermaid.settings(example_style["mermaid"])
-    assert 'search ---|"Partnership"| checkout' in statements_of(mermaid.render(data, cfg, link_view(cfg)))
+    assert 'search --- checkout' in statements_of(mermaid.render(data, cfg, link_view(cfg)))
 
 
 def test_render_counts_the_links_after_the_dependencies_and_the_violations(example_data, example_cfg):
     view = {**example_cfg["defaults"], "id": "orders", "focus": "orders", "depth": 99}
     source = mermaid.render(example_data, example_cfg, view)
     statements = statements_of(source)
-    kinds = ["violation" if "<-->" in line else "link" if re.search(r"(---|===)", line) else "dependency"
+    kinds = ["violation" if "<-->" in line else "link" if "---" in line else "dependency"
              for line in statements]
     assert kinds == sorted(kinds, key={"dependency": 0, "violation": 1, "link": 2}.get)
     assert "link" in kinds and "violation" in kinds
@@ -737,19 +743,73 @@ def test_render_keeps_the_roles_and_the_violations_on_the_arrows_they_name(examp
 
 
 def test_render_styles_the_links_by_kind(example_data, example_cfg):
-    view = {**example_cfg["defaults"], "id": "all", "level": "domain"}
+    view = {**example_cfg["defaults"], "id": "all", "level": "domain", "display": {"foundations": "expanded"}}
     source = mermaid.render(example_data, example_cfg, view)
     statements = statements_of(source)
-    partnership, kernel = [i for i, line in enumerate(statements) if "Partnership" in line or "Shared Kernel" in line]
-    assert f"linkStyle {partnership} interpolate step" in source
-    assert f"linkStyle {kernel} interpolate step stroke:#313131,stroke-width:3px" in source
+    partnership = statements.index("orders --- catalog")
+    kernel = statements.index("payments --- crm")
+    for index in (partnership, kernel):
+        assert re.search(rf"linkStyle [\d,]*\b{index}\b[\d,]* interpolate step stroke:#313131,stroke-width:1.5px",
+                         source), index
+    assert "%% kernels: " in source and str(kernel) in re.search(r"%% kernels: ([\d,]+)", source).group(1).split(",")
+
+
+def test_render_draws_a_shared_kernel_beside_a_dependency_on_the_arrow_itself(example_data, example_cfg):
+    """Fulfillment depends on Payments and shares a kernel with it: one arrow, no line, a badge mark."""
+    view = {**example_cfg["defaults"], "id": "fulfillment", "focus": "fulfillment",
+            "display": {"foundations": "expanded"}}
+    source = mermaid.render(example_data, example_cfg, view)
+    statements = statements_of(source)
+    assert "fulfillment --> payments" in statements
+    assert not any("---" in line and "payments" in line for line in statements)
+    assert str(statements.index("fulfillment --> payments")) in re.search(
+        r"%% kernels: ([\d,]+)", source).group(1).split(",")
+    assert "Shared Kernel" not in source
+
+
+def test_render_keeps_the_direction_and_the_roles_of_a_dependency_that_shares_a_kernel(example_model, example_style):
+    example_model["context-map"]["payments"]["sharedKernels"] = {"checkout": "Same payment types."}
+    data, errors = graph.normalize(example_model, example_style)
+    assert errors == []
+    cfg, _ = mermaid.settings(example_style["mermaid"])
+    source = mermaid.render(data, cfg, checkout_view(cfg))
+    statements = statements_of(source)
+    index = statements.index("checkout --> payments")  # the dependency's direction, whoever declares the kernel
+    assert not any("---" in line and "payments" in line for line in statements)
+    assert f"{index}=S>C" in source  # its roles, at its ends
+    assert str(index) in re.search(r"%% kernels: ([\d,]+)", source).group(1).split(",")
+
+
+def test_render_styles_a_kernel_arrow_in_the_kernel_style_laid_over_its_own(example_model, example_style):
+    example_style["mermaid"]["edge_styles"]["sharedKernel"] = {"stroke": "#00f"}
+    example_model["context-map"]["payments"]["sharedKernels"] = {"checkout": "x"}
+    example_model["context-map"]["checkout"]["downstreams"] = {}
+    data, errors = graph.normalize(example_model, example_style)
+    cfg, _ = mermaid.settings(example_style["mermaid"])
+    assert cfg["edge_styles"]["sharedKernel"] == "stroke:#00f"
+    assert mermaid.merge_styles("stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3", "stroke:#00f") == \
+        "stroke:#00f,stroke-width:1.5px,stroke-dasharray:3 3"
+
+
+def test_render_draws_a_violation_beside_a_kernel_as_its_own_arrow(tiny_model, tiny_style):
+    """Only a dependency takes the kernel onto its arrow: a violation is a separate fact."""
+    tiny_model["context-map"]["solo"]["sharedKernels"] = {"core_lib": "x"}
+    tiny_model["context-map"]["core_lib"]["violations"] = {"solo": "calls solo"}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    cfg, _ = mermaid.settings({})
+    source = mermaid.render(data, cfg, {**cfg["defaults"], "id": "all"})
+    statements = statements_of(source)
+    assert "solo <--> core_lib" in statements and "core_lib --- solo" in statements
+    kernels = re.search(r"%% kernels: ([\d,]+)", source).group(1).split(",")
+    assert kernels == [str(statements.index("core_lib --- solo"))]
 
 
 def test_render_draws_the_lifted_partnership_once_between_the_domains(example_data, example_cfg):
     view = {**example_cfg["defaults"], "id": "all", "level": "domain"}
     statements = statements_of(mermaid.render(example_data, example_cfg, view))
-    assert len([line for line in statements if "Partnership" in line]) == 1
-    assert 'orders ---|"Partnership"| catalog' in statements
+    assert len([line for line in statements if "---" in line]) == 1
+    assert "orders --- catalog" in statements
     assert "orders -.-> catalog" in statements  # the dependency is still there: two facts, two lines
 
 
@@ -758,9 +818,9 @@ def test_render_leaves_out_a_link_inside_a_domain(tiny_model, tiny_style):
     data, errors = graph.normalize(tiny_model, tiny_style)
     assert errors == []
     cfg, _ = mermaid.settings({})
-    context = mermaid.render(data, cfg, {**cfg["defaults"], "id": "all"})
-    assert 'web_api ---|"Partnership"| web_ui' in context
-    assert "Partnership" not in mermaid.render(data, cfg, {**cfg["defaults"], "id": "all", "level": "domain"})
+    assert "web_api --- web_ui" in statements_of(mermaid.render(data, cfg, {**cfg["defaults"], "id": "all"}))
+    domain = mermaid.render(data, cfg, {**cfg["defaults"], "id": "all", "level": "domain"})
+    assert "---" not in "\n".join(statements_of(domain))
 
 
 def collapsed_links(tiny_model, tiny_style, **extra):
@@ -768,24 +828,25 @@ def collapsed_links(tiny_model, tiny_style, **extra):
     data, errors = graph.normalize(tiny_model, tiny_style)
     assert errors == []
     cfg, _ = mermaid.settings({})
+    markdown = extra.pop("markdown", False)
     return mermaid.render(data, cfg, {**cfg["defaults"], "id": "all", "display": {"web": "collapsed"}, **extra},
-                          markdown=extra.pop("markdown", False))
+                          markdown=markdown)
 
 
 def test_render_merges_the_links_of_a_collapsed_box_and_names_what_it_holds(tiny_model, tiny_style):
     source = collapsed_links(tiny_model, tiny_style)
-    lines = [line for line in statements_of(source) if "Partnership" in line]
-    assert lines == ['web ---|"Web API, Web UI<br/>Partnership"| solo']
+    lines = [line for line in statements_of(source) if "---" in line]
+    assert lines == ['web ---|"Web API, Web UI"| solo']
 
 
 def test_render_leaves_the_names_out_of_a_collapsed_links_label_without_child_labels(tiny_model, tiny_style):
     source = collapsed_links(tiny_model, tiny_style, child_labels=False)
-    assert 'web ---|"Partnership"| solo' in statements_of(source)
+    assert "web --- solo" in statements_of(source)
 
 
 def test_render_puts_the_link_label_in_the_markdown_too(example_data, example_cfg):
     source = mermaid.render(example_data, example_cfg, link_view(example_cfg), markdown=True)
-    assert 'checkout ---|"Partnership"| search' in statements_of(source)
+    assert 'checkout --- search' in statements_of(source)
     assert "%% roles" not in source
 
 
@@ -798,13 +859,16 @@ def test_render_turns_the_link_labels_off(example_model, example_style):
         statements = statements_of(mermaid.render(data, cfg, link_view(cfg), markdown=markdown))
         assert statements[-1] == "checkout --- search"
     view = {**cfg["defaults"], "id": "crm", "focus": "crm", "display": {"foundations": "expanded"}}
-    assert statements_of(mermaid.render(data, cfg, view))[-1] == "payments === crm"
+    for markdown in (False, True):
+        source = mermaid.render(data, cfg, view, markdown=markdown)
+        assert statements_of(source)[-1] == "payments --- crm"
+        assert "%% kernels" not in source and "Shared Kernel" not in source
 
 
 def test_render_reaches_across_a_link_in_every_direction(example_data, example_cfg):
     for direction in ("both", "up", "down"):
         source = mermaid.render(example_data, example_cfg, link_view(example_cfg, dir=direction))
-        assert 'checkout ---|"Partnership"| search' in statements_of(source), direction
+        assert 'checkout --- search' in statements_of(source), direction
 
 
 def test_render_hides_a_link_whose_end_is_hidden(example_data, example_cfg):
@@ -815,7 +879,7 @@ def test_render_hides_a_link_whose_end_is_hidden(example_data, example_cfg):
 def test_render_gives_a_model_without_links_the_sources_it_always_did(tiny_data):
     cfg, _ = mermaid.settings({})
     source = mermaid.render(tiny_data, cfg, {**cfg["defaults"], "id": "all"})
-    assert "---|" not in source and "===" not in source
+    assert "---|" not in source and "%% kernels" not in source
 
 
 # --- links in the lists and the pages ----------------------------------------
@@ -854,8 +918,8 @@ def test_build_writes_the_partners_into_the_page_and_the_markdown(tmp_path, exam
     markdown = (tmp_path / "markdown" / "crm.md").read_text()
     assert "**Shares a kernel with (1):** [Payments](payments.md)" in markdown
     assert "**Partners" not in markdown
-    assert 'foundations ===|"Payments<br/>Shared Kernel"| crm' in markdown
-    assert 'checkout ---|"Partnership"| search' in (tmp_path / "markdown" / "search.md").read_text()
+    assert 'crm -->|"Identity, Payments<br/>Shared Kernel"| foundations' in markdown
+    assert 'checkout --- search' in (tmp_path / "markdown" / "search.md").read_text()
 
 
 # --- reaching a domain ------------------------------------------------------
@@ -1196,3 +1260,55 @@ def test_facts_of_a_domain_list_its_bounded_contexts(example_data):
 
 def test_facts_without_a_focus_are_empty(example_data):
     assert mermaid.facts(example_data, {"depth": 1, "dir": "both"}) == []
+
+
+def test_render_spells_the_shared_kernel_out_in_the_markdown_where_no_script_runs(example_model, example_style):
+    example_model["context-map"]["payments"]["sharedKernels"] = {"checkout": "Same payment types."}
+    data, errors = graph.normalize(example_model, example_style)
+    assert errors == []
+    cfg, _ = mermaid.settings(example_style["mermaid"])
+    source = mermaid.render(data, cfg, checkout_view(cfg), markdown=True)
+    assert 'checkout -->|"Shared Kernel<br/>U: S<br/>D: C"| payments' in statements_of(source)
+    assert "%% kernels" not in source
+    lone = mermaid.render(data, cfg, {**cfg["defaults"], "id": "crm", "focus": "crm",
+                                      "display": {"foundations": "expanded"}}, markdown=True)
+    assert 'payments ---|"Shared Kernel"| crm' in statements_of(lone)
+
+
+def test_render_names_what_a_collapsed_box_holds_beside_the_kernel_in_the_markdown(tiny_model, tiny_style):
+    tiny_model["context-map"]["solo"]["sharedKernels"] = {"web_ui": "x"}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    cfg, _ = mermaid.settings({})
+    view = {**cfg["defaults"], "id": "all", "display": {"web": "collapsed"}}
+    assert 'web ---|"Web UI<br/>Shared Kernel"| solo' in statements_of(mermaid.render(data, cfg, view, markdown=True))
+    source = mermaid.render(data, cfg, view)
+    assert 'web ---|"Web UI"| solo' in statements_of(source)  # the badge goes beside this label, in the script
+    assert "%% kernels: " in source
+
+
+def test_render_gives_a_merged_arrow_the_kernel_when_any_pair_in_it_shares_one(tiny_model, tiny_style):
+    """Unlike roles, the kernel isn't an agreement: one of the two dependencies sharing it is enough."""
+    tiny_model["context-map"]["web_ui"]["sharedKernels"] = {"core_lib": "x"}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    cfg, _ = mermaid.settings({})
+    source = mermaid.render(data, cfg, {**cfg["defaults"], "id": "all", "level": "domain"})
+    statements = statements_of(source)
+    assert statements == ["core --> web"] or statements[0].startswith("core -")
+    assert re.search(r"%% kernels: 0", source)
+    assert not any("---" in line for line in statements)
+
+
+def test_render_lays_the_kernel_style_over_a_dotted_arrow(tiny_model, tiny_style):
+    tiny_model["context-map"]["web_api"]["sharedKernels"] = {"core_db": "x"}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    cfg, _ = mermaid.settings({"edge_styles": {"dotted": {"stroke": "#313131", "stroke-dasharray": "3 3"},
+                                               "sharedKernel": {"stroke": "#00f"}}})
+    source = mermaid.render(data, cfg, {**cfg["defaults"], "id": "all"})
+    statements = statements_of(source)
+    index = statements.index("core_db -.-> web_api")  # still dotted, still that direction
+    assert not any("---" in line for line in statements)
+    assert "interpolate basis stroke:#00f,stroke-dasharray:3 3" in "\n".join(
+        line for line in source.splitlines() if re.search(rf"linkStyle [\d,]*\b{index}\b", line))

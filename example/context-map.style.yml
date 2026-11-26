@@ -54,6 +54,7 @@ mermaid:
 
   # Whether a dependency's roles are drawn: short codes (OHS, PL, S, ACL, CF, C) beside each end of the arrow,
   # or on the middle of it in the Markdown. Tooltips and the lists still show them when this is false.
+  # The same switch hides the SK badge of a shared kernel.
   relationship_labels: true
 
   # Defaults for every view. Each view below can override any of these.
@@ -81,14 +82,16 @@ mermaid:
       stroke: "#313131"
       stroke-width: "1.5px"
       stroke-dasharray: "3 3"
-    # The line of a partnership and of a shared kernel, which have no arrowheads.
-    # Without these they look like `solid`, and the shared kernel is thicker.
+    # The line of a partnership, which has no arrowheads, and of a shared kernel.
+    # Without these they look like `solid`. A shared kernel beside a dependency
+    # draws that arrow in its style, laid over the arrow's own, so a dotted one
+    # stays dotted.
     partnership:
       stroke: "#313131"
       stroke-width: "1.5px"
     sharedKernel:
       stroke: "#313131"
-      stroke-width: "3px"
+      stroke-width: "1.5px"
 
   # Which pages to generate, each focused on one item: all, domains, contexts, or a list of ids.
   pages: all

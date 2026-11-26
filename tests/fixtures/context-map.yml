@@ -134,6 +134,8 @@ context-map:
     attributes:
       service: fulfillment-service
       aggregates: [Shipment, Return]
+    sharedKernels:                                  # beside a dependency: Fulfillment still depends on Payments
+      payments: Both use the same payment and refund types.
 
   crm:
     name: CRM

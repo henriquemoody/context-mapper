@@ -391,6 +391,38 @@ add("state", "clamp-depth", (api) =>
       api.DIAGRAM.child_labels = true;
     }
   });
+  // A shared kernel beside a dependency rides on its arrow: the kernel's
+  // style laid over the dependency's own, so a dotted arrow stays dotted, and
+  // a mark for the page's badge instead of a middle label.
+  add("diagram", "kernel-on-a-dotted-arrow", (api) => {
+    const links = api.GRAPHS.context.links;
+    links.push({
+      kind: "sharedKernel",
+      a: "checkout",
+      b: "catalog",
+      via: [
+        { kind: "sharedKernel", a: "checkout", b: "catalog", comment: "x" },
+      ],
+    });
+    try {
+      return d(api)(st("context", "checkout"));
+    } finally {
+      links.pop();
+    }
+  });
+  add("diagram", "kernel-labels-off", (api) => {
+    api.DIAGRAM.relationship_labels = false;
+    try {
+      return d(api)(st("context", "fulfillment"));
+    } finally {
+      api.DIAGRAM.relationship_labels = true;
+    }
+  });
+  add("diagram", "kernel-on-the-arrow-focus-fulfillment", (api) =>
+    d(api)(
+      st("context", "fulfillment", 1, "both", { foundations: "expanded" }),
+    ),
+  );
   add("diagram", "child-labels-off", (api) => {
     api.DIAGRAM.child_labels = false;
     try {

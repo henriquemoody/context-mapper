@@ -293,6 +293,17 @@ var itemOfNode = {};
 [...MODEL.contexts, ...MODEL.domains, ...MODEL.clusters].forEach(
   (item) => itemOfNode[nodeId(item.id)] = item
 );
+var mergeStyles = (...styles) => {
+  const merged = /* @__PURE__ */ new Map();
+  styles.forEach(
+    (style) => (style || "").split(",").filter(Boolean).forEach((part) => {
+      const at = part.indexOf(":");
+      merged.set(part.slice(0, at), part.slice(at + 1));
+    })
+  );
+  return [...merged].map(([k2, v2]) => `${k2}:${v2}`).join(",");
+};
+var styleOf = (kind) => mergeStyles(...kind.split("+").map((k2) => DIAGRAM.edge_styles[k2] || ""));
 function mermaidSource(s2) {
   const g2 = GRAPHS[s2.level];
   let starts = focusSet(s2.level, s2.focus);
@@ -450,11 +461,33 @@ function mermaidSource(s2) {
     if (foldedBoxes.has(b2)) entry.names.add(nameOf(e2.to));
     else if (foldedBoxes.has(a2)) entry.names.add(nameOf(e2.from));
   });
+  const symmetric = /* @__PURE__ */ new Map();
+  g2.links.forEach((l2) => {
+    if (!visible.has(l2.a) || !visible.has(l2.b)) return;
+    const a2 = target(l2.a), b2 = target(l2.b);
+    if (a2 === b2 || !drawn.has(a2) || !drawn.has(b2)) return;
+    const key = l2.kind + "|" + [a2, b2].sort().join("|");
+    if (!symmetric.has(key))
+      symmetric.set(key, { kind: l2.kind, a: a2, b: b2, names: /* @__PURE__ */ new Set(), via: [] });
+    const entry = symmetric.get(key);
+    entry.via.push(...l2.via);
+    if (foldedBoxes.has(b2)) entry.names.add(nameOf(l2.b));
+    else if (foldedBoxes.has(a2)) entry.names.add(nameOf(l2.a));
+  });
+  const loneLinks = [];
+  symmetric.forEach((entry) => {
+    const carrier = entry.kind === "sharedKernel" ? [entry.a + "|" + entry.b, entry.b + "|" + entry.a].find(
+      (k2) => merged.has(k2)
+    ) : void 0;
+    if (carrier) merged.get(carrier).kernel = entry;
+    else loneLinks.push(entry);
+  });
   const byStyle = {};
   const tips = [...merged.values()].map(
-    (entry) => entry.via.filter((e2) => e2.comment || roleText(e2)).map(tipEntry)
+    (entry) => entry.via.filter((e2) => e2.comment || roleText(e2)).map(tipEntry).concat(entry.kernel ? entry.kernel.via.map(linkTipEntry) : [])
   );
   const roleMarks = [];
+  const kernelMarks = [];
   [...merged.values()].forEach((entry, i2) => {
     const style = entry.styles.has("solid") ? "solid" : [...entry.styles].sort()[0];
     let up = [], down = [];
@@ -463,15 +496,18 @@ function mermaidSource(s2) {
       [up, down] = roleCodes({ upstream, downstream });
     }
     const labelLines = [];
-    if (entry.names.size && DIAGRAM.child_labels)
-      labelLines.push([...entry.names].sort().join(", "));
+    const names2 = /* @__PURE__ */ new Set([...entry.names, ...entry.kernel?.names || []]);
+    if (names2.size && DIAGRAM.child_labels)
+      labelLines.push([...names2].sort().join(", "));
+    if (entry.kernel && DIAGRAM.relationship_labels) kernelMarks.push(i2);
     if ((up.length || down.length) && DIAGRAM.relationship_labels)
       roleMarks.push(`${i2}=${up.join(",")}>${down.join(",")}`);
     const label = labelLines.length ? `|"${quote(labelLines.join("<br/>"))}"|` : "";
     lines.push(
       `  ${nodeId(entry.a)} ${style === "dotted" ? "-.->" : "-->"}${label} ${nodeId(entry.b)}`
     );
-    (byStyle[style] = byStyle[style] || []).push(i2);
+    const key = entry.kernel ? `${style}+sharedKernel` : style;
+    (byStyle[key] = byStyle[key] || []).push(i2);
   });
   const violations = /* @__PURE__ */ new Map();
   g2.violations.forEach((r2) => {
@@ -487,25 +523,13 @@ function mermaidSource(s2) {
     (byStyle.violation = byStyle.violation || []).push(tips.length);
     tips.push(entry.via.map(violationTipEntry));
   });
-  const symmetric = /* @__PURE__ */ new Map();
-  g2.links.forEach((l2) => {
-    if (!visible.has(l2.a) || !visible.has(l2.b)) return;
-    const a2 = target(l2.a), b2 = target(l2.b);
-    if (a2 === b2 || !drawn.has(a2) || !drawn.has(b2)) return;
-    const key = l2.kind + "|" + [a2, b2].sort().join("|");
-    if (!symmetric.has(key))
-      symmetric.set(key, { kind: l2.kind, a: a2, b: b2, names: /* @__PURE__ */ new Set(), via: [] });
-    const entry = symmetric.get(key);
-    entry.via.push(...l2.via);
-    if (foldedBoxes.has(b2)) entry.names.add(nameOf(l2.b));
-    else if (foldedBoxes.has(a2)) entry.names.add(nameOf(l2.a));
-  });
-  [...symmetric.values()].forEach((entry) => {
+  loneLinks.forEach((entry) => {
     const info = MODEL.symmetric_kinds[entry.kind];
     const labelLines = [];
     if (entry.names.size && DIAGRAM.child_labels)
       labelLines.push([...entry.names].sort().join(", "));
-    if (DIAGRAM.relationship_labels) labelLines.push(info.name);
+    if (entry.kind === "sharedKernel" && DIAGRAM.relationship_labels)
+      kernelMarks.push(tips.length);
     const label = labelLines.length ? `|"${quote(labelLines.join("<br/>"))}"|` : "";
     lines.push(`  ${nodeId(entry.b)} ${info.link}${label} ${nodeId(entry.a)}`);
     (byStyle[entry.kind] = byStyle[entry.kind] || []).push(tips.length);
@@ -513,12 +537,13 @@ function mermaidSource(s2) {
   });
   Object.entries(byStyle).forEach(
     ([style, indexes]) => lines.push(
-      `  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${DIAGRAM.edge_styles[style] || ""}`.trimEnd()
+      `  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${styleOf(style)}`.trimEnd()
     )
   );
   if (byStyle.violation)
     lines.push(`  %% violations: ${byStyle.violation.join(",")}`);
   if (roleMarks.length) lines.push(`  %% roles: ${roleMarks.join(";")}`);
+  if (kernelMarks.length) lines.push(`  %% kernels: ${kernelMarks.join(",")}`);
   const highlight = s2.level === "domain" && owner[s2.focus] ? owner[s2.focus] : s2.focus;
   plainNodes.forEach((n2) => {
     if (n2 === highlight) lines.push(`  class ${nodeId(n2)} focus`);
@@ -1206,37 +1231,43 @@ function dropViolationHeads(svg, source) {
 // src/context_mapper/template/roles.js
 function drawRoleLabels(svg, source) {
   const found = /^\s*%% roles: (.+)$/m.exec(source);
-  if (!svg || !found) return;
+  const kernels = /^\s*%% kernels: ([\d,]+)$/m.exec(source);
+  if (!svg || !found && !kernels) return;
   const ns = "http://www.w3.org/2000/svg";
   const paths = svg.querySelectorAll("path.flowchart-link");
   const group = document.createElementNS(ns, "g");
   group.setAttribute("class", "role-labels");
   group.setAttribute("style", "pointer-events:none");
   const placed = [];
-  const place = (path, total, end, text) => {
+  let host = null;
+  const measure = (path) => {
+    if (!path || typeof path.getTotalLength !== "function") return null;
+    const total = path.getTotalLength();
+    if (!(total > 0)) return null;
     const at = (l2) => path.getPointAtLength(Math.min(Math.max(l2, 0), total));
-    const start = end === "start";
-    const tip2 = at(start ? 0 : total);
-    const next = at(start ? 3 : total - 3);
-    const span = Math.hypot(next.x - tip2.x, next.y - tip2.y) || 1;
-    const inward = { x: (next.x - tip2.x) / span, y: (next.y - tip2.y) / span };
-    const width = text.length * 7 + 8;
-    const height = 15;
-    const reach = (d2) => (Math.abs(d2.x) * width + Math.abs(d2.y) * height) / 2;
-    const travel = start ? inward : { x: -inward.x, y: -inward.y };
-    const normal = { x: -travel.y, y: travel.x };
-    const gap = start ? 2 : 9;
-    const along = Math.min(reach(inward) + gap, total / 2);
-    const away = reach(normal) + 2;
-    let x2 = tip2.x + inward.x * along + normal.x * away;
-    let y2 = tip2.y + inward.y * along + normal.y * away;
-    const hits = () => placed.some(
-      (r2) => Math.abs(r2.x - x2) < (r2.width + width) / 2 && Math.abs(r2.y - y2) < (r2.height + height) / 2
-    );
-    for (let tries = 0; hits() && tries < 6; tries++) {
-      x2 += normal.x * (reach(normal) * 2 + 2);
-      y2 += normal.y * (reach(normal) * 2 + 2);
-    }
+    const a2 = at(0);
+    const b2 = at(total);
+    const chord = Math.hypot(b2.x - a2.x, b2.y - a2.y);
+    if (!(chord > 0)) return null;
+    let samples = null;
+    const on = (want) => {
+      const count = Math.min(Math.max(Math.round(total), 60), 3e3);
+      samples = samples || Array.from({ length: count }, (_2, i2) => at(total * i2 / (count - 1)));
+      return samples.reduce(
+        (best, p2) => Math.hypot(p2.x - want.x, p2.y - want.y) < Math.hypot(best.x - want.x, best.y - want.y) ? p2 : best
+      );
+    };
+    return {
+      a: a2,
+      b: b2,
+      chord,
+      at,
+      total,
+      on,
+      u: { x: (b2.x - a2.x) / chord, y: (b2.y - a2.y) / chord }
+    };
+  };
+  const badge = (x2, y2, width, height, text) => {
     placed.push({ x: x2, y: y2, width, height });
     const box = document.createElementNS(ns, "rect");
     box.setAttribute("x", x2 - width / 2);
@@ -1260,17 +1291,102 @@ function drawRoleLabels(svg, source) {
     label.textContent = text;
     group.append(box, label);
   };
-  let host = null;
-  found[1].split(";").forEach((mark) => {
+  const sizeOf = (text) => ({ width: text.length * 7 + 8, height: 15 });
+  const reachOf = (size, d2) => (Math.abs(d2.x) * size.width + Math.abs(d2.y) * size.height) / 2;
+  const place = (line, end, text) => {
+    const size = sizeOf(text);
+    const start = end === "start";
+    const tip2 = start ? line.a : line.b;
+    const next = line.at(start ? 3 : line.total - 3);
+    const span = Math.hypot(next.x - tip2.x, next.y - tip2.y) || 1;
+    const inward = { x: (next.x - tip2.x) / span, y: (next.y - tip2.y) / span };
+    const reach = (d2) => reachOf(size, d2);
+    const travel = start ? inward : { x: -inward.x, y: -inward.y };
+    const normal = { x: -travel.y, y: travel.x };
+    const gap = start ? 2 : 9;
+    const along = Math.min(reach(inward) + gap, line.chord / 2);
+    const wanted = { x: tip2.x + inward.x * along, y: tip2.y + inward.y * along };
+    const center = line.on(wanted);
+    const away = reach(normal) + 2;
+    let x2 = center.x + normal.x * away;
+    let y2 = center.y + normal.y * away;
+    const hits = () => placed.some(
+      (r2) => Math.abs(r2.x - x2) < (r2.width + size.width) / 2 && Math.abs(r2.y - y2) < (r2.height + size.height) / 2
+    );
+    for (let tries = 0; hits() && tries < 20; tries++) {
+      x2 += normal.x * 3;
+      y2 += normal.y * 3;
+    }
+    badge(x2, y2, size.width, size.height, text);
+  };
+  (found ? found[1].split(";") : []).forEach((mark) => {
     const [index, roles] = mark.split("=");
     const path = paths[Number(index)];
-    if (!path || !roles || typeof path.getTotalLength !== "function") return;
-    const total = path.getTotalLength();
-    if (!(total > 0)) return;
+    const line = roles ? measure(path) : null;
+    if (!line) return;
     const [upstream, downstream] = roles.split(">").map((side) => side.split(",").filter(Boolean).join(", "));
     host = host || path.parentNode.parentNode;
-    if (downstream) place(path, total, "start", downstream);
-    if (upstream) place(path, total, "end", upstream);
+    if (downstream) place(line, "start", downstream);
+    if (upstream) place(line, "end", upstream);
+  });
+  const labelBox = (index) => {
+    const label = svg.querySelectorAll(".edgeLabel")[index];
+    if (!label || !(label.textContent || "").trim()) return null;
+    if (typeof label.getBoundingClientRect !== "function") return null;
+    const r2 = label.getBoundingClientRect();
+    if (!(r2.width > 0)) return null;
+    const m2 = host?.getScreenCTM?.()?.inverse?.();
+    const to = (x2, y2) => m2 ? { x: m2.a * x2 + m2.c * y2 + m2.e, y: m2.b * x2 + m2.d * y2 + m2.f } : { x: x2, y: y2 };
+    const a2 = to(r2.left, r2.top);
+    const b2 = to(r2.right, r2.bottom);
+    return {
+      x: (a2.x + b2.x) / 2,
+      y: (a2.y + b2.y) / 2,
+      width: Math.abs(b2.x - a2.x),
+      height: Math.abs(b2.y - a2.y)
+    };
+  };
+  (kernels ? kernels[1].split(",") : []).forEach((index) => {
+    const path = paths[Number(index)];
+    const line = measure(path);
+    if (!line) return;
+    host = host || path.parentNode.parentNode;
+    const text = "SK";
+    const size = sizeOf(text);
+    const avoid = [...placed];
+    const label = labelBox(Number(index));
+    if (label) avoid.push(label);
+    const clear = (p2) => !avoid.some(
+      (r2) => Math.abs(r2.x - p2.x) < (r2.width + size.width) / 2 + 1 && Math.abs(r2.y - p2.y) < (r2.height + size.height) / 2 + 1
+    );
+    const { a: a2, b: b2, chord, u: u2 } = line;
+    const reach = (d2) => reachOf(size, d2);
+    const head = path.getAttribute("marker-end") ? 12 : 4;
+    const tail = 4;
+    const lo = tail + reach(u2);
+    const hi = chord - head - reach(u2);
+    if (hi >= lo) {
+      const middle2 = Math.min(Math.max(chord / 2, lo), hi);
+      for (let step = 0; step <= 20; step++) {
+        const along = middle2 + (step % 2 ? 1 : -1) * Math.ceil(step / 2) * 8;
+        if (along < lo || along > hi) continue;
+        const at2 = line.on({ x: a2.x + u2.x * along, y: a2.y + u2.y * along });
+        if (clear(at2)) {
+          badge(at2.x, at2.y, size.width, size.height, text);
+          return;
+        }
+      }
+    }
+    const normal = { x: -u2.y, y: u2.x };
+    const away = reach(normal) + 2;
+    const middle = { x: (a2.x + b2.x) / 2, y: (a2.y + b2.y) / 2 };
+    let at = { x: middle.x + normal.x * away, y: middle.y + normal.y * away };
+    for (let step = 1; !clear(at) && step <= 6; step++)
+      at = {
+        x: at.x + normal.x * (reach(normal) * 2 + 2),
+        y: at.y + normal.y * (reach(normal) * 2 + 2)
+      };
+    badge(at.x, at.y, size.width, size.height, text);
   });
   if (group.childNodes.length) (host || svg).appendChild(group);
 }

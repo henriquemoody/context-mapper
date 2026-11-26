@@ -23,6 +23,25 @@ export const itemOfNode = {};
   (item) => (itemOfNode[nodeId(item.id)] = item),
 );
 
+// Mermaid style strings (`key:value,key:value`) laid over each other: a later
+// one wins a key it sets, and the keys keep the order they first appeared in.
+const mergeStyles = (...styles) => {
+  const merged = new Map();
+  styles.forEach((style) =>
+    (style || "")
+      .split(",")
+      .filter(Boolean)
+      .forEach((part) => {
+        const at = part.indexOf(":");
+        merged.set(part.slice(0, at), part.slice(at + 1));
+      }),
+  );
+  return [...merged].map(([k, v]) => `${k}:${v}`).join(",");
+};
+// The style of an edge kind, or of two laid over each other, `dotted+sharedKernel`.
+const styleOf = (kind) =>
+  mergeStyles(...kind.split("+").map((k) => DIAGRAM.edge_styles[k] || ""));
+
 export function mermaidSource(s) {
   const g = GRAPHS[s.level];
   let starts = focusSet(s.level, s.focus);
@@ -231,12 +250,51 @@ export function mermaidSource(s) {
     if (foldedBoxes.has(b)) entry.names.add(nameOf(e.to));
     else if (foldedBoxes.has(a)) entry.names.add(nameOf(e.from));
   });
+  // A partnership or a shared kernel is a line with no heads. The ones of a
+  // kind between the same two boxes become one once containers are collapsed.
+  // A shared kernel does not take the direction away, so where a dependency is
+  // drawn between its two boxes the kernel rides on that arrow, in the
+  // kernel's style and with its label, and gets no line of its own: one edge
+  // per pair. Every other one is a line, drawn after the violations, and the
+  // entry that declared it takes the upstream's place, as the target of the
+  // line does: on top with the default direction. Moving the declaration to
+  // the other entry flips the line.
+  const symmetric = new Map();
+  g.links.forEach((l) => {
+    if (!visible.has(l.a) || !visible.has(l.b)) return;
+    const a = target(l.a),
+      b = target(l.b);
+    if (a === b || !drawn.has(a) || !drawn.has(b)) return;
+    const key = l.kind + "|" + [a, b].sort().join("|");
+    if (!symmetric.has(key))
+      symmetric.set(key, { kind: l.kind, a, b, names: new Set(), via: [] });
+    const entry = symmetric.get(key);
+    entry.via.push(...l.via);
+    if (foldedBoxes.has(b)) entry.names.add(nameOf(l.b));
+    else if (foldedBoxes.has(a)) entry.names.add(nameOf(l.a));
+  });
+  const loneLinks = [];
+  symmetric.forEach((entry) => {
+    const carrier =
+      entry.kind === "sharedKernel"
+        ? [entry.a + "|" + entry.b, entry.b + "|" + entry.a].find((k) =>
+            merged.has(k),
+          )
+        : undefined;
+    if (carrier) merged.get(carrier).kernel = entry;
+    else loneLinks.push(entry);
+  });
   const byStyle = {};
-  // What the tooltip of each arrow says, in the order the arrows are drawn.
+  // What the tooltip of each arrow says, in the order the arrows are drawn:
+  // its dependencies, and the shared kernel it carries.
   const tips = [...merged.values()].map((entry) =>
-    entry.via.filter((e) => e.comment || roleText(e)).map(tipEntry),
+    entry.via
+      .filter((e) => e.comment || roleText(e))
+      .map(tipEntry)
+      .concat(entry.kernel ? entry.kernel.via.map(linkTipEntry) : []),
   );
   const roleMarks = []; // `index=upstream>downstream`, for the page's script
+  const kernelMarks = []; // the index of each edge that shares a kernel
   [...merged.values()].forEach((entry, i) => {
     const style = entry.styles.has("solid")
       ? "solid"
@@ -250,8 +308,10 @@ export function mermaidSource(s) {
       [up, down] = roleCodes({ upstream, downstream });
     }
     const labelLines = [];
-    if (entry.names.size && DIAGRAM.child_labels)
-      labelLines.push([...entry.names].sort().join(", "));
+    const names = new Set([...entry.names, ...(entry.kernel?.names || [])]);
+    if (names.size && DIAGRAM.child_labels)
+      labelLines.push([...names].sort().join(", "));
+    if (entry.kernel && DIAGRAM.relationship_labels) kernelMarks.push(i);
     if ((up.length || down.length) && DIAGRAM.relationship_labels)
       roleMarks.push(`${i}=${up.join(",")}>${down.join(",")}`);
     const label = labelLines.length
@@ -260,7 +320,8 @@ export function mermaidSource(s) {
     lines.push(
       `  ${nodeId(entry.a)} ${style === "dotted" ? "-.->" : "-->"}${label} ${nodeId(entry.b)}`,
     );
-    (byStyle[style] = byStyle[style] || []).push(i);
+    const key = entry.kernel ? `${style}+sharedKernel` : style;
+    (byStyle[key] = byStyle[key] || []).push(i);
   });
   // A violation is drawn after the real dependencies, when both ends are
   // drawn. Folded into a collapsed box it can land on a pair that depends
@@ -281,31 +342,15 @@ export function mermaidSource(s) {
     (byStyle.violation = byStyle.violation || []).push(tips.length);
     tips.push(entry.via.map(violationTipEntry));
   });
-  // A partnership or a shared kernel is a line with no heads, drawn after the
-  // violations. The ones of a kind between the same two boxes become one line
-  // once containers are collapsed. The entry that declared it takes the
-  // upstream's place, as the target of the line does: on top with the default
-  // direction. Moving the declaration to the other entry flips the line.
-  const symmetric = new Map();
-  g.links.forEach((l) => {
-    if (!visible.has(l.a) || !visible.has(l.b)) return;
-    const a = target(l.a),
-      b = target(l.b);
-    if (a === b || !drawn.has(a) || !drawn.has(b)) return;
-    const key = l.kind + "|" + [a, b].sort().join("|");
-    if (!symmetric.has(key))
-      symmetric.set(key, { kind: l.kind, a, b, names: new Set(), via: [] });
-    const entry = symmetric.get(key);
-    entry.via.push(...l.via);
-    if (foldedBoxes.has(b)) entry.names.add(nameOf(l.b));
-    else if (foldedBoxes.has(a)) entry.names.add(nameOf(l.a));
-  });
-  [...symmetric.values()].forEach((entry) => {
+  loneLinks.forEach((entry) => {
     const info = MODEL.symmetric_kinds[entry.kind];
     const labelLines = [];
     if (entry.names.size && DIAGRAM.child_labels)
       labelLines.push([...entry.names].sort().join(", "));
-    if (DIAGRAM.relationship_labels) labelLines.push(info.name);
+    // A line with no heads says it is a partnership on its own, but a plain
+    // one doesn't say it is a kernel: the page's script draws a badge.
+    if (entry.kind === "sharedKernel" && DIAGRAM.relationship_labels)
+      kernelMarks.push(tips.length);
     const label = labelLines.length
       ? `|"${quote(labelLines.join("<br/>"))}"|`
       : "";
@@ -315,7 +360,7 @@ export function mermaidSource(s) {
   });
   Object.entries(byStyle).forEach(([style, indexes]) =>
     lines.push(
-      `  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${DIAGRAM.edge_styles[style] || ""}`.trimEnd(),
+      `  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${styleOf(style)}`.trimEnd(),
     ),
   );
 
@@ -325,6 +370,8 @@ export function mermaidSource(s) {
   // The roles are drawn by the page's script, next to each end of the arrow:
   // see roles.js.
   if (roleMarks.length) lines.push(`  %% roles: ${roleMarks.join(";")}`);
+  // So are the shared kernels, as a badge at the middle of the arrow.
+  if (kernelMarks.length) lines.push(`  %% kernels: ${kernelMarks.join(",")}`);
 
   const highlight =
     s.level === "domain" && owner[s.focus] ? owner[s.focus] : s.focus;

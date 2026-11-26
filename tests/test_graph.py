@@ -1113,13 +1113,13 @@ def test_normalize_reads_a_partnership_and_a_shared_kernel_apart_from_the_depend
 def test_normalize_reads_the_links_of_the_example(example_data):
     assert {(rule["kind"], rule["a"], rule["b"]) for rule in example_data["symmetric"]} == {
         ("partnership", "browsing", "fulfillment"), ("partnership", "search", "checkout"),
-        ("sharedKernel", "crm", "payments")}
+        ("sharedKernel", "crm", "payments"), ("sharedKernel", "fulfillment", "payments")}
 
 
 def test_normalize_hands_the_page_the_kinds_of_link():
     data, _ = graph.normalize(with_links(), STYLE)
     assert data["symmetric_kinds"]["partnership"]["name"] == "Partnership"
-    assert data["symmetric_kinds"]["sharedKernel"]["link"] == "==="
+    assert data["symmetric_kinds"]["sharedKernel"]["link"] == "---"
 
 
 def test_normalize_gives_no_links_to_a_model_without_any(tiny_data):
@@ -1155,13 +1155,19 @@ def test_normalize_rejects_a_broken_link(key, value, expected):
 
 
 def test_normalize_rejects_a_pair_declared_twice():
-    """From both ends, and under both keys, it is one pair said twice."""
-    for extra in ({"beta": {"partnerships": {"alpha": "again"}}}, {"beta": {"sharedKernels": {"alpha": "again"}}}):
-        errors = errors_of(with_links(**extra))
-        assert any("are paired already (in context-map.alpha.partnerships.beta), declare the pair once" in err
+    """From both ends, it is one pair said twice."""
+    for key in ("partnerships", "sharedKernels"):
+        errors = errors_of(with_links(key, beta={key: {"alpha": "again"}}))
+        assert any(f"are paired already (in context-map.alpha.{key}.beta), declare the pair once" in err
                    for err in errors), errors
-    errors = errors_of(with_links(alpha={"sharedKernels": {"beta": "again"}}))
-    assert any("'alpha' and 'beta' are paired already" in err for err in errors), errors
+
+
+def test_normalize_rejects_a_pair_that_is_a_partnership_and_a_shared_kernel():
+    for first, second in (("partnerships", "sharedKernels"), ("sharedKernels", "partnerships")):
+        for extra in ({"beta": {second: {"alpha": "again"}}}, {"alpha": {second: {"beta": "again"}}}):
+            errors = errors_of(with_links(first, **extra))
+            assert any("are paired already (in context-map.alpha." in err
+                       and "a pair is a partnership or a shared kernel, not both" in err for err in errors), errors
 
 
 def test_normalize_rejects_a_pair_with_a_dependency_in_either_direction():
@@ -1174,9 +1180,27 @@ def test_normalize_rejects_a_pair_with_a_dependency_in_either_direction():
 def test_normalize_names_where_the_dependency_is_declared():
     errors = errors_of(with_links(beta={"downstreams": {"alpha": "x"}}))
     assert any("(in context-map.beta.downstreams)" in err for err in errors), errors
-    errors = errors_of(with_links("sharedKernels", alpha={"downstreams": {"beta": "x"}}))
-    assert any("(in context-map.alpha.downstreams)" in err and "a shared kernel replaces the direction" in err
-               for err in errors), errors
+
+
+@pytest.mark.parametrize("extra", [
+    {"alpha": {"downstreams": {"beta": "x"}}},
+    {"beta": {"downstreams": {"alpha": "x"}}},
+    {"alpha": {"violations": {"beta": "x"}}},
+    {"beta": {"violations": {"alpha": "x"}}},
+    {"alpha": {"downstreams": {"beta": {"comment": "x", "upstream": ["Supplier"], "downstream": ["Customer"]}}}},
+])
+def test_normalize_lets_a_shared_kernel_sit_beside_a_dependency_or_a_violation(extra):
+    data, errors = graph.normalize(with_links("sharedKernels", **extra), STYLE)
+    assert errors == []
+    assert [(rule["kind"], rule["a"], rule["b"]) for rule in data["symmetric"]] == [("sharedKernel", "alpha", "beta")]
+
+
+def test_normalize_keeps_the_roles_of_a_dependency_that_shares_a_kernel():
+    data, errors = graph.normalize(with_links("sharedKernels", beta={"downstreams": {"alpha": {
+        "comment": "x", "upstream": ["OpenHostService"], "downstream": ["AnticorruptionLayer"]}}}), STYLE)
+    assert errors == []
+    assert data["edges"][0]["upstream"] == ["OpenHostService"]
+    assert len(data["symmetric"]) == 1
 
 
 def test_normalize_rejects_a_pair_with_a_violation_in_either_direction():
@@ -1235,13 +1259,14 @@ def test_level_graph_keeps_a_link_as_written_at_context_level(example_data):
     links = graph.level_graph(example_data, "context")["links"]
     assert [(link["kind"], link["a"], link["b"], len(link["via"])) for link in links] == [
         ("partnership", "browsing", "fulfillment", 1), ("partnership", "search", "checkout", 1),
-        ("sharedKernel", "crm", "payments", 1)]
+        ("sharedKernel", "fulfillment", "payments", 1), ("sharedKernel", "crm", "payments", 1)]
 
 
 def test_level_graph_lifts_the_links_of_one_kind_between_two_domains_into_one(example_data):
     links = graph.level_graph(example_data, "domain")["links"]
     assert [(link["kind"], link["a"], link["b"]) for link in links] == [
-        ("partnership", "catalog", "orders"), ("sharedKernel", "crm", "payments")]
+        ("partnership", "catalog", "orders"), ("sharedKernel", "orders", "payments"),
+        ("sharedKernel", "crm", "payments")]
     assert [rule["comment"] for rule in links[0]["via"]] == [
         "Browsing and Fulfillment ship the delivery promise together.", "Search and Checkout plan the cart together."]
 
@@ -1305,6 +1330,8 @@ def test_link_relations_list_the_other_ends_by_name(example_data):
     assert graph.link_relations(example_data, "crm") == {"sharedKernel": ["payments"]}
     assert graph.link_relations(example_data, "catalog") == {"partnership": ["orders"]}  # lifted to the domains
     assert graph.link_relations(example_data, "identity") == {}
+    assert graph.link_relations(example_data, "fulfillment") == {"partnership": ["browsing"],
+                                                                 "sharedKernel": ["payments"]}
 
 
 def test_relations_leave_the_links_out(example_data):

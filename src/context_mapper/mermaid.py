@@ -49,9 +49,7 @@ EDGE_KINDS = ("solid", "dotted", "violation", "partnership", "sharedKernel")
 # What a violation's arrow looks like unless the style file says otherwise.
 VIOLATION_STYLE = {"stroke": "#d32f2f", "stroke-width": "2px"}
 
-# A partnership's line looks like a solid dependency, and a shared kernel's the same but thicker, unless the
-# style file says otherwise.
-SHARED_KERNEL_WIDTH = "3px"
+# A partnership's line and a shared kernel's look like a solid dependency, unless the style file says otherwise.
 
 ALLOWED = {
     "direction": {"TB", "BT", "LR", "RL"},
@@ -124,8 +122,7 @@ def settings(config):
         if "partnership" not in edge_styles:
             cfg["edge_styles"]["partnership"] = attribute_string("mermaid.edge_styles.solid", solid, [])
         if "sharedKernel" not in edge_styles:
-            cfg["edge_styles"]["sharedKernel"] = attribute_string(
-                "mermaid.edge_styles.solid", {**solid, "stroke-width": SHARED_KERNEL_WIDTH}, [])
+            cfg["edge_styles"]["sharedKernel"] = attribute_string("mermaid.edge_styles.solid", solid, [])
     else:
         errors.append("mermaid.edge_styles must be a map from solid, dotted, violation, partnership or "
                       "sharedKernel to Mermaid attributes")
@@ -196,6 +193,17 @@ def client_settings(cfg):
         "child_labels": defaults["child_labels"],
         "group_by_type": defaults["group_by_type"],
     }
+
+
+def merge_styles(*styles):
+    """Mermaid style strings (`key:value,key:value`) laid over each other: a later one wins a key it sets, and
+    the keys keep the order they first appeared in."""
+    merged = {}
+    for style in styles:
+        for part in filter(None, (style or "").split(",")):
+            key, _, value = part.partition(":")
+            merged[key] = value
+    return ",".join(f"{key}:{value}" for key, value in merged.items())
 
 
 def node_id(item_id):
@@ -398,8 +406,37 @@ def render(data, cfg, view, links=None, markdown=False):
         elif from_id in folded_boxes:
             entry["names"].add(names[edge["from"]])
 
+    # A partnership or a shared kernel is a line with no heads. The ones of a kind between the same two boxes
+    # become one once containers are collapsed. A shared kernel does not take the direction away, so where a
+    # dependency is drawn between its two boxes the kernel rides on that arrow, in the kernel's style and
+    # with its label, and gets no line of its own: one edge per pair. Every other one is a line, drawn after
+    # the violations, and the entry that declared it takes the upstream's place, as the target of the line
+    # does: on top with the default direction. Moving the declaration to the other entry flips the line.
+    symmetric = {}
+    for link in level_graph["links"]:
+        if link["a"] not in visible or link["b"] not in visible:
+            continue
+        a_id, b_id = folded_target(link["a"]), folded_target(link["b"])
+        if a_id == b_id or a_id not in drawn or b_id not in drawn:
+            continue
+        entry = symmetric.setdefault((link["kind"], frozenset((a_id, b_id))),
+                                     {"kind": link["kind"], "a": a_id, "b": b_id, "names": set()})
+        if b_id in folded_boxes:
+            entry["names"].add(names[link["b"]])
+        elif a_id in folded_boxes:
+            entry["names"].add(names[link["a"]])
+    lone_links = []
+    for entry in symmetric.values():
+        carrier = next((key for key in ((entry["a"], entry["b"]), (entry["b"], entry["a"]))
+                        if entry["kind"] == "sharedKernel" and key in merged), None)
+        if carrier:
+            merged[carrier]["kernel"] = entry
+        else:
+            lone_links.append(entry)
+
     by_style = {}
     role_marks = []  # `index=upstream>downstream` for each edge with roles drawn, for the page's script
+    kernel_marks = []  # the index of each edge that shares a kernel, for the page's script
     arrows = len(merged)
     for edge_index, ((from_id, to_id), entry) in enumerate(merged.items()):
         edge_style = "solid" if "solid" in entry["styles"] else sorted(entry["styles"])[0]
@@ -407,9 +444,16 @@ def render(data, cfg, view, links=None, markdown=False):
         # Roles are kept only when every dependency the arrow stands for carries the very same ones.
         upstream, downstream = graph.role_codes(*(next(iter(entry["roles"])) if len(entry["roles"]) == 1
                                                   else ((), ())))
+        kernel = entry.get("kernel")
         label_lines = []
-        if entry["names"] and view["child_labels"]:
-            label_lines.append(", ".join(sorted(entry["names"])))
+        names_here = entry["names"] | (kernel["names"] if kernel else set())
+        if names_here and view["child_labels"]:
+            label_lines.append(", ".join(sorted(names_here)))
+        if kernel and cfg["relationship_labels"]:
+            if markdown:
+                label_lines.append(graph.SYMMETRIC_KINDS["sharedKernel"]["name"])
+            else:
+                kernel_marks.append(str(edge_index))
         if (upstream or downstream) and cfg["relationship_labels"]:
             if markdown:
                 # No script runs where GitLab renders this, so the roles ride on the middle of the arrow.
@@ -419,7 +463,7 @@ def render(data, cfg, view, links=None, markdown=False):
                 role_marks.append(f"{edge_index}={','.join(upstream)}>{','.join(downstream)}")
         label = f'|"{text("<br/>".join(label_lines))}"|' if label_lines else ""
         lines.append(f"  {node_id(from_id)} {arrow}{label} {node_id(to_id)}")
-        by_style.setdefault(edge_style, []).append(str(edge_index))
+        by_style.setdefault(f"{edge_style}+sharedKernel" if kernel else edge_style, []).append(str(edge_index))
 
     # A violation is drawn after the real dependencies, when both ends are drawn. Folded into a
     # collapsed box it can land on a pair that depends that way anyway, and then the dependency says it all.
@@ -436,47 +480,39 @@ def render(data, cfg, view, links=None, markdown=False):
         lines.append(f"  {node_id(to_id)} <--> {node_id(from_id)}")
         by_style.setdefault("violation", []).append(str(arrows + offset))
 
-    # A partnership or a shared kernel is a line with no heads, drawn after the violations. The ones of a kind
-    # between the same two boxes become one line once containers are collapsed. The entry that declared it
-    # takes the upstream's place, as the target of the line does: on top with the default direction. Moving
-    # the declaration to the other entry flips the line.
-    symmetric = {}
-    for link in level_graph["links"]:
-        if link["a"] not in visible or link["b"] not in visible:
-            continue
-        a_id, b_id = folded_target(link["a"]), folded_target(link["b"])
-        if a_id == b_id or a_id not in drawn or b_id not in drawn:
-            continue
-        entry = symmetric.setdefault((link["kind"], frozenset((a_id, b_id))),
-                                     {"kind": link["kind"], "a": a_id, "b": b_id, "names": set()})
-        if b_id in folded_boxes:
-            entry["names"].add(names[link["b"]])
-        elif a_id in folded_boxes:
-            entry["names"].add(names[link["a"]])
+    # A partnership or a shared kernel that no dependency drawn between its two boxes carries is a line.
     first_link = arrows + len(violation_pairs)
-    for offset, entry in enumerate(symmetric.values()):
+    for offset, entry in enumerate(lone_links):
         info = graph.SYMMETRIC_KINDS[entry["kind"]]
         label_lines = []
         if entry["names"] and view["child_labels"]:
             label_lines.append(", ".join(sorted(entry["names"])))
-        if cfg["relationship_labels"]:
-            label_lines.append(info["name"])
+        # A line with no heads says it is a partnership on its own, but a plain one doesn't say it is a kernel:
+        # the page's script draws a badge, and the Markdown, which has no script, spells it out.
+        if entry["kind"] == "sharedKernel" and cfg["relationship_labels"]:
+            if markdown:
+                label_lines.append(info["name"])
+            else:
+                kernel_marks.append(str(first_link + offset))
         label = f'|"{text("<br/>".join(label_lines))}"|' if label_lines else ""
         lines.append(f"  {node_id(entry['b'])} {info['link']}{label} {node_id(entry['a'])}")
         by_style.setdefault(entry["kind"], []).append(str(first_link + offset))
 
     # `interpolate` sets the curve per edge, which works even where the config is ignored.
     for edge_style, edge_indexes in by_style.items():
-        extra = cfg["edge_styles"].get(edge_style, "")
+        extra = merge_styles(*(cfg["edge_styles"].get(kind, "") for kind in edge_style.split("+")))
         curve = mermaid_config(cfg, markdown)["flowchart"].get("curve", cfg["curve"])
         lines.append(f"  linkStyle {','.join(edge_indexes)} interpolate {curve} {extra}".rstrip())
 
     if by_style.get("violation"):
         lines.append(f"  %% violations: {','.join(by_style['violation'])}")
 
-    # The roles are drawn by the page's script, next to each end of the arrow: see template/roles.js.
+    # The roles are drawn by the page's script, next to each end of the arrow: see template/roles.js. So are
+    # the shared kernels, as a badge at the middle of the arrow.
     if role_marks:
         lines.append(f"  %% roles: {';'.join(role_marks)}")
+    if kernel_marks:
+        lines.append(f"  %% kernels: {','.join(kernel_marks)}")
 
     # Highlight only the focused item itself: a domain focus marks the domain box, not each context.
     highlight = owner[view["focus"]] if level == "domain" and view.get("focus") in owner else view.get("focus")

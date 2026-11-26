@@ -66,12 +66,12 @@ ROLES = {**{role: {**info, "side": "upstream"} for role, info in UPSTREAM_ROLES.
 # The relationships that have no direction: two entries that plan together (a partnership) or share part
 # of the model itself (a shared kernel). Each is a key an entry can carry, a map like `violations`. They
 # are not dependencies, so they never make a cycle, but a focus reaches across them both ways. `link` is
-# the line Mermaid draws: no heads for a partnership, a thick one for a shared kernel.
+# the line Mermaid draws when nothing else carries the pair: no heads, for both.
 SYMMETRIC_KINDS = {
     "partnership": {"key": "partnerships", "name": "Partnership", "heading": "Partners", "verb": "partners with",
                     "link": "---"},
     "sharedKernel": {"key": "sharedKernels", "name": "Shared Kernel", "heading": "Shares a kernel with",
-                     "verb": "shares a kernel with", "link": "==="},
+                     "verb": "shares a kernel with", "link": "---"},
 }
 
 
@@ -548,10 +548,11 @@ def normalize(model, styles=None):
                               f"(in context-map.{target}.downstreams), so it is not against the direction")
             violations.append({"from": owner, "to": target, "comment": comment})
 
-    # A partnership or a shared kernel has no direction: both ends plan together, or share part of the model.
-    # It is declared once, on either end, and the one that declares it is drawn first. It replaces a dependency
-    # between the two, so a pair that has one — or a violation — already is an error, and so is an entry paired
-    # with its own domain or one of its contexts, which is the same thing said twice.
+    # A partnership has no direction: both ends plan together, so it replaces a dependency between the two,
+    # and a pair that has one — or a violation — already is an error. A shared kernel says the two share part
+    # of the model, which takes no direction away: one can still depend on the other, and is drawn on that
+    # arrow. A pair is declared once, on either end, as one or the other, and the one that declares it is
+    # drawn first. An entry paired with its own domain or one of its contexts is the same thing said twice.
     owned_by = {context["id"]: context["domain"] for context in contexts}
     owned_by.update({domain["id"]: domain["id"] for domain in domains})
     declared = {}
@@ -584,11 +585,16 @@ def normalize(model, styles=None):
                 continue
             pair = frozenset((owner, target))
             if pair in declared:
-                errors.append(f"{here}: '{owner}' and '{target}' are paired already (in {declared[pair]}), "
-                              "declare the pair once")
+                before, earlier = declared[pair]
+                said = ("declare the pair once" if earlier == kind else
+                        "a pair is a partnership or a shared kernel, not both")
+                errors.append(f"{here}: '{owner}' and '{target}' are paired already (in {before}), {said}")
                 continue
-            declared[pair] = f"{where}.{key}.{target}"
+            declared[pair] = (f"{where}.{key}.{target}", kind)
             name = info["name"].lower()
+            if kind == "sharedKernel":
+                symmetric.append({"kind": kind, "a": owner, "b": target, "comment": comment})
+                continue
             if (owner, target) in real or (target, owner) in real:
                 upstream, downstream = (owner, target) if (target, owner) in real else (target, owner)
                 errors.append(f"{here}: '{owner}' and '{target}' have a dependency already (in "

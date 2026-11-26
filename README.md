@@ -135,7 +135,7 @@ When arrows merge, the merged one keeps roles only if every dependency it stands
 
 ### Partnerships and shared kernels
 
-Some pairs have no direction. Two teams plan and ship together, or two contexts share part of the model itself. Two keys on any entry in `context-map`, a domain or a bounded context, shaped like `violations`, a key with a comment or a bare key:
+Two relationships don't fit a direction. Two teams plan and ship together, or two contexts share part of the model itself. Two keys on any entry in `context-map`, a domain or a bounded context, shaped like `violations`, a key with a comment or a bare key:
 
 ```yaml
 booking:
@@ -147,21 +147,21 @@ booking:
 
 A **partnership** says the two plan and ship together, so neither one is upstream. A **shared kernel** says the two share part of the model: code, types, a schema. Declare a pair once, on either entry.
 
-A partnership is not a violation. A violation is a mistake, measured against a direction you mean to keep: fix the code, delete the line. A partnership says there is no direction between the two, on purpose.
+A partnership is not a violation. A violation is a mistake, measured against a direction you mean to keep: fix the code, delete the line. A partnership says there is no direction between the two, on purpose. A shared kernel is different: it takes no direction away. One of the two can still depend on the other, and both stay in the model.
 
 The build fails when:
 
 - the value is not a map, or is empty;
 - it names an unknown id, the entry itself, or a cluster, and a cluster can't carry either key;
-- the same pair is declared twice, from both ends or under both keys;
+- the same pair is declared twice, from both ends or under both keys, or is both a partnership and a shared kernel;
 - an entry is paired with its own domain, or a domain with one of its contexts;
-- the pair has a dependency or a violation between them, in either direction. The partnership or the shared kernel replaces the direction, so keep one of the two.
+- a partnership has a dependency or a violation between the pair, in either direction. The partnership replaces the direction, so keep one of the two. A shared kernel may sit beside a dependency, with its roles, and beside a violation.
 
-Neither takes part in cycles. A focus reaches across them in every direction setting, because it is a dependency both ways, so `dir: up` and `dir: down` follow them too. Between domains they are lifted like dependencies: the ones of a kind between the same two domains become one line, with every comment kept for the tooltip, and one inside a domain goes. A pair of domains can end up with a dependency and a partnership both, and both are drawn. They are different facts.
+Neither takes part in cycles. A focus reaches across them in every direction setting, because they are a dependency both ways, so `dir: up` and `dir: down` follow them too. Between domains they are lifted like dependencies: the ones of a kind between the same two domains become one, with every comment kept for the tooltip, and one inside a domain goes. A pair of domains can end up with a dependency and a partnership both, and both are drawn. They are different facts.
 
-It is drawn as a line with no heads, a thin one for a partnership and a thick one for a shared kernel, with the kind spelled out in the middle: *Partnership*, *Shared Kernel*. That label is part of the Mermaid source, so the Markdown files have it too. A collapsed box that names what it holds puts the names first. `mermaid.relationship_labels: false` takes it off, and then the line is bare. The line's look is `mermaid.edge_styles.partnership` and `mermaid.edge_styles.sharedKernel` in the style file: both default to the look of `solid`, and the shared kernel is a little thicker.
+A partnership is a line with no heads, and the line says it. A shared kernel alone is the same plain line, with an `SK` badge at its middle, drawn like the role codes. Beside a dependency it doesn't get a line of its own: the dependency's arrow, with its head, its direction and its role codes, carries the badge. A violation between the same pair stays its own red arrow. When arrows merge, in a lifted domain pair or a collapsed container, the merged arrow gets the badge if any of them shares a kernel. That isn't an agreement rule, like the roles' is. A collapsed box that names what it holds keeps its label, and the badge slides along the arrow to stay clear of it. `mermaid.relationship_labels: false` takes the badge off. The Markdown files run no script, so there the middle of the arrow says *Shared Kernel* in words, above the role lines. The look is `mermaid.edge_styles.partnership` and `mermaid.edge_styles.sharedKernel` in the style file: both default to the look of `solid`, and a kernel on an arrow lays its style over the arrow's own, so a dotted one stays dotted.
 
-The entry that declares the pair is drawn where an upstream goes: on top with the default direction. Move the line to the other entry and the pair flips. Hovering the line on the interactive page shows the kind and the comments. The panel and every item's page list the item's partners and what it shares a kernel with, each list only when it has someone in it.
+The entry that declares a line is drawn where an upstream goes: on top with the default direction. Move the line to the other entry and the pair flips. A kernel on a dependency's arrow follows the dependency instead, whichever entry declares it. Hovering a line or an arrow on the interactive page shows the kind and the comments, with the dependency's own. The panel and every item's page list the item's partners and what it shares a kernel with, each list only when it has someone in it, and a dependency's other end appears in both its lists.
 
 ## Attributes
 
@@ -253,10 +253,10 @@ The rest lives in the `mermaid` section. Every style in it is a map of the same 
 | `config` | map | Any other [Mermaid config](https://mermaid.js.org/config/schema-docs/config.html), merged over the above. For example `elk.nodePlacementStrategy`. |
 | `markdown_config` | map | Merged over everything for `<out>/markdown/*.md` only. GitLab's built-in Mermaid has no ELK, so the example sets `layout: dagre` here. |
 | `attribute_tooltips` | `true`, `false` | Whether hovering a box shows its attributes too. The interactive page only; `true` by default. |
-| `relationship_labels` | `true`, `false` | Whether the roles of a dependency are drawn on the diagrams, as codes at the ends of the arrow or, in the Markdown, on its middle, and whether a partnership or a shared kernel is named on its line. Tooltips and lists show them either way; `true` by default. |
+| `relationship_labels` | `true`, `false` | Whether the roles of a dependency are drawn on the diagrams, as codes at the ends of the arrow or, in the Markdown, on its middle, and whether a shared kernel gets its `SK` badge, or its words in the Markdown. Tooltips and lists show them either way; `true` by default. |
 | `focus_style` | map of Mermaid attributes | How the focused item is highlighted. |
 | `domain_style` | map of Mermaid attributes | Style of the box around a domain's bounded contexts. A domain with its own style under `context-map` overrides it — and its type colors, when drawn as one box. |
-| `edge_styles.solid`, `edge_styles.dotted`, `edge_styles.violation`, `edge_styles.partnership`, `edge_styles.sharedKernel` | map of Mermaid attributes | Line styles. Dotted comes from `style: dotted` on a downstream; violation is the arrow of a `violations` entry, red by default; partnership and sharedKernel are the lines of a `partnerships` and a `sharedKernels` entry, like solid by default, the shared kernel thicker. |
+| `edge_styles.solid`, `edge_styles.dotted`, `edge_styles.violation`, `edge_styles.partnership`, `edge_styles.sharedKernel` | map of Mermaid attributes | Line styles. Dotted comes from `style: dotted` on a downstream; violation is the arrow of a `violations` entry, red by default; partnership and sharedKernel are the lines of a `partnerships` and a `sharedKernels` entry, like solid by default. |
 | `pages` | `all`, `domains`, `contexts`, or a list of ids | Which items get their own page. |
 
 These can be set under `defaults` and overridden per view:
