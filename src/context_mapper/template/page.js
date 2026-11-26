@@ -144,6 +144,12 @@ function levelGraph(level) {
         from: r2.from,
         to: r2.to,
         via: [r2]
+      })),
+      links: MODEL.symmetric.map((r2) => ({
+        kind: r2.kind,
+        a: r2.a,
+        b: r2.b,
+        via: [r2]
       }))
     };
   }
@@ -166,11 +172,20 @@ function levelGraph(level) {
     if (!violations.has(key)) violations.set(key, { from: a2, to: b2, via: [] });
     violations.get(key).via.push(r2);
   });
+  const links = /* @__PURE__ */ new Map();
+  MODEL.symmetric.forEach((r2) => {
+    const a2 = owner[r2.a], b2 = owner[r2.b];
+    if (a2 === b2) return;
+    const key = r2.kind + "|" + [a2, b2].sort().join("|");
+    if (!links.has(key)) links.set(key, { kind: r2.kind, a: a2, b: b2, via: [] });
+    links.get(key).via.push(r2);
+  });
   return {
     nodes: new Set(MODEL.domains.map((d2) => d2.id)),
     childOf,
     edges: [...merged.values()],
-    violations: [...violations.values()]
+    violations: [...violations.values()],
+    links: [...links.values()]
   };
 }
 var GRAPHS = {
@@ -218,15 +233,26 @@ function walk(g2, starts, depth, dir, hidden) {
     up[e2.from].push(e2.to);
     down[e2.to].push(e2.from);
   });
+  g2.links.forEach((l2) => {
+    [
+      [l2.a, l2.b],
+      [l2.b, l2.a]
+    ].forEach(([one, other]) => {
+      up[one].push(other);
+      down[one].push(other);
+    });
+  });
   const seen = new Set(starts);
   const go = (next) => {
+    const been = new Set(starts);
     let frontier = [...starts];
     for (let i2 = 0; i2 < depth && frontier.length; i2++) {
       const nf = [];
       frontier.forEach(
         (n2) => (next[n2] || []).forEach(
           (m2) => descendants(g2, [m2]).forEach((r2) => {
-            if (!seen.has(r2) && allowed(r2)) {
+            if (!been.has(r2) && allowed(r2)) {
+              been.add(r2);
               seen.add(r2);
               nf.push(r2);
             }
@@ -247,6 +273,17 @@ function relationEdges(id) {
     ups: g2.edges.filter((e2) => e2.from === id).sort(by("to")),
     downs: g2.edges.filter((e2) => e2.to === id).sort(by("from"))
   };
+}
+function linkRelations(id) {
+  const g2 = isMulti(id) ? GRAPHS.domain : GRAPHS.context;
+  const found = {};
+  g2.links.filter((l2) => l2.a === id || l2.b === id).forEach(
+    (l2) => (found[l2.kind] = found[l2.kind] || []).push(l2.a === id ? l2.b : l2.a)
+  );
+  Object.values(found).forEach(
+    (ids) => ids.sort((x2, y2) => nameOf(x2).localeCompare(nameOf(y2)))
+  );
+  return found;
 }
 
 // src/context_mapper/template/core/diagram.js
@@ -450,6 +487,30 @@ function mermaidSource(s2) {
     (byStyle.violation = byStyle.violation || []).push(tips.length);
     tips.push(entry.via.map(violationTipEntry));
   });
+  const symmetric = /* @__PURE__ */ new Map();
+  g2.links.forEach((l2) => {
+    if (!visible.has(l2.a) || !visible.has(l2.b)) return;
+    const a2 = target(l2.a), b2 = target(l2.b);
+    if (a2 === b2 || !drawn.has(a2) || !drawn.has(b2)) return;
+    const key = l2.kind + "|" + [a2, b2].sort().join("|");
+    if (!symmetric.has(key))
+      symmetric.set(key, { kind: l2.kind, a: a2, b: b2, names: /* @__PURE__ */ new Set(), via: [] });
+    const entry = symmetric.get(key);
+    entry.via.push(...l2.via);
+    if (foldedBoxes.has(b2)) entry.names.add(nameOf(l2.b));
+    else if (foldedBoxes.has(a2)) entry.names.add(nameOf(l2.a));
+  });
+  [...symmetric.values()].forEach((entry) => {
+    const info = MODEL.symmetric_kinds[entry.kind];
+    const labelLines = [];
+    if (entry.names.size && DIAGRAM.child_labels)
+      labelLines.push([...entry.names].sort().join(", "));
+    if (DIAGRAM.relationship_labels) labelLines.push(info.name);
+    const label = labelLines.length ? `|"${quote(labelLines.join("<br/>"))}"|` : "";
+    lines.push(`  ${nodeId(entry.b)} ${info.link}${label} ${nodeId(entry.a)}`);
+    (byStyle[entry.kind] = byStyle[entry.kind] || []).push(tips.length);
+    tips.push(entry.via.map(linkTipEntry));
+  });
   Object.entries(byStyle).forEach(
     ([style, indexes]) => lines.push(
       `  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${DIAGRAM.edge_styles[style] || ""}`.trimEnd()
@@ -472,6 +533,13 @@ var violationTipEntry = (dep) => ({
   title: `${nameOf(dep.from)} \u2192 ${nameOf(dep.to)} (violation)`,
   text: dep.comment || "Against the direction of the dependencies."
 });
+var linkTipEntry = (link2) => {
+  const entry = {
+    title: `${nameOf(link2.a)} \u2194 ${nameOf(link2.b)} (${MODEL.symmetric_kinds[link2.kind].name})`
+  };
+  if (link2.comment) entry.text = link2.comment;
+  return entry;
+};
 var tipEntry = (dep) => {
   const entry = { title: `${nameOf(dep.from)} \u2192 ${nameOf(dep.to)}` };
   const roles = roleText(dep);
@@ -958,6 +1026,20 @@ var Panel = ({ s: s2, visible }) => {
   const dUps = own.filter((e2) => e2.from === parent);
   const dDowns = own.filter((e2) => e2.to === parent);
   const pname = nameOf(parent);
+  const linkLists = (found, heading) => Object.entries(MODEL.symmetric_kinds).filter(([kind]) => found[kind]).map(
+    ([kind, info]) => html`<h3>${heading(info)} (${found[kind].length})</h3>${list(found[kind])}`
+  );
+  const ofParent = {};
+  GRAPHS.context.links.filter((l2) => l2.a === parent || l2.b === parent).forEach(
+    (l2) => (ofParent[l2.kind] = ofParent[l2.kind] || /* @__PURE__ */ new Set()).add(
+      l2.a === parent ? l2.b : l2.a
+    )
+  );
+  Object.keys(ofParent).forEach((kind) => {
+    ofParent[kind] = [...ofParent[kind]].sort(
+      (x2, y2) => nameOf(x2).localeCompare(nameOf(y2))
+    );
+  });
   return html`<h2>${item.name}</h2>${chip(item.type)} <span class="hint">${domainById[id] ? "Domain" : "Bounded context"}</span>
       <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>
       ${item.description ? html`<p class="hint">${item.description}</p>` : null}${attributeSection(item)}
@@ -965,8 +1047,10 @@ var Panel = ({ s: s2, visible }) => {
       ${!isMulti(id) && isMulti(parent) ? html`<h3>Domain</h3>${list([parent])}` : null}
       <h3>Depends on (${r2.ups.length})</h3>${dependencyList(r2.ups, "to")}
       <h3>Used by (${r2.downs.length})</h3>${dependencyList(r2.downs, "from")}
+      ${linkLists(linkRelations(id), (info) => info.heading)}
       ${!isMulti(id) && isMulti(parent) && dUps.length ? html`<h3>${pname} as a whole depends on</h3>${dependencyList(dUps, "to")}` : null}
       ${!isMulti(id) && isMulti(parent) && dDowns.length ? html`<h3>${pname} as a whole is used by</h3>${dependencyList(dDowns, "from")}` : null}
+      ${!isMulti(id) && isMulti(parent) ? linkLists(ofParent, (info) => `${pname} as a whole ${info.verb}`) : null}
       <h3>Legend</h3>${legend}`;
 };
 function renderInfo(s2, visible) {
@@ -1128,6 +1212,7 @@ function drawRoleLabels(svg, source) {
   const group = document.createElementNS(ns, "g");
   group.setAttribute("class", "role-labels");
   group.setAttribute("style", "pointer-events:none");
+  const placed = [];
   const place = (path, total, end, text) => {
     const at = (l2) => path.getPointAtLength(Math.min(Math.max(l2, 0), total));
     const start = end === "start";
@@ -1138,13 +1223,21 @@ function drawRoleLabels(svg, source) {
     const width = text.length * 7 + 8;
     const height = 15;
     const reach = (d2) => (Math.abs(d2.x) * width + Math.abs(d2.y) * height) / 2;
-    const along = Math.min(Math.max(16, reach(inward) + 6), total / 2);
-    const center = at(start ? along : total - along);
     const travel = start ? inward : { x: -inward.x, y: -inward.y };
     const normal = { x: -travel.y, y: travel.x };
+    const gap = start ? 2 : 9;
+    const along = Math.min(reach(inward) + gap, total / 2);
     const away = reach(normal) + 2;
-    const x2 = center.x + normal.x * away;
-    const y2 = center.y + normal.y * away;
+    let x2 = tip2.x + inward.x * along + normal.x * away;
+    let y2 = tip2.y + inward.y * along + normal.y * away;
+    const hits = () => placed.some(
+      (r2) => Math.abs(r2.x - x2) < (r2.width + width) / 2 && Math.abs(r2.y - y2) < (r2.height + height) / 2
+    );
+    for (let tries = 0; hits() && tries < 6; tries++) {
+      x2 += normal.x * (reach(normal) * 2 + 2);
+      y2 += normal.y * (reach(normal) * 2 + 2);
+    }
+    placed.push({ x: x2, y: y2, width, height });
     const box = document.createElementNS(ns, "rect");
     box.setAttribute("x", x2 - width / 2);
     box.setAttribute("y", y2 - height / 2);

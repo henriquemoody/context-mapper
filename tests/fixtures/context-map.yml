@@ -105,9 +105,13 @@ context-map:
     name: Browsing
     domain: catalog
     attributes: { aggregates: [Session Cart] }
+    partnerships:                                   # no direction: a line with no heads, declared once
+      fulfillment: Browsing and Fulfillment ship the delivery promise together.
   search:
     name: Search
     domain: catalog
+    partnerships:
+      checkout: Search and Checkout plan the cart together.
 
   orders:
     name: Orders
@@ -134,3 +138,5 @@ context-map:
   crm:
     name: CRM
     type: supporting
+    sharedKernels:                                  # the two share part of the model itself
+      payments: Both use the same payer and invoice types.

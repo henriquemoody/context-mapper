@@ -21,9 +21,11 @@ export function drawRoleLabels(svg, source) {
   group.setAttribute("class", "role-labels");
   group.setAttribute("style", "pointer-events:none");
 
-  // A label near one end of a path, beside it: its box clears the line however
-  // the line runs, and sits a few pixels in from the end, so it hides neither
-  // the arrowhead nor the box the arrow meets.
+  // A label hugging one end of a path, beside it: right against the box the
+  // arrow leaves or meets, so it doesn't float into the gap where a
+  // container's title sits. Its box clears the line by a pixel or two, and at
+  // the upstream end it starts past the arrowhead.
+  const placed = [];
   const place = (path, total, end, text) => {
     const at = (l) => path.getPointAtLength(Math.min(Math.max(l, 0), total));
     const start = end === "start";
@@ -36,15 +38,28 @@ export function drawRoleLabels(svg, source) {
     // Half the box's extent along a direction: how far its center must be
     // from the line, or from the end, for the box to clear it.
     const reach = (d) => (Math.abs(d.x) * width + Math.abs(d.y) * height) / 2;
-    const along = Math.min(Math.max(16, reach(inward) + 6), total / 2);
-    const center = at(start ? along : total - along);
     // The same side of the line at both ends: to the right of the way the
     // arrow is drawn, from the downstream to the upstream.
     const travel = start ? inward : { x: -inward.x, y: -inward.y };
     const normal = { x: -travel.y, y: travel.x };
+    const gap = start ? 2 : 9; // the upstream end carries the arrowhead
+    const along = Math.min(reach(inward) + gap, total / 2);
     const away = reach(normal) + 2;
-    const x = center.x + normal.x * away;
-    const y = center.y + normal.y * away;
+    let x = tip.x + inward.x * along + normal.x * away;
+    let y = tip.y + inward.y * along + normal.y * away;
+    // Several arrows leave a box close together: a label that would cover one
+    // already placed slides sideways, away from its line, until it is clear.
+    const hits = () =>
+      placed.some(
+        (r) =>
+          Math.abs(r.x - x) < (r.width + width) / 2 &&
+          Math.abs(r.y - y) < (r.height + height) / 2,
+      );
+    for (let tries = 0; hits() && tries < 6; tries++) {
+      x += normal.x * (reach(normal) * 2 + 2);
+      y += normal.y * (reach(normal) * 2 + 2);
+    }
+    placed.push({ x, y, width, height });
     const box = document.createElementNS(ns, "rect");
     box.setAttribute("x", x - width / 2);
     box.setAttribute("y", y - height / 2);

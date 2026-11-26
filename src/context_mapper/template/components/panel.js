@@ -7,7 +7,7 @@ import {
   nameOf,
   isMulti,
 } from "../core/model.js";
-import { GRAPHS, relationEdges } from "../core/graph.js";
+import { GRAPHS, relationEdges, linkRelations } from "../core/graph.js";
 import { roleText } from "../core/roles.js";
 import { attributeSection } from "./attributes.js";
 import { $ } from "../dom/query.js";
@@ -60,6 +60,28 @@ const Panel = ({ s, visible }) => {
   const dUps = own.filter((e) => e.from === parent);
   const dDowns = own.filter((e) => e.to === parent);
   const pname = nameOf(parent);
+  // Partnerships and shared kernels have no direction: a list of each, when
+  // there is one, for the item and for the domain it is written against.
+  const linkLists = (found, heading) =>
+    Object.entries(MODEL.symmetric_kinds)
+      .filter(([kind]) => found[kind])
+      .map(
+        ([kind, info]) =>
+          html`<h3>${heading(info)} (${found[kind].length})</h3>${list(found[kind])}`,
+      );
+  const ofParent = {};
+  GRAPHS.context.links
+    .filter((l) => l.a === parent || l.b === parent)
+    .forEach((l) =>
+      (ofParent[l.kind] = ofParent[l.kind] || new Set()).add(
+        l.a === parent ? l.b : l.a,
+      ),
+    );
+  Object.keys(ofParent).forEach((kind) => {
+    ofParent[kind] = [...ofParent[kind]].sort((x, y) =>
+      nameOf(x).localeCompare(nameOf(y)),
+    );
+  });
   return html`<h2>${item.name}</h2>${chip(item.type)} <span class="hint">${domainById[id] ? "Domain" : "Bounded context"}</span>
       <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>
       ${item.description ? html`<p class="hint">${item.description}</p>` : null}${attributeSection(item)}
@@ -67,8 +89,10 @@ const Panel = ({ s, visible }) => {
       ${!isMulti(id) && isMulti(parent) ? html`<h3>Domain</h3>${list([parent])}` : null}
       <h3>Depends on (${r.ups.length})</h3>${dependencyList(r.ups, "to")}
       <h3>Used by (${r.downs.length})</h3>${dependencyList(r.downs, "from")}
+      ${linkLists(linkRelations(id), (info) => info.heading)}
       ${!isMulti(id) && isMulti(parent) && dUps.length ? html`<h3>${pname} as a whole depends on</h3>${dependencyList(dUps, "to")}` : null}
       ${!isMulti(id) && isMulti(parent) && dDowns.length ? html`<h3>${pname} as a whole is used by</h3>${dependencyList(dDowns, "from")}` : null}
+      ${!isMulti(id) && isMulti(parent) ? linkLists(ofParent, (info) => `${pname} as a whole ${info.verb}`) : null}
       <h3>Legend</h3>${legend}`;
 };
 

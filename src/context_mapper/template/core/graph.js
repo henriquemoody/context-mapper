@@ -39,6 +39,12 @@ export function levelGraph(level) {
         to: r.to,
         via: [r],
       })),
+      links: MODEL.symmetric.map((r) => ({
+        kind: r.kind,
+        a: r.a,
+        b: r.b,
+        via: [r],
+      })),
     };
   }
   const merged = new Map();
@@ -66,11 +72,24 @@ export function levelGraph(level) {
     if (!violations.has(key)) violations.set(key, { from: a, to: b, via: [] });
     violations.get(key).via.push(r);
   });
+  // A partnership or a shared kernel is lifted the same way: the ones of one
+  // kind between the same two domains become one, drawn from the end that
+  // declared the first of them; inside a domain they go.
+  const links = new Map();
+  MODEL.symmetric.forEach((r) => {
+    const a = owner[r.a],
+      b = owner[r.b];
+    if (a === b) return;
+    const key = r.kind + "|" + [a, b].sort().join("|");
+    if (!links.has(key)) links.set(key, { kind: r.kind, a, b, via: [] });
+    links.get(key).via.push(r);
+  });
   return {
     nodes: new Set(MODEL.domains.map((d) => d.id)),
     childOf,
     edges: [...merged.values()],
     violations: [...violations.values()],
+    links: [...links.values()],
   };
 }
 export const GRAPHS = {
@@ -123,8 +142,23 @@ export function walk(g, starts, depth, dir, hidden) {
     up[e.from].push(e.to);
     down[e.to].push(e.from);
   });
+  // A partnership or a shared kernel has no direction: it is a dependency
+  // both ways, whatever `dir` says.
+  g.links.forEach((l) => {
+    [
+      [l.a, l.b],
+      [l.b, l.a],
+    ].forEach(([one, other]) => {
+      up[one].push(other);
+      down[one].push(other);
+    });
+  });
   const seen = new Set(starts);
   const go = (next) => {
+    // Each direction keeps its own account of where it has been: a link has
+    // no direction, so a box the other direction reached through one is still
+    // a box this one goes on from.
+    const been = new Set(starts);
     let frontier = [...starts];
     for (let i = 0; i < depth && frontier.length; i++) {
       const nf = [];
@@ -132,7 +166,8 @@ export function walk(g, starts, depth, dir, hidden) {
       frontier.forEach((n) =>
         (next[n] || []).forEach((m) =>
           descendants(g, [m]).forEach((r) => {
-            if (!seen.has(r) && allowed(r)) {
+            if (!been.has(r) && allowed(r)) {
+              been.add(r);
               seen.add(r);
               nf.push(r);
             }
@@ -162,4 +197,21 @@ export function relationEdges(id) {
 export function relations(id) {
   const { ups, downs } = relationEdges(id);
   return { ups: ups.map((e) => e.to), downs: downs.map((e) => e.from) };
+}
+
+// The partnerships and shared kernels of an item, as { kind: [the other ends,
+// sorted by name] }: its own at context level, a multi-context domain's lifted
+// to domain level. A kind with none is left out.
+export function linkRelations(id) {
+  const g = isMulti(id) ? GRAPHS.domain : GRAPHS.context;
+  const found = {};
+  g.links
+    .filter((l) => l.a === id || l.b === id)
+    .forEach((l) =>
+      (found[l.kind] = found[l.kind] || []).push(l.a === id ? l.b : l.a),
+    );
+  Object.values(found).forEach((ids) =>
+    ids.sort((x, y) => nameOf(x).localeCompare(nameOf(y))),
+  );
+  return found;
 }

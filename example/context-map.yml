@@ -40,6 +40,17 @@
 #         upstream: [OpenHostService, PublishedLanguage]
 #         downstream: [AnticorruptionLayer]
 #
+# Two entries can also have no direction between them at all, on purpose.
+# `partnerships` names the ones whose teams plan and ship together;
+# `sharedKernels` the ones that share part of the model itself, such as code,
+# types or a schema. Declare a pair once, on either entry: it is drawn as a line
+# with no heads, and the entry that declares it goes where an upstream goes.
+# Moving the line to the other entry flips it.
+#
+#   voyage-scheduling:
+#     partnerships:
+#       routing: Change the schedules and the route planning together.
+#
 # Every entry can also carry a `description`: the interactive page shows it as
 # a tooltip when you hover over its box, and the item's page shows it in text.
 #
@@ -136,8 +147,9 @@ context-map:
     description: Plans the voyages. A voyage is a list of carrier movements, port to port.
     attributes:
       aggregates: [Voyage]
+    partnerships:                                   # no direction: both teams plan and ship together
+      routing: Routes are only as good as the schedules, so the two teams change them together.
     downstreams:
-      routing: Gives the voyage schedules to plan routes with.
       handling-history: Names the voyage a cargo went on or came off.
   routing:
     name: Routing
@@ -188,8 +200,8 @@ context-map:
     attributes:
       service: BookingService
       aggregates: [Cargo]
-    downstreams:
-      tracking: Gives the itinerary and the expected arrival.
+    sharedKernels:                                  # no direction: both use the same part of the model
+      tracking: Both use the same Cargo, Itinerary and Delivery classes.
   tracking:
     name: Tracking
     domain: cargo

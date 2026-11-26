@@ -455,7 +455,7 @@ def attributes_model(attributes, values):
         },
         STYLE,
         "context-map.alpha.customFields: unknown option. "
-        "Known: attributes, cluster, description, downstreams, name, type, violations",
+        "Known: attributes, cluster, description, downstreams, name, partnerships, sharedKernels, type, violations",
     ),
     (
         {
@@ -465,7 +465,7 @@ def attributes_model(attributes, values):
         },
         STYLE,
         "context-map.alpha.properties: unknown option. "
-        "Known: attributes, cluster, description, downstreams, name, type, violations",
+        "Known: attributes, cluster, description, downstreams, name, partnerships, sharedKernels, type, violations",
     ),
     (
         {
@@ -478,7 +478,7 @@ def attributes_model(attributes, values):
         },
         STYLE,
         "context-map.ctx.customFields: unknown option. "
-        "Known: attributes, cluster, description, domain, downstreams, name, type, violations",
+        "Known: attributes, cluster, description, domain, downstreams, name, partnerships, sharedKernels, type, violations",
     ),
     (
         {
@@ -1080,3 +1080,233 @@ def test_relation_edges_carry_the_roles_of_each_dependency(example_data):
     assert by_target["payments"]["downstream"] == ["Customer"]
     assert by_target["catalog"]["upstream"] == []
     assert downs == []
+
+
+# --- normalize, partnerships and shared kernels ------------------------------
+
+
+def with_links(key="partnerships", links=None, **extra):
+    """alpha, beta and gamma, with `key` set on alpha."""
+    entries = {
+        "alpha": {"name": "Alpha", "type": "core", key: links if links is not None else {"beta": "Plan together."}},
+        "beta": {"name": "Beta", "type": "core"},
+        "gamma": {"name": "Gamma", "type": "core"},
+    }
+    for entry_id, entry in extra.items():
+        entries[entry_id] = {**entries[entry_id], **entry}
+    return model(**entries)
+
+
+def test_normalize_reads_a_partnership_and_a_shared_kernel_apart_from_the_dependencies():
+    data, errors = graph.normalize(with_links(links={"beta": "Plan together.", "gamma": None}), STYLE)
+    assert errors == []
+    assert data["symmetric"] == [
+        {"kind": "partnership", "a": "alpha", "b": "beta", "comment": "Plan together."},
+        {"kind": "partnership", "a": "alpha", "b": "gamma", "comment": None},
+    ]
+    assert data["edges"] == []
+    data, errors = graph.normalize(with_links("sharedKernels", {"beta": "Same types."}), STYLE)
+    assert errors == []
+    assert data["symmetric"] == [{"kind": "sharedKernel", "a": "alpha", "b": "beta", "comment": "Same types."}]
+
+
+def test_normalize_reads_the_links_of_the_example(example_data):
+    assert {(rule["kind"], rule["a"], rule["b"]) for rule in example_data["symmetric"]} == {
+        ("partnership", "browsing", "fulfillment"), ("partnership", "search", "checkout"),
+        ("sharedKernel", "crm", "payments")}
+
+
+def test_normalize_hands_the_page_the_kinds_of_link():
+    data, _ = graph.normalize(with_links(), STYLE)
+    assert data["symmetric_kinds"]["partnership"]["name"] == "Partnership"
+    assert data["symmetric_kinds"]["sharedKernel"]["link"] == "==="
+
+
+def test_normalize_gives_no_links_to_a_model_without_any(tiny_data):
+    assert tiny_data["symmetric"] == []
+
+
+def test_normalize_never_makes_a_cycle_of_a_link():
+    """A partnership declared on both ends of what would be a cycle is not one: there is no direction."""
+    data, errors = graph.normalize(model(
+        alpha={"name": "Alpha", "type": "core", "partnerships": {"beta": "x"}},
+        beta={"name": "Beta", "type": "core", "downstreams": {"gamma": "y"}},
+        gamma={"name": "Gamma", "type": "core", "downstreams": {"alpha": "z"}}), STYLE)
+    assert errors == []
+    assert graph.find_cycle(graph.level_graph(data, "context")) is None
+
+
+@pytest.mark.parametrize("key, value, expected", [
+    ("partnerships", ["beta"], "context-map.alpha: `partnerships` must be a map"),
+    ("sharedKernels", "beta", "context-map.alpha: `sharedKernels` must be a map"),
+    ("partnerships", {}, "context-map.alpha: `partnerships` is empty"),
+    ("sharedKernels", {}, "context-map.alpha: `sharedKernels` is empty"),
+    ("partnerships", {"ghost": "x"}, "unknown domain or context 'ghost' in context-map.alpha.partnerships"),
+    ("sharedKernels", {"ghost": "x"}, "unknown domain or context 'ghost' in context-map.alpha.sharedKernels"),
+    ("partnerships", {"alpha": "x"},
+     "context-map.alpha.partnerships.alpha: an entry can't be paired with itself"),
+    ("partnerships", {"beta": 42}, "context-map.alpha.partnerships.beta: must be a comment string, or nothing"),
+    ("partnerships", {"beta": {"comment": "x"}},
+     "context-map.alpha.partnerships.beta: must be a comment string, or nothing"),
+])
+def test_normalize_rejects_a_broken_link(key, value, expected):
+    errors = errors_of(with_links(key, value))
+    assert any(expected in err for err in errors), errors
+
+
+def test_normalize_rejects_a_pair_declared_twice():
+    """From both ends, and under both keys, it is one pair said twice."""
+    for extra in ({"beta": {"partnerships": {"alpha": "again"}}}, {"beta": {"sharedKernels": {"alpha": "again"}}}):
+        errors = errors_of(with_links(**extra))
+        assert any("are paired already (in context-map.alpha.partnerships.beta), declare the pair once" in err
+                   for err in errors), errors
+    errors = errors_of(with_links(alpha={"sharedKernels": {"beta": "again"}}))
+    assert any("'alpha' and 'beta' are paired already" in err for err in errors), errors
+
+
+def test_normalize_rejects_a_pair_with_a_dependency_in_either_direction():
+    for extra in ({"alpha": {"downstreams": {"beta": "x"}}}, {"beta": {"downstreams": {"alpha": "x"}}}):
+        errors = errors_of(with_links(**extra))
+        assert any("'alpha' and 'beta' have a dependency already (in context-map." in err
+                   and "a partnership replaces the direction between them" in err for err in errors), errors
+
+
+def test_normalize_names_where_the_dependency_is_declared():
+    errors = errors_of(with_links(beta={"downstreams": {"alpha": "x"}}))
+    assert any("(in context-map.beta.downstreams)" in err for err in errors), errors
+    errors = errors_of(with_links("sharedKernels", alpha={"downstreams": {"beta": "x"}}))
+    assert any("(in context-map.alpha.downstreams)" in err and "a shared kernel replaces the direction" in err
+               for err in errors), errors
+
+
+def test_normalize_rejects_a_pair_with_a_violation_in_either_direction():
+    for extra in ({"alpha": {"violations": {"beta": "x"}}}, {"beta": {"violations": {"alpha": "x"}}}):
+        errors = errors_of(with_links(**extra))
+        assert any("have a violation already (in context-map." in err for err in errors), errors
+
+
+def test_normalize_rejects_an_entry_paired_with_its_own_domain():
+    entries = {
+        "core": {"name": "Core", "type": "core"},
+        "core_lib": {"name": "Core Lib", "domain": "core", "type": "core"},
+    }
+    for entry_id, other in (("core_lib", "core"), ("core", "core_lib")):
+        errors = errors_of(model(**{**entries, entry_id: {**entries[entry_id], "partnerships": {other: "x"}}}))
+        assert any("'core_lib' is in the 'core' domain already, so they are not two ends" in err
+                   for err in errors), errors
+
+
+def test_normalize_accepts_two_contexts_of_one_domain():
+    data, errors = graph.normalize(model(
+        core={"name": "Core", "type": "core"},
+        a={"name": "A", "domain": "core", "partnerships": {"b": "x"}},
+        b={"name": "B", "domain": "core"}), STYLE)
+    assert errors == []
+    assert graph.level_graph(data, "domain")["links"] == []  # inside one domain it disappears
+
+
+def test_normalize_accepts_a_pair_between_a_domain_and_a_context_of_another():
+    data, errors = graph.normalize(model(
+        core={"name": "Core", "type": "core", "sharedKernels": {"b": "x"}},
+        a={"name": "A", "domain": "core"},
+        other={"name": "Other", "type": "core"},
+        b={"name": "B", "domain": "other"}), STYLE)
+    assert errors == []
+    assert [(link["a"], link["b"]) for link in graph.level_graph(data, "context")["links"]] == [("core", "b")]
+    assert [(link["a"], link["b"]) for link in graph.level_graph(data, "domain")["links"]] == [("core", "other")]
+
+
+@pytest.mark.parametrize("key", ["partnerships", "sharedKernels"])
+def test_normalize_does_not_let_a_cluster_carry_a_link(key):
+    errors = errors_of({**model(alpha={"name": "Alpha", "type": "core", "cluster": "base"}),
+                        "clusters": {"base": {"name": "Base", key: {"alpha": "x"}}}})
+    assert any(f"clusters.base.{key}: a cluster can't be paired" in err for err in errors), errors
+
+
+def test_normalize_does_not_let_a_link_point_at_a_cluster():
+    errors = errors_of({**with_links(links={"base": "x"}), "clusters": {"base": {"name": "Base"}}})
+    assert any("context-map.alpha.partnerships.base: a cluster can't be paired" in err for err in errors), errors
+
+
+# --- links, levels and reach --------------------------------------------------
+
+
+def test_level_graph_keeps_a_link_as_written_at_context_level(example_data):
+    links = graph.level_graph(example_data, "context")["links"]
+    assert [(link["kind"], link["a"], link["b"], len(link["via"])) for link in links] == [
+        ("partnership", "browsing", "fulfillment", 1), ("partnership", "search", "checkout", 1),
+        ("sharedKernel", "crm", "payments", 1)]
+
+
+def test_level_graph_lifts_the_links_of_one_kind_between_two_domains_into_one(example_data):
+    links = graph.level_graph(example_data, "domain")["links"]
+    assert [(link["kind"], link["a"], link["b"]) for link in links] == [
+        ("partnership", "catalog", "orders"), ("sharedKernel", "crm", "payments")]
+    assert [rule["comment"] for rule in links[0]["via"]] == [
+        "Browsing and Fulfillment ship the delivery promise together.", "Search and Checkout plan the cart together."]
+
+
+def test_level_graph_keeps_two_kinds_between_the_same_domains_apart(tiny_model, tiny_style):
+    tiny_model["context-map"]["solo"]["partnerships"] = {"web_ui": "x"}
+    tiny_model["context-map"]["web_api"]["sharedKernels"] = {"solo": "y"}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    assert [(link["kind"], len(link["via"])) for link in graph.level_graph(data, "domain")["links"]] == [
+        ("sharedKernel", 1), ("partnership", 1)] or \
+        sorted((link["kind"], len(link["via"])) for link in graph.level_graph(data, "domain")["links"]) == [
+        ("partnership", 1), ("sharedKernel", 1)]
+
+
+def test_level_graph_keeps_a_link_and_a_dependency_between_the_same_domains(example_data):
+    """Catalog and Orders have a dependency and a partnership: both are drawn, they are different facts."""
+    domain = graph.level_graph(example_data, "domain")
+    assert any((edge["from"], edge["to"]) == ("orders", "catalog") for edge in domain["edges"])
+    assert any(link["kind"] == "partnership" and {link["a"], link["b"]} == {"orders", "catalog"}
+               for link in domain["links"])
+
+
+def test_level_graph_merges_the_same_pair_declared_from_each_domain(tiny_model, tiny_style):
+    tiny_model["context-map"]["web_ui"]["partnerships"] = {"core_lib": "x"}
+    tiny_model["context-map"]["web_api"]["partnerships"] = {"core_db": "y"}
+    for owner in ("web_ui", "web_api"):
+        tiny_model["context-map"][owner].pop("downstreams", None)
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    links = graph.level_graph(data, "domain")["links"]
+    assert [(link["a"], link["b"], len(link["via"])) for link in links] == [("web", "core", 2)]
+
+
+@pytest.mark.parametrize("direction", ["both", "up", "down"])
+def test_walk_reaches_across_a_link_whatever_the_direction(direction):
+    data, errors = graph.normalize(with_links(), STYLE)
+    assert errors == []
+    context = graph.level_graph(data, "context")
+    assert graph.walk(context, {"alpha"}, 1, direction, set()) == {"alpha", "beta"}
+    assert graph.walk(context, {"beta"}, 1, direction, set()) == {"alpha", "beta"}
+
+
+def test_walk_goes_on_across_a_link_and_a_dependency():
+    data, errors = graph.normalize(with_links(beta={"downstreams": {"gamma": "x"}}), STYLE)
+    assert errors == []
+    context = graph.level_graph(data, "context")
+    assert graph.walk(context, {"alpha"}, 1, "both", set()) == {"alpha", "beta"}
+    assert graph.walk(context, {"alpha"}, 2, "both", set()) == {"alpha", "beta", "gamma"}
+    assert graph.walk(context, {"alpha"}, 2, "up", set()) == {"alpha", "beta"}  # gamma depends on beta
+    assert graph.walk(context, {"alpha"}, 2, "down", set()) == {"alpha", "beta", "gamma"}
+
+
+def test_walk_does_not_reach_across_a_hidden_end():
+    data, _ = graph.normalize(with_links(), STYLE)
+    assert graph.walk(graph.level_graph(data, "context"), {"alpha"}, 1, "both", {"beta"}) == {"alpha"}
+
+
+def test_link_relations_list_the_other_ends_by_name(example_data):
+    assert graph.link_relations(example_data, "search") == {"partnership": ["checkout"]}
+    assert graph.link_relations(example_data, "crm") == {"sharedKernel": ["payments"]}
+    assert graph.link_relations(example_data, "catalog") == {"partnership": ["orders"]}  # lifted to the domains
+    assert graph.link_relations(example_data, "identity") == {}
+
+
+def test_relations_leave_the_links_out(example_data):
+    ups, downs = graph.relations(example_data, "search")
+    assert (ups, downs) == ([], [])

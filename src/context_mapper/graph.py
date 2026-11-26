@@ -63,6 +63,18 @@ ROLES = {**{role: {**info, "side": "upstream"} for role, info in UPSTREAM_ROLES.
          **{role: {**info, "side": "downstream"} for role, info in DOWNSTREAM_ROLES.items()}}
 
 
+# The relationships that have no direction: two entries that plan together (a partnership) or share part
+# of the model itself (a shared kernel). Each is a key an entry can carry, a map like `violations`. They
+# are not dependencies, so they never make a cycle, but a focus reaches across them both ways. `link` is
+# the line Mermaid draws: no heads for a partnership, a thick one for a shared kernel.
+SYMMETRIC_KINDS = {
+    "partnership": {"key": "partnerships", "name": "Partnership", "heading": "Partners", "verb": "partners with",
+                    "link": "---"},
+    "sharedKernel": {"key": "sharedKernels", "name": "Shared Kernel", "heading": "Shares a kernel with",
+                     "verb": "shares a kernel with", "link": "==="},
+}
+
+
 def role_text(upstream, downstream):
     """A dependency's roles as a sentence for tooltips and lists: the upstream roles, an arrow, the downstream
     roles, with the display names. One side alone says which side it is. No roles, no text."""
@@ -259,7 +271,7 @@ def normalize(model, styles=None):
     cluster_styles = styles.get("clusters") or {}
     entry_styles = styles.get("context-map") or {}
     errors = []
-    domains, contexts, pending, pending_violations = [], [], [], []
+    domains, contexts, pending, pending_violations, pending_symmetric = [], [], [], [], []
     model = model or {}
 
     for section in ("types", "context-map"):
@@ -267,7 +279,7 @@ def normalize(model, styles=None):
             errors.append(f"context-map.yml: `{section}` is missing or empty")
     if errors:
         return ({"types": {}, "clusters": [], "domains": [], "contexts": [], "edges": [], "violations": [],
-                 "attributes": {}}, errors)
+                 "symmetric": [], "attributes": {}}, errors)
 
     types = {}
     for type_id, type_entry in model["types"].items():
@@ -329,7 +341,10 @@ def normalize(model, styles=None):
             errors.append(f"context-map.yml: clusters.{cluster_id}: needs a map with `name`")
             continue
         for key in cluster:
-            if key not in ("name", "attributes"):
+            if key in {info["key"] for info in SYMMETRIC_KINDS.values()}:
+                errors.append(f"context-map.yml: clusters.{cluster_id}.{key}: a cluster can't be paired, "
+                              "nothing can depend on a cluster, and nothing can be partnered with one either")
+            elif key not in ("name", "attributes"):
                 errors.append(f"context-map.yml: clusters.{cluster_id}.{key}: unknown option. "
                               f"Known: {', '.join(sorted(('name', 'attributes')))}")
         if not cluster.get("name"):
@@ -372,7 +387,7 @@ def normalize(model, styles=None):
             continue
         if "domain" in entry:
             check_keys(entry_id, entry, ("name", "domain", "type", "cluster", "downstreams", "violations",
-                                         "description", "attributes"))
+                                         "partnerships", "sharedKernels", "description", "attributes"))
             if entry.get("cluster") is not None:
                 errors.append(f"context-map.{entry_id}: a bounded context is inside its domain "
                               "already, it can't also be in a cluster")
@@ -381,8 +396,8 @@ def normalize(model, styles=None):
                 errors.append(f"context-map.{entry_id}: unknown domain '{entry.get('domain')}'")
             raw_contexts.append((entry_id, entry))
         else:
-            check_keys(entry_id, entry, ("name", "type", "cluster", "downstreams", "violations", "description",
-                                         "attributes"))
+            check_keys(entry_id, entry, ("name", "type", "cluster", "downstreams", "violations", "partnerships",
+                                         "sharedKernels", "description", "attributes"))
             check_cluster(entry_id, entry.get("cluster"))
             if entry.get("cluster") is not None:
                 member_of[entry_id] = entry["cluster"]
@@ -399,6 +414,9 @@ def normalize(model, styles=None):
             pending.append((domain_id, f"context-map.{domain_id}", domain["downstreams"]))
         if "violations" in domain:
             pending_violations.append((domain_id, f"context-map.{domain_id}", domain["violations"]))
+        for kind, info in SYMMETRIC_KINDS.items():
+            if info["key"] in domain:
+                pending_symmetric.append((domain_id, f"context-map.{domain_id}", kind, domain[info["key"]]))
         context_ids = []
         for context_id, context in raw_contexts:
             if context.get("domain") != domain_id:
@@ -424,6 +442,9 @@ def normalize(model, styles=None):
                 pending.append((context_id, f"context-map.{context_id}", context["downstreams"]))
             if "violations" in context:
                 pending_violations.append((context_id, f"context-map.{context_id}", context["violations"]))
+            for kind, info in SYMMETRIC_KINDS.items():
+                if info["key"] in context:
+                    pending_symmetric.append((context_id, f"context-map.{context_id}", kind, context[info["key"]]))
         # A domain with no bounded contexts is one itself: one box, with nothing
         # inside, so its defaultDisplay is a bounded context's.
         mermaid_style = box_style("context-map", domain_id, domain_style, TEXT_DEFAULTS, (), errors,
@@ -527,8 +548,64 @@ def normalize(model, styles=None):
                               f"(in context-map.{target}.downstreams), so it is not against the direction")
             violations.append({"from": owner, "to": target, "comment": comment})
 
+    # A partnership or a shared kernel has no direction: both ends plan together, or share part of the model.
+    # It is declared once, on either end, and the one that declares it is drawn first. It replaces a dependency
+    # between the two, so a pair that has one — or a violation — already is an error, and so is an entry paired
+    # with its own domain or one of its contexts, which is the same thing said twice.
+    owned_by = {context["id"]: context["domain"] for context in contexts}
+    owned_by.update({domain["id"]: domain["id"] for domain in domains})
+    declared = {}
+    symmetric = []
+    for owner, where, kind, links_map in pending_symmetric:
+        info = SYMMETRIC_KINDS[kind]
+        key = info["key"]
+        if not isinstance(links_map, dict):
+            errors.append(f"{where}: `{key}` must be a map from the {info['name'].lower()}'s other end to a comment")
+            continue
+        if not links_map:
+            errors.append(f"{where}: `{key}` is empty")
+            continue
+        for target, comment in links_map.items():
+            here = f"{where}.{key}.{target}"
+            if comment is not None and not isinstance(comment, str):
+                errors.append(f"{here}: must be a comment string, or nothing")
+            if target in cluster_ids:
+                errors.append(f"{here}: a cluster can't be paired, nothing can depend on a cluster")
+                continue
+            if target not in seen:
+                errors.append(f"unknown domain or context '{target}' in {where}.{key}")
+                continue
+            if target == owner:
+                errors.append(f"{here}: an entry can't be paired with itself")
+                continue
+            if owned_by.get(owner) == target or owned_by.get(target) == owner:
+                whole, part = (owner, target) if owned_by.get(target) == owner else (target, owner)
+                errors.append(f"{here}: '{part}' is in the '{whole}' domain already, so they are not two ends")
+                continue
+            pair = frozenset((owner, target))
+            if pair in declared:
+                errors.append(f"{here}: '{owner}' and '{target}' are paired already (in {declared[pair]}), "
+                              "declare the pair once")
+                continue
+            declared[pair] = f"{where}.{key}.{target}"
+            name = info["name"].lower()
+            if (owner, target) in real or (target, owner) in real:
+                upstream, downstream = (owner, target) if (target, owner) in real else (target, owner)
+                errors.append(f"{here}: '{owner}' and '{target}' have a dependency already (in "
+                              f"context-map.{upstream}.downstreams), a {name} replaces the direction between "
+                              "them, so keep one of the two")
+                continue
+            if any({rule["from"], rule["to"]} == set(pair) for rule in violations):
+                violating = next(rule["from"] for rule in violations if {rule["from"], rule["to"]} == set(pair))
+                errors.append(f"{here}: '{owner}' and '{target}' have a violation already (in "
+                              f"context-map.{violating}.violations), a {name} replaces the direction between "
+                              "them, so keep one of the two")
+                continue
+            symmetric.append({"kind": kind, "a": owner, "b": target, "comment": comment})
+
     data = {"types": types, "clusters": clusters, "domains": domains, "contexts": contexts, "edges": edges,
-            "violations": violations, "attributes": attributes, "roles": ROLES}
+            "violations": violations, "symmetric": symmetric, "attributes": attributes, "roles": ROLES,
+            "symmetric_kinds": SYMMETRIC_KINDS}
     if not errors:
         cycle = find_cycle(level_graph(data, "context"))
         if cycle:
@@ -560,7 +637,8 @@ def level_graph(data, level):
         edges = [{"from": edge["from"], "to": edge["to"], "styles": {edge["style"]}, "via": [edge],
                   "upstream": edge["upstream"], "downstream": edge["downstream"]} for edge in data["edges"]]
         violations = [{"from": rule["from"], "to": rule["to"], "via": [rule]} for rule in data["violations"]]
-        return {"nodes": nodes, "edges": edges, "violations": violations, "child_of": child_of}
+        links = [{"kind": rule["kind"], "a": rule["a"], "b": rule["b"], "via": [rule]} for rule in data["symmetric"]]
+        return {"nodes": nodes, "edges": edges, "violations": violations, "links": links, "child_of": child_of}
 
     merged = {}
     for edge in data["edges"]:
@@ -583,10 +661,20 @@ def level_graph(data, level):
         if downstream_owner == upstream_owner or key in merged:
             continue
         violations.setdefault(key, {"from": downstream_owner, "to": upstream_owner, "via": []})["via"].append(rule)
+    # A partnership or a shared kernel is lifted the same way: the ones of one kind between the same two
+    # domains become one, drawn from the end that declared the first of them; inside a domain they go.
+    links = {}
+    for rule in data["symmetric"]:
+        a_owner, b_owner = owner[rule["a"]], owner[rule["b"]]
+        if a_owner == b_owner:
+            continue
+        key = (rule["kind"], frozenset((a_owner, b_owner)))
+        links.setdefault(key, {"kind": rule["kind"], "a": a_owner, "b": b_owner, "via": []})["via"].append(rule)
     return {
         "nodes": set(domains),
         "edges": list(merged.values()),
         "violations": list(violations.values()),
+        "links": list(links.values()),
         "child_of": child_of,
     }
 
@@ -673,16 +761,25 @@ def walk(level_graph, starts, depth, direction, hidden):
     for edge in level_graph["edges"]:
         upstreams_of[edge["from"]].append(edge["to"])
         downstreams_of[edge["to"]].append(edge["from"])
+    # A partnership or a shared kernel has no direction: it is a dependency both ways, whatever `dir` says.
+    for link in level_graph["links"]:
+        for one, other in ((link["a"], link["b"]), (link["b"], link["a"])):
+            upstreams_of[one].append(other)
+            downstreams_of[one].append(other)
     seen = set(starts)
 
     def expand(adjacency):
+        # Each direction keeps its own account of where it has been: a link has no direction, so a box the
+        # other direction reached through one is still a box this one goes on from.
+        been = set(starts)
         frontier = list(starts)
         for _ in range(depth):
             next_frontier = []
             for node in frontier:
                 for neighbor in adjacency.get(node, []):
                     for reached in descendants(level_graph, [neighbor]):
-                        if reached not in seen and is_shown(reached):
+                        if reached not in been and is_shown(reached):
+                            been.add(reached)
                             seen.add(reached)
                             next_frontier.append(reached)
             frontier = next_frontier
@@ -692,6 +789,19 @@ def walk(level_graph, starts, depth, direction, hidden):
     if direction != "up":
         expand(downstreams_of)
     return seen
+
+
+def link_relations(data, item_id):
+    """The partnerships and shared kernels of a context, or of a domain (lifted to domain level), as
+    {kind: [the other ends, sorted by name]}. A kind with none is left out."""
+    domains, _, _, names = index(data)
+    multi = item_id in domains and not domains[item_id]["single"]
+    links = level_graph(data, "domain" if multi else "context")["links"]
+    found = {}
+    for link in links:
+        if item_id in (link["a"], link["b"]):
+            found.setdefault(link["kind"], []).append(link["b"] if link["a"] == item_id else link["a"])
+    return {kind: sorted(others, key=names.get) for kind, others in found.items()}
 
 
 def relation_edges(data, item_id):

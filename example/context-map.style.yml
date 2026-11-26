@@ -81,6 +81,14 @@ mermaid:
       stroke: "#313131"
       stroke-width: "1.5px"
       stroke-dasharray: "3 3"
+    # The line of a partnership and of a shared kernel, which have no arrowheads.
+    # Without these they look like `solid`, and the shared kernel is thicker.
+    partnership:
+      stroke: "#313131"
+      stroke-width: "1.5px"
+    sharedKernel:
+      stroke: "#313131"
+      stroke-width: "3px"
 
   # Which pages to generate, each focused on one item: all, domains, contexts, or a list of ids.
   pages: all

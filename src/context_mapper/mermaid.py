@@ -44,10 +44,14 @@ VIEW_ONLY = {"id", "title", "focus", "description", "direction"}
 
 # The kinds of edge `edge_styles` can style: a plain one, `style: dotted` on a downstream, and the
 # red arrow of a violation: a dependency that goes against the direction.
-EDGE_KINDS = ("solid", "dotted", "violation")
+EDGE_KINDS = ("solid", "dotted", "violation", "partnership", "sharedKernel")
 
 # What a violation's arrow looks like unless the style file says otherwise.
 VIOLATION_STYLE = {"stroke": "#d32f2f", "stroke-width": "2px"}
+
+# A partnership's line looks like a solid dependency, and a shared kernel's the same but thicker, unless the
+# style file says otherwise.
+SHARED_KERNEL_WIDTH = "3px"
 
 ALLOWED = {
     "direction": {"TB", "BT", "LR", "RL"},
@@ -116,8 +120,15 @@ def settings(config):
                 errors.append(f"mermaid.edge_styles.{kind}: unknown option. Known: {', '.join(EDGE_KINDS)}")
         cfg["edge_styles"] = {kind: attribute_string(f"mermaid.edge_styles.{kind}", attrs, errors)
                               for kind, attrs in edge_styles.items()}
+        solid = edge_styles.get("solid") if isinstance(edge_styles.get("solid"), dict) else {}
+        if "partnership" not in edge_styles:
+            cfg["edge_styles"]["partnership"] = attribute_string("mermaid.edge_styles.solid", solid, [])
+        if "sharedKernel" not in edge_styles:
+            cfg["edge_styles"]["sharedKernel"] = attribute_string(
+                "mermaid.edge_styles.solid", {**solid, "stroke-width": SHARED_KERNEL_WIDTH}, [])
     else:
-        errors.append("mermaid.edge_styles must be a map from solid, dotted or violation to Mermaid attributes")
+        errors.append("mermaid.edge_styles must be a map from solid, dotted, violation, partnership or "
+                      "sharedKernel to Mermaid attributes")
         cfg["edge_styles"] = {}
     cfg["edge_styles"].setdefault("violation", graph.classdef(VIOLATION_STYLE, {}))
     return cfg, errors
@@ -425,6 +436,35 @@ def render(data, cfg, view, links=None, markdown=False):
         lines.append(f"  {node_id(to_id)} <--> {node_id(from_id)}")
         by_style.setdefault("violation", []).append(str(arrows + offset))
 
+    # A partnership or a shared kernel is a line with no heads, drawn after the violations. The ones of a kind
+    # between the same two boxes become one line once containers are collapsed. The entry that declared it
+    # takes the upstream's place, as the target of the line does: on top with the default direction. Moving
+    # the declaration to the other entry flips the line.
+    symmetric = {}
+    for link in level_graph["links"]:
+        if link["a"] not in visible or link["b"] not in visible:
+            continue
+        a_id, b_id = folded_target(link["a"]), folded_target(link["b"])
+        if a_id == b_id or a_id not in drawn or b_id not in drawn:
+            continue
+        entry = symmetric.setdefault((link["kind"], frozenset((a_id, b_id))),
+                                     {"kind": link["kind"], "a": a_id, "b": b_id, "names": set()})
+        if b_id in folded_boxes:
+            entry["names"].add(names[link["b"]])
+        elif a_id in folded_boxes:
+            entry["names"].add(names[link["a"]])
+    first_link = arrows + len(violation_pairs)
+    for offset, entry in enumerate(symmetric.values()):
+        info = graph.SYMMETRIC_KINDS[entry["kind"]]
+        label_lines = []
+        if entry["names"] and view["child_labels"]:
+            label_lines.append(", ".join(sorted(entry["names"])))
+        if cfg["relationship_labels"]:
+            label_lines.append(info["name"])
+        label = f'|"{text("<br/>".join(label_lines))}"|' if label_lines else ""
+        lines.append(f"  {node_id(entry['b'])} {info['link']}{label} {node_id(entry['a'])}")
+        by_style.setdefault(entry["kind"], []).append(str(first_link + offset))
+
     # `interpolate` sets the curve per edge, which works even where the config is ignored.
     for edge_style, edge_indexes in by_style.items():
         extra = cfg["edge_styles"].get(edge_style, "")
@@ -526,6 +566,7 @@ PAGE = """<!doctype html>
   h1 {{ font-size: 24px; margin: 12px 0 4px; }}
   h3 {{ margin-bottom: 4px; }}
   .hint {{ color: #595959; margin: 0 0 16px; }}
+  li .hint {{ font-size: 13px; margin: 0; }}
   #diagram {{ overflow: auto; border: 1px solid #e7e7e7; border-radius: 8px; padding: 16px; }}
   #diagram svg {{ max-width: 100%; height: auto; }}
   #diagram a, #diagram a *, #diagram .clickable, #diagram .clickable * {{ cursor: pointer; }}
@@ -664,6 +705,9 @@ def fact_sections(data, view):
     upstreams, downstreams = graph.relations(data, focus)
     sections += [(f"Depends on ({len(upstreams)})", upstreams, role_notes(upstream_edges, "to")),
                  (f"Used by ({len(downstreams)})", downstreams, role_notes(downstream_edges, "from"))]
+    # Partnerships and shared kernels have no direction: a list of each, when there is one.
+    for kind, others in graph.link_relations(data, focus).items():
+        sections.append((f"{graph.SYMMETRIC_KINDS[kind]['heading']} ({len(others)})", others, {}))
 
     # Dependencies written against the whole domain apply to this context too, we just don't know how yet.
     if focus in contexts:
@@ -680,6 +724,11 @@ def fact_sections(data, view):
             if domain_downstreams:
                 sections.append((f"{name} as a whole is used by ({len(domain_downstreams)})", domain_downstreams,
                                  role_notes(parent_downstream_edges, "from")))
+            for kind, info in graph.SYMMETRIC_KINDS.items():
+                others = sorted({rule["b"] if rule["a"] == parent else rule["a"] for rule in data["symmetric"]
+                                 if rule["kind"] == kind and parent in (rule["a"], rule["b"])}, key=names.get)
+                if others:
+                    sections.append((f"{name} as a whole {info['verb']} ({len(others)})", others, {}))
     return sections
 
 
@@ -722,7 +771,7 @@ def build(data, config, out):
                     else html.escape(names[item_id]))
 
         def html_item(item_id, notes):
-            note = f" <span class='hint'>{html.escape(notes[item_id])}</span>" if item_id in notes else ""
+            note = f" <span class='hint'>· {html.escape(notes[item_id])}</span>" if item_id in notes else ""
             return f"<li>{html_link(item_id)}{note}</li>"
 
         cols = "".join(
@@ -751,7 +800,7 @@ def build(data, config, out):
 
         def md_link(item_id, notes):
             link = f"[{names[item_id]}]({item_id}.md)" if item_id in pages else names[item_id]
-            return f"{link} ({notes[item_id]})" if item_id in notes else link
+            return f"{link} · {notes[item_id]}" if item_id in notes else link
 
         md = [f"# {title}", ""]
         if about:

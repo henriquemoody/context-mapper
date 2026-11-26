@@ -189,6 +189,59 @@ add("graph", "shared-roles", (api) => {
   };
 });
 
+// Partnerships and shared kernels: at context level as written, at domain
+// level lifted — the same kind between the same two domains becomes one, with
+// every comment kept, and one inside a domain goes.
+add("graph", "links", (api) => {
+  const shape = (g) =>
+    g.links.map((l) => ({
+      kind: l.kind,
+      a: l.a,
+      b: l.b,
+      via: l.via.map((r) => r.comment),
+    }));
+  return {
+    context: shape(api.GRAPHS.context),
+    domain: shape(api.GRAPHS.domain),
+  };
+});
+
+// A focus walks across a link in every direction, since it is a dependency
+// both ways.
+add("graph", "link-walks", (api) => {
+  const w = (level, focus, depth, dir) =>
+    sorted(
+      api.walk(
+        api.GRAPHS[level],
+        api.focusSet(level, focus),
+        depth,
+        dir,
+        new Set(),
+      ),
+    );
+  return Object.fromEntries(
+    ["both", "up", "down"].flatMap((dir) => [
+      [`search-${dir}`, w("context", "search", 1, dir)],
+      [`crm-${dir}`, w("context", "crm", 1, dir)],
+      [`catalog-domain-${dir}`, w("domain", "catalog", 1, dir)],
+    ]),
+  );
+});
+
+add("graph", "link-relations", (api) =>
+  Object.fromEntries(
+    [
+      "search",
+      "browsing",
+      "checkout",
+      "crm",
+      "payments",
+      "catalog",
+      "orders",
+    ].map((id) => [id, api.linkRelations(id)]),
+  ),
+);
+
 add("graph", "node-items", (api) =>
   Object.fromEntries(
     Object.entries(api.itemOfNode).map(([node, item]) => [node, item.name]),
@@ -303,6 +356,41 @@ add("state", "clamp-depth", (api) =>
       api.DIAGRAM.relationship_labels = true;
     }
   });
+  // Partnerships and shared kernels: lines with no heads, after the violations,
+  // counted by linkStyle like the rest; folded boxes merge the ones of a kind
+  // between the same two boxes, and name what they hold.
+  add("diagram", "links-focus-search", (api) =>
+    d(api)(st("context", "search")),
+  );
+  add("diagram", "links-both-collapsed", (api) =>
+    d(api)(
+      st("context", "", 1, "both", {
+        catalog: "collapsed",
+        orders: "collapsed",
+      }),
+    ),
+  );
+  add("diagram", "links-labels-off", (api) => {
+    api.DIAGRAM.relationship_labels = false;
+    try {
+      return d(api)(st("context", "search"));
+    } finally {
+      api.DIAGRAM.relationship_labels = true;
+    }
+  });
+  add("diagram", "links-child-labels-off", (api) => {
+    api.DIAGRAM.child_labels = false;
+    try {
+      return d(api)(
+        st("context", "", 1, "both", {
+          catalog: "collapsed",
+          orders: "collapsed",
+        }),
+      );
+    } finally {
+      api.DIAGRAM.child_labels = true;
+    }
+  });
   add("diagram", "child-labels-off", (api) => {
     api.DIAGRAM.child_labels = false;
     try {
@@ -382,6 +470,22 @@ add("attributes", "tip-entry-roles", (api) => ({
   }),
 }));
 
+// A link's tooltip names its kind and the two ends, and carries the comment.
+add("attributes", "link-tip-entry", (api) => ({
+  partnership: api.linkTipEntry({
+    kind: "partnership",
+    a: "search",
+    b: "checkout",
+    comment: "Search and Checkout plan the cart together.",
+  }),
+  "shared-kernel-no-comment": api.linkTipEntry({
+    kind: "sharedKernel",
+    a: "crm",
+    b: "payments",
+    comment: null,
+  }),
+}));
+
 add("attributes", "tip-entry", (api) =>
   api.tipEntry({
     from: "catalog",
@@ -409,6 +513,10 @@ add("attributes", "tip-entry", (api) =>
   );
   add("panel", "focus-checkout-hidden-neighbor", (api) =>
     render(api, st("context", "checkout", 1, "both", {}, ["payments"])),
+  );
+  add("panel", "focus-search", (api) => render(api, st("context", "search")));
+  add("panel", "focus-catalog-domain", (api) =>
+    render(api, st("context", "catalog")),
   );
   add("panel", "focus-orders", (api) =>
     render(api, st("context", "orders", 99)),

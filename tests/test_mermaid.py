@@ -82,13 +82,14 @@ def test_settings_default_styles_are_maps_too():
     assert errors == []
     assert cfg["focus_style"] == "stroke-width:4px,font-weight:bold"
     assert cfg["domain_style"] == "fill:#ffffff,stroke:#b0b0b0"
-    assert cfg["edge_styles"] == {"violation": "stroke:#d32f2f,stroke-width:2px"}
+    assert cfg["edge_styles"] == {"violation": "stroke:#d32f2f,stroke-width:2px", "partnership": "",
+                                  "sharedKernel": "stroke-width:3px"}
 
 
 def test_settings_lets_the_style_file_restyle_the_violation_arrow():
     cfg, errors = mermaid.settings({"edge_styles": {"violation": {"stroke": "#ff0000", "stroke-dasharray": "6 2"}}})
     assert errors == []
-    assert cfg["edge_styles"] == {"violation": "stroke:#ff0000,stroke-dasharray:6 2"}
+    assert cfg["edge_styles"]["violation"] == "stroke:#ff0000,stroke-dasharray:6 2"
 
 
 @pytest.mark.parametrize("key, value", [
@@ -598,22 +599,23 @@ def test_facts_stay_pairs_of_a_heading_and_ids(example_data):
 def test_build_shows_the_roles_in_the_lists_of_a_static_page(tmp_path, example_data, example_style):
     mermaid.build(example_data, example_style["mermaid"], tmp_path)
     page = (tmp_path / "mermaid" / "checkout.html").read_text()
-    assert "<span class='hint'>Open Host Service, Published Language \u2192 Anticorruption Layer</span>" in page
-    assert "<span class='hint'>Supplier \u2192 Customer</span>" in page
+    assert "<span class='hint'>\u00b7 Open Host Service, Published Language \u2192 Anticorruption Layer</span>" in page
+    assert "<span class='hint'>\u00b7 Supplier \u2192 Customer</span>" in page
 
 
 def test_build_shows_the_roles_in_the_lists_of_a_markdown_page(tmp_path, example_data, example_style):
     mermaid.build(example_data, example_style["mermaid"], tmp_path)
     markdown = (tmp_path / "markdown" / "checkout.md").read_text()
-    assert "(Open Host Service, Published Language \u2192 Anticorruption Layer)" in markdown
-    assert "(Supplier \u2192 Customer)" in markdown
+    assert "[Identity](identity.md) \u00b7 Open Host Service, Published Language \u2192 Anticorruption Layer" in markdown
+    assert "[Payments](payments.md) \u00b7 Supplier \u2192 Customer" in markdown
+    assert "(Supplier" not in markdown
 
 
 def test_build_shows_the_roles_in_the_lists_even_with_the_labels_off(tmp_path, example_data, example_style):
     example_style["mermaid"]["relationship_labels"] = False
     mermaid.build(example_data, example_style["mermaid"], tmp_path)
     markdown = (tmp_path / "markdown" / "checkout.md").read_text()
-    assert "(Supplier \u2192 Customer)" in markdown
+    assert "\u00b7 Supplier \u2192 Customer" in markdown
     assert "U: S" not in markdown
 
 
@@ -632,6 +634,228 @@ def test_build_gives_every_static_page_the_script_that_draws_the_roles(tmp_path,
     assert "%% roles:" in page  # in the source the script reads
     assert "__ROLES__" not in page
     assert "export " not in page.split('<script type="module">')[1]  # spliced as plain functions
+
+
+# --- partnerships and shared kernels ---------------------------------------
+
+
+STATEMENT = re.compile(r"  \w+ (-->|-\.->|<-->|---|===)")
+
+
+def statements_of(source):
+    """Every arrow or line of a source, in the order `linkStyle` counts them."""
+    return [line.strip() for line in source.splitlines() if STATEMENT.match(line)]
+
+
+def link_view(cfg, **extra):
+    return {**cfg["defaults"], "id": "links", "focus": "search", **extra}
+
+
+def test_settings_gives_the_links_a_line_style_that_follows_solid():
+    cfg, errors = mermaid.settings({"edge_styles": {"solid": {"stroke": "#313131", "stroke-width": "1.5px"}}})
+    assert errors == []
+    assert cfg["edge_styles"]["partnership"] == "stroke:#313131,stroke-width:1.5px"
+    assert cfg["edge_styles"]["sharedKernel"] == "stroke:#313131,stroke-width:3px"
+
+
+def test_settings_lets_the_style_file_restyle_the_links():
+    cfg, errors = mermaid.settings({"edge_styles": {"partnership": {"stroke": "#00f"},
+                                                   "sharedKernel": {"stroke": "#0f0", "stroke-width": "5px"}}})
+    assert errors == []
+    assert cfg["edge_styles"]["partnership"] == "stroke:#00f"
+    assert cfg["edge_styles"]["sharedKernel"] == "stroke:#0f0,stroke-width:5px"
+
+
+def test_settings_rejects_an_unknown_attribute_in_a_link_style():
+    _, errors = mermaid.settings({"edge_styles": {"partnership": {"colour": "red"}}})
+    assert any("mermaid.edge_styles.partnership.colour: unknown option" in err for err in errors), errors
+
+
+def test_settings_lists_the_link_styles_among_the_known_edge_styles():
+    _, errors = mermaid.settings({"edge_styles": {"friendship": {}}})
+    assert any("Known: solid, dotted, violation, partnership, sharedKernel" in err for err in errors), errors
+
+
+def test_render_draws_a_partnership_as_a_line_with_no_heads(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg, link_view(example_cfg))
+    assert 'checkout ---|"Partnership"| search' in statements_of(source)
+
+
+def test_render_draws_a_shared_kernel_as_a_thick_line(example_data, example_cfg):
+    view = {**example_cfg["defaults"], "id": "crm", "focus": "crm", "display": {"foundations": "expanded"}}
+    source = mermaid.render(example_data, example_cfg, view)
+    assert 'payments ===|"Shared Kernel"| crm' in statements_of(source)
+    assert "interpolate step stroke:#313131,stroke-width:3px" in source
+
+
+def test_render_makes_the_declaring_entry_the_target_of_the_line(example_data, example_cfg):
+    """Search declares the partnership, so it takes the upstream's place: the target, on top by default."""
+    source = mermaid.render(example_data, example_cfg, link_view(example_cfg))
+    assert statements_of(source)[-1].endswith("| search")
+    flipped = mermaid.render(example_data, example_cfg, link_view(example_cfg, focus="checkout"))
+    assert 'checkout ---|"Partnership"| search' in statements_of(flipped)
+
+
+def test_render_moving_the_declaration_flips_the_line(example_model, example_style):
+    example_model["context-map"]["search"].pop("partnerships")
+    example_model["context-map"]["checkout"]["partnerships"] = {"search": "Search and Checkout plan the cart together."}
+    data, errors = graph.normalize(example_model, example_style)
+    assert errors == []
+    cfg, _ = mermaid.settings(example_style["mermaid"])
+    assert 'search ---|"Partnership"| checkout' in statements_of(mermaid.render(data, cfg, link_view(cfg)))
+
+
+def test_render_counts_the_links_after_the_dependencies_and_the_violations(example_data, example_cfg):
+    view = {**example_cfg["defaults"], "id": "orders", "focus": "orders", "depth": 99}
+    source = mermaid.render(example_data, example_cfg, view)
+    statements = statements_of(source)
+    kinds = ["violation" if "<-->" in line else "link" if re.search(r"(---|===)", line) else "dependency"
+             for line in statements]
+    assert kinds == sorted(kinds, key={"dependency": 0, "violation": 1, "link": 2}.get)
+    assert "link" in kinds and "violation" in kinds
+    violation = int(re.search(r"%% violations: (\d+)", source).group(1))
+    assert kinds[violation] == "violation"
+    styled = {}
+    for line in source.splitlines():
+        found = re.match(r"  linkStyle ([\d,]+) interpolate \w+ ?(.*)", line)
+        if found:
+            for index in found.group(1).split(","):
+                styled[int(index)] = found.group(2)
+    assert sorted(styled) == list(range(len(statements)))  # every line is styled, none twice
+    assert styled[kinds.index("link")] == "stroke:#313131,stroke-width:1.5px"
+
+
+def test_render_keeps_the_roles_and_the_violations_on_the_arrows_they_name(example_data, example_cfg):
+    """The page's scripts count `path.flowchart-link` the way linkStyle does: the links come after both."""
+    source = mermaid.render(example_data, example_cfg, {**example_cfg["defaults"], "id": "orders", "focus": "orders",
+                                                         "depth": 99})
+    statements = statements_of(source)
+    for index in re.search(r"%% violations: ([\d,]+)", source).group(1).split(","):
+        assert "<-->" in statements[int(index)]
+    for mark in re.search(r"%% roles: (.+)", source).group(1).split(";"):
+        assert re.search(r"-->|-\.->", statements[int(mark.split("=")[0])])
+
+
+def test_render_styles_the_links_by_kind(example_data, example_cfg):
+    view = {**example_cfg["defaults"], "id": "all", "level": "domain"}
+    source = mermaid.render(example_data, example_cfg, view)
+    statements = statements_of(source)
+    partnership, kernel = [i for i, line in enumerate(statements) if "Partnership" in line or "Shared Kernel" in line]
+    assert f"linkStyle {partnership} interpolate step" in source
+    assert f"linkStyle {kernel} interpolate step stroke:#313131,stroke-width:3px" in source
+
+
+def test_render_draws_the_lifted_partnership_once_between_the_domains(example_data, example_cfg):
+    view = {**example_cfg["defaults"], "id": "all", "level": "domain"}
+    statements = statements_of(mermaid.render(example_data, example_cfg, view))
+    assert len([line for line in statements if "Partnership" in line]) == 1
+    assert 'orders ---|"Partnership"| catalog' in statements
+    assert "orders -.-> catalog" in statements  # the dependency is still there: two facts, two lines
+
+
+def test_render_leaves_out_a_link_inside_a_domain(tiny_model, tiny_style):
+    tiny_model["context-map"]["web_ui"]["partnerships"] = {"web_api": "x"}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    cfg, _ = mermaid.settings({})
+    context = mermaid.render(data, cfg, {**cfg["defaults"], "id": "all"})
+    assert 'web_api ---|"Partnership"| web_ui' in context
+    assert "Partnership" not in mermaid.render(data, cfg, {**cfg["defaults"], "id": "all", "level": "domain"})
+
+
+def collapsed_links(tiny_model, tiny_style, **extra):
+    tiny_model["context-map"]["solo"]["partnerships"] = {"web_ui": "x", "web_api": "y"}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    cfg, _ = mermaid.settings({})
+    return mermaid.render(data, cfg, {**cfg["defaults"], "id": "all", "display": {"web": "collapsed"}, **extra},
+                          markdown=extra.pop("markdown", False))
+
+
+def test_render_merges_the_links_of_a_collapsed_box_and_names_what_it_holds(tiny_model, tiny_style):
+    source = collapsed_links(tiny_model, tiny_style)
+    lines = [line for line in statements_of(source) if "Partnership" in line]
+    assert lines == ['web ---|"Web API, Web UI<br/>Partnership"| solo']
+
+
+def test_render_leaves_the_names_out_of_a_collapsed_links_label_without_child_labels(tiny_model, tiny_style):
+    source = collapsed_links(tiny_model, tiny_style, child_labels=False)
+    assert 'web ---|"Partnership"| solo' in statements_of(source)
+
+
+def test_render_puts_the_link_label_in_the_markdown_too(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg, link_view(example_cfg), markdown=True)
+    assert 'checkout ---|"Partnership"| search' in statements_of(source)
+    assert "%% roles" not in source
+
+
+def test_render_turns_the_link_labels_off(example_model, example_style):
+    example_style["mermaid"]["relationship_labels"] = False
+    data, errors = graph.normalize(example_model, example_style)
+    assert errors == []
+    cfg, _ = mermaid.settings(example_style["mermaid"])
+    for markdown in (False, True):
+        statements = statements_of(mermaid.render(data, cfg, link_view(cfg), markdown=markdown))
+        assert statements[-1] == "checkout --- search"
+    view = {**cfg["defaults"], "id": "crm", "focus": "crm", "display": {"foundations": "expanded"}}
+    assert statements_of(mermaid.render(data, cfg, view))[-1] == "payments === crm"
+
+
+def test_render_reaches_across_a_link_in_every_direction(example_data, example_cfg):
+    for direction in ("both", "up", "down"):
+        source = mermaid.render(example_data, example_cfg, link_view(example_cfg, dir=direction))
+        assert 'checkout ---|"Partnership"| search' in statements_of(source), direction
+
+
+def test_render_hides_a_link_whose_end_is_hidden(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg, link_view(example_cfg, hide=["checkout"]))
+    assert "Partnership" not in source
+
+
+def test_render_gives_a_model_without_links_the_sources_it_always_did(tiny_data):
+    cfg, _ = mermaid.settings({})
+    source = mermaid.render(tiny_data, cfg, {**cfg["defaults"], "id": "all"})
+    assert "---|" not in source and "===" not in source
+
+
+# --- links in the lists and the pages ----------------------------------------
+
+
+def test_fact_sections_list_the_partners_and_the_shared_kernels(example_data):
+    sections = {heading: ids for heading, ids, _ in
+                mermaid.fact_sections(example_data, {"focus": "search", "depth": 1, "dir": "both"})}
+    assert sections["Partners (1)"] == ["checkout"]
+    sections = {heading: ids for heading, ids, _ in
+                mermaid.fact_sections(example_data, {"focus": "crm", "depth": 1, "dir": "both"})}
+    assert sections["Shares a kernel with (1)"] == ["payments"]
+
+
+def test_fact_sections_leave_out_a_list_with_nobody_in_it(example_data):
+    headings = [heading for heading, _, _ in
+                mermaid.fact_sections(example_data, {"focus": "identity", "depth": 1, "dir": "both"})]
+    assert not any(heading.startswith(("Partners", "Shares a kernel")) for heading in headings)
+
+
+def test_fact_sections_list_what_the_whole_domain_is_paired_with(tiny_model, tiny_style):
+    tiny_model["context-map"]["web"]["partnerships"] = {"solo": "x"}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    sections = {heading: ids for heading, ids, _ in
+                mermaid.fact_sections(data, {"focus": "web_ui", "depth": 1, "dir": "both"})}
+    assert sections["Web as a whole partners with (1)"] == ["solo"]
+
+
+def test_build_writes_the_partners_into_the_page_and_the_markdown(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "search.html").read_text()
+    assert "<h3>Partners (1)</h3>" in page
+    assert "<li><a href='checkout.html'>Checkout</a></li>" in page
+    assert "<h3>Shares a kernel with" not in page
+    markdown = (tmp_path / "markdown" / "crm.md").read_text()
+    assert "**Shares a kernel with (1):** [Payments](payments.md)" in markdown
+    assert "**Partners" not in markdown
+    assert 'foundations ===|"Payments<br/>Shared Kernel"| crm' in markdown
+    assert 'checkout ---|"Partnership"| search' in (tmp_path / "markdown" / "search.md").read_text()
 
 
 # --- reaching a domain ------------------------------------------------------

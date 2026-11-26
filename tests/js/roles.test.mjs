@@ -50,9 +50,42 @@ test("roles: the upstream's roles sit near the path's end, the downstream's near
   const [first, second] = texts(svg).sort((a, b) => b.y - a.y);
   assert.equal(first.text, "ACL");
   assert.equal(second.text, "OHS, PL");
-  // A short way in from each end, not in the middle of the arrow.
-  assert.ok(first.y < 200 && first.y > 200 - 40, `downstream at ${first.y}`);
-  assert.ok(second.y > 0 && second.y < 40, `upstream at ${second.y}`);
+  // Tight against the box at each end, not in the middle of the arrow.
+  assert.ok(first.y < 200 && first.y > 200 - 15, `downstream at ${first.y}`);
+  assert.ok(second.y > 0 && second.y < 25, `upstream at ${second.y}`);
+});
+
+test("roles: a label hugs its end: its near edge a few pixels from the box, past the arrowhead upstream", () => {
+  const { svg } = diagramWith([UP]);
+  drawRoleLabels(svg, "  %% roles: 0=OHS>ACL");
+  const [down, up] = [...svg.querySelectorAll(".role-labels rect")]
+    .map((r) => ({
+      top: Number(r.getAttribute("y")),
+      bottom: Number(r.getAttribute("y")) + Number(r.getAttribute("height")),
+    }))
+    .sort((a, b) => b.top - a.top);
+  // The path starts at y=200 (the downstream box) and ends at y=0 (the upstream).
+  assert.ok(
+    200 - down.bottom <= 3,
+    `${200 - down.bottom}px from the downstream box`,
+  );
+  assert.ok(up.top >= 6 && up.top <= 12, `${up.top}px from the upstream box`);
+});
+
+test("roles: labels at one box that would overlap are nudged apart", () => {
+  const { svg } = diagramWith([
+    [50, 200, 50, 0],
+    [54, 200, 54, 0],
+  ]);
+  drawRoleLabels(svg, "  %% roles: 0=>CF;1=>CF");
+  const [a, b] = [...svg.querySelectorAll(".role-labels rect")].map((r) => ({
+    x: Number(r.getAttribute("x")),
+    width: Number(r.getAttribute("width")),
+  }));
+  assert.ok(
+    b.x >= a.x + a.width,
+    `second box at ${b.x}, first ends at ${a.x + a.width}`,
+  );
 });
 
 test("roles: a label sits beside the line, clear of it", () => {

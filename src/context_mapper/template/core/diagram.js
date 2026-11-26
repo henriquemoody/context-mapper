@@ -281,6 +281,38 @@ export function mermaidSource(s) {
     (byStyle.violation = byStyle.violation || []).push(tips.length);
     tips.push(entry.via.map(violationTipEntry));
   });
+  // A partnership or a shared kernel is a line with no heads, drawn after the
+  // violations. The ones of a kind between the same two boxes become one line
+  // once containers are collapsed. The entry that declared it takes the
+  // upstream's place, as the target of the line does: on top with the default
+  // direction. Moving the declaration to the other entry flips the line.
+  const symmetric = new Map();
+  g.links.forEach((l) => {
+    if (!visible.has(l.a) || !visible.has(l.b)) return;
+    const a = target(l.a),
+      b = target(l.b);
+    if (a === b || !drawn.has(a) || !drawn.has(b)) return;
+    const key = l.kind + "|" + [a, b].sort().join("|");
+    if (!symmetric.has(key))
+      symmetric.set(key, { kind: l.kind, a, b, names: new Set(), via: [] });
+    const entry = symmetric.get(key);
+    entry.via.push(...l.via);
+    if (foldedBoxes.has(b)) entry.names.add(nameOf(l.b));
+    else if (foldedBoxes.has(a)) entry.names.add(nameOf(l.a));
+  });
+  [...symmetric.values()].forEach((entry) => {
+    const info = MODEL.symmetric_kinds[entry.kind];
+    const labelLines = [];
+    if (entry.names.size && DIAGRAM.child_labels)
+      labelLines.push([...entry.names].sort().join(", "));
+    if (DIAGRAM.relationship_labels) labelLines.push(info.name);
+    const label = labelLines.length
+      ? `|"${quote(labelLines.join("<br/>"))}"|`
+      : "";
+    lines.push(`  ${nodeId(entry.b)} ${info.link}${label} ${nodeId(entry.a)}`);
+    (byStyle[entry.kind] = byStyle[entry.kind] || []).push(tips.length);
+    tips.push(entry.via.map(linkTipEntry));
+  });
   Object.entries(byStyle).forEach(([style, indexes]) =>
     lines.push(
       `  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${DIAGRAM.edge_styles[style] || ""}`.trimEnd(),
@@ -316,6 +348,17 @@ export const violationTipEntry = (dep) => ({
 });
 
 // The roles, when it has any, spelled out with their display names.
+// A partnership or a shared kernel always has a tooltip: its kind, and the
+// comment when there is one. A line can stand for several of them, each naming
+// its own two ends.
+export const linkTipEntry = (link) => {
+  const entry = {
+    title: `${nameOf(link.a)} ↔ ${nameOf(link.b)} (${MODEL.symmetric_kinds[link.kind].name})`,
+  };
+  if (link.comment) entry.text = link.comment;
+  return entry;
+};
+
 export const tipEntry = (dep) => {
   const entry = { title: `${nameOf(dep.from)} → ${nameOf(dep.to)}` };
   const roles = roleText(dep);
