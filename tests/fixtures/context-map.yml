@@ -1,0 +1,128 @@
+# Source of truth for the context map.
+#
+# Three kinds of thing, in three sections:
+# - `types` is the role vocabulary of the model: a domain or bounded context
+#   has one, and it colors the box.
+# - `clusters` names a set of domains or contexts treated together; its members
+#   point at it with `cluster:`.
+# - `context-map` maps each id to what it is, so nothing can be described
+#   twice: an entry with a `domain:` key is a bounded context of that domain,
+#   and any other entry is a domain — one no context points at is a single
+#   bounded context. Every entry can carry `downstreams`, who depends on it and
+#   why, and the interactive page shows the reason as a tooltip when you hover
+#   over that arrow:
+#
+#   billing:
+#     downstreams:
+#       packaging: Charges for Packages and Subscriptions
+#       pro-account: Charges the monthly subscription
+#
+# An entry can also record a `violations`: a dependency that goes against the
+# direction, such as an upstream that calls its own downstream. It is real, and
+# wrong, so the build draws it as a red arrow instead of failing on the cycle it
+# makes, and keeps it out of what a focus reaches. Fix it, then delete the line.
+#
+#   catalog:
+#     violations:
+#       checkout: Reads the open carts to warm its cache.
+#
+# Every entry can also carry a `description`: the interactive page shows it as
+# a tooltip when you hover over its box, and the item's page shows it in text.
+#
+# Entries can also set `attributes`: the ones the `attributes` section
+# below declares. The build fails on an attribute that was never declared,
+# or a value of the wrong shape for the one it declares, so a typo breaks
+# the build instead of hiding. An attribute of `type: any` takes whatever
+# shape: one named `metadata` is the free-form way, there when a model
+# wants it and not built in.
+#
+# A dependency can point at a domain when we don't know yet which of its
+# contexts is involved. Move it to the right context once we know.
+#
+# How it looks (colors, layout, views) lives in context-map.style.yml.
+
+types:
+  core:       { name: Core }
+  supporting: { name: Supporting }
+  generic:    { name: Generic }
+
+# A cluster: its members point at it with `cluster:`.
+clusters:
+  foundations: { name: Shared Foundations }
+
+# Attributes, declared once: any entry in `context-map` or `clusters` can
+# set them with `attributes:`. `text` takes a single value, `list` a list
+# of them, `map` label-to-value pairs, `any` whatever shape. The item's page
+# and the interactive panel show them under the description.
+attributes:
+  service:    { name: Service, type: text }
+  aggregates: { name: Aggregates, type: list }
+  metadata:   { type: any }
+
+# A context takes its domain's `type` unless it sets its own.
+context-map:
+  # Shared foundations: used by most domains.
+  identity:
+    name: Identity
+    type: generic
+    cluster: foundations
+    description: Accounts and logins. Everyone signs in here.
+    attributes:
+      service: identity-service
+    downstreams:
+      checkout: Creates an account for guests who check out.
+      crm:                                          # a bare key: depends on it, no comment yet
+  payments:
+    name: Payments
+    type: generic
+    cluster: foundations
+    attributes:
+      service: payments-service
+      metadata: { owned by: Payments platform, on-call: "#payments-support" }
+    downstreams:
+      checkout: Charges the payment method and signals whether it went through.
+      fulfillment: Captures the payment once the order ships, and refunds returns.
+
+  catalog:
+    name: Catalog
+    type: core
+    description: Everything that can be bought, with its prices and availability.
+    attributes:
+      aggregates: [Product, Inventory]
+    downstreams:                                    # the whole catalog: we don't know which context yet
+      checkout:
+        comment: Reads prices and availability at checkout time.
+        style: dotted                               # a styled edge: colors live in context-map.style.yml
+    violations:                                     # Catalog is upstream of Checkout, and still calls it
+      checkout: Reads the open carts to decide what to keep in its cache.
+  browsing:
+    name: Browsing
+    domain: catalog
+    attributes: { aggregates: [Session Cart] }
+  search:
+    name: Search
+    domain: catalog
+
+  orders:
+    name: Orders
+    type: core
+    downstreams:                                    # a dependency pointing at a whole domain
+      crm: Reads orders to sync them into the ticket system.
+  checkout:
+    name: Checkout
+    domain: orders
+    description: Takes a cart and turns it into a paid order.
+    attributes:
+      service: checkout-service
+      aggregates: [Order, Cart]
+  fulfillment:
+    name: Fulfillment
+    domain: orders
+    type: supporting                                # a context can override its domain's type
+    attributes:
+      service: fulfillment-service
+      aggregates: [Shipment, Return]
+
+  crm:
+    name: CRM
+    type: supporting

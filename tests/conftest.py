@@ -1,6 +1,8 @@
 """Shared fixtures for the context-mapper test suite.
 
-The files under `example/` are read as fixtures and never modified. The inline
+The files under `tests/fixtures/` are read as fixtures and never modified;
+they are kept apart from `example/`, so the example can change without
+rewriting the tests. The inline
 model below is a deliberately small map used by the unit tests: two domains
 holding two bounded contexts each, one single domain, and one cluster.
 """
@@ -14,8 +16,11 @@ from context_mapper import graph, mermaid
 
 ROOT = Path(__file__).resolve().parent.parent
 
-EXAMPLE_MODEL = ROOT / "example" / "context-map.yml"
-EXAMPLE_STYLE = ROOT / "example" / "context-map.style.yml"
+EXAMPLE_MODEL = ROOT / "tests" / "fixtures" / "context-map.yml"
+EXAMPLE_STYLE = ROOT / "tests" / "fixtures" / "context-map.style.yml"
+# The published example: tests only check that it builds.
+SHOWCASE_MODEL = ROOT / "example" / "context-map.yml"
+SHOWCASE_STYLE = ROOT / "example" / "context-map.style.yml"
 
 # A small map: `core` (clustered, two contexts), `web` (two contexts) and
 # `solo` (a domain nobody points at, so a single bounded context).

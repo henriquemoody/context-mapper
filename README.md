@@ -12,7 +12,8 @@ The build fails on unknown ids, duplicates, dependency cycles between bounded co
 - `src/context_mapper/graph.py` holds the model logic: levels, lifting context dependencies to domains, and the focus walk.
 - `src/context_mapper/mermaid.py` turns views into Mermaid.
 - `src/context_mapper/template/` is the interactive page: `index.html`, `style.css`, and its script in three layers — `core/` the pure logic (the model, the graph walk, the URL-hash codec, the Mermaid source generator), `components/` the preact components that render the panel, `dom/` the imperative DOM around them, and `app.js` wiring it all. esbuild bundles `app.js` into `page.js`, and `vendor-entry.js` bundles Mermaid and its ELK loader from npm into `mermaid.js` — both generated, committed, and checked by CI to match their source; the Python build splices the page with the model injected and writes `mermaid.js` next to it.
-- `example/` is a small working model you can build right away.
+- `example/` is a small working model you can build right away. It's the cargo shipping system from Eric Evans's *Domain-Driven Design*, as the [DDD Sample](https://github.com/citerus/dddsample-core) app built it.
+- `tests/fixtures/` holds the model the tests read. It lives apart, so the example can change without touching the tests.
 
 ## A personal project
 

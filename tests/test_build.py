@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 import yaml
-from conftest import EXAMPLE_MODEL, EXAMPLE_STYLE
+from conftest import EXAMPLE_MODEL, EXAMPLE_STYLE, SHOWCASE_MODEL, SHOWCASE_STYLE
 
 from context_mapper import build
 
@@ -229,6 +229,13 @@ def test_box_tooltips_map_node_ids_back_to_items(tmp_path):
     assert 'itemOfNode[nodeId(item.id)] = item' in text        # the node id -> item map
     assert 'itemOfNode[innermost(ev.target) || ""]' in text    # box tooltips go through it
     assert "descriptionOf" not in text                         # no lookup by SVG id left
+
+
+def test_the_published_example_builds(tmp_path, capsys):
+    out = tmp_path / "public"
+    build.main(["--model", str(SHOWCASE_MODEL), "--diagrams", str(SHOWCASE_STYLE), "--out", str(out)])
+    assert (out / "index.html").exists()
+    assert "warning" not in capsys.readouterr().err.lower()   # the example stays clean
 
 
 def test_the_interactive_page_can_download_the_diagram(tmp_path):

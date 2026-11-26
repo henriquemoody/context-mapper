@@ -1,5 +1,9 @@
 # Source of truth for the context map.
 #
+# The model is the cargo shipping system from Eric Evans's "Domain-Driven
+# Design" (chapters 7 and 14), as the DDD Sample app built it. Cargo gets
+# booked, routed over voyages, handled in ports and tracked by the customer.
+#
 # Three kinds of thing, in three sections:
 # - `types` is the role vocabulary of the model: a domain or bounded context
 #   has one, and it colors the box.
@@ -12,19 +16,18 @@
 #   why, and the interactive page shows the reason as a tooltip when you hover
 #   over that arrow:
 #
-#   billing:
+#   routing:
 #     downstreams:
-#       packaging: Charges for Packages and Subscriptions
-#       pro-account: Charges the monthly subscription
+#       booking: Proposes itineraries for a route specification.
 #
 # An entry can also record a `violations`: a dependency that goes against the
 # direction, such as an upstream that calls its own downstream. It is real, and
 # wrong, so the build draws it as a red arrow instead of failing on the cycle it
 # makes, and keeps it out of what a focus reaches. Fix it, then delete the line.
 #
-#   catalog:
+#   handling-history:
 #     violations:
-#       checkout: Reads the open carts to warm its cache.
+#       booking: Loads the Cargo to attach each event to it.
 #
 # Every entry can also carry a `description`: the interactive page shows it as
 # a tooltip when you hover over its box, and the item's page shows it in text.
@@ -48,81 +51,130 @@ types:
 
 # A cluster: its members point at it with `cluster:`.
 clusters:
-  foundations: { name: Shared Foundations }
+  partners: { name: Outside Partners }
 
 # Attributes, declared once: any entry in `context-map` or `clusters` can
 # set them with `attributes:`. `text` takes a single value, `list` a list
 # of them, `map` label-to-value pairs, `any` whatever shape. The item's page
 # and the interactive panel show them under the description.
 attributes:
-  service:    { name: Service, type: text }
+  service:    { name: Application service, type: text }
   aggregates: { name: Aggregates, type: list }
   metadata:   { type: any }
 
 # A context takes its domain's `type` unless it sets its own.
 context-map:
-  # Shared foundations: used by most domains.
-  identity:
-    name: Identity
+  # Outside partners: systems we don't own.
+  pathfinder:
+    name: Pathfinder
     type: generic
-    cluster: foundations
-    description: Accounts and logins. Everyone signs in here.
+    cluster: partners
+    description: Finds paths through the transport network. A third-party service we don't own.
     attributes:
-      service: identity-service
+      metadata: { owned by: Routing vendor, protocol: SOAP }
     downstreams:
-      checkout: Creates an account for guests who check out.
-      crm:                                          # a bare key: depends on it, no comment yet
-  payments:
-    name: Payments
+      routing:                                      # a styled edge: colors live in context-map.style.yml
+        comment: Finds the paths. Routing translates them behind an anti-corruption layer.
+        style: dotted
+  port-terminals:
+    name: Port Terminals
     type: generic
-    cluster: foundations
-    attributes:
-      service: payments-service
-      metadata: { owned by: Payments platform, on-call: "#payments-support" }
+    cluster: partners
+    description: The systems in each port. They see cargo loaded, unloaded and cleared by customs.
     downstreams:
-      checkout: Charges the payment method and signals whether it went through.
-      fulfillment: Captures the payment once the order ships, and refunds returns.
+      incident-logging: Reports each load, unload, receive, claim and customs event.
 
-  catalog:
-    name: Catalog
-    type: core
-    description: Everything that can be bought, with its prices and availability.
+  location:
+    name: Location
+    type: generic
+    description: Ports and places, by UN/LOCODE.
     attributes:
-      aggregates: [Product, Inventory]
-    downstreams:                                    # the whole catalog: we don't know which context yet
-      checkout:
-        comment: Reads prices and availability at checkout time.
-        style: dotted                               # a styled edge: colors live in context-map.style.yml
-    violations:                                     # Catalog is upstream of Checkout, and still calls it
-      checkout: Reads the open carts to decide what to keep in its cache.
-  browsing:
-    name: Browsing
-    domain: catalog
-    attributes: { aggregates: [Session Cart] }
-  search:
-    name: Search
-    domain: catalog
+      aggregates: [Location]
+    downstreams:
+      booking: Names where the cargo starts and where it ends.
+      voyage-scheduling: Names the ports of each carrier movement.
+      handling-history: Names the port where each event happened.
 
-  orders:
-    name: Orders
-    type: core
-    downstreams:                                    # a dependency pointing at a whole domain
-      crm: Reads orders to sync them into the ticket system.
-  checkout:
-    name: Checkout
-    domain: orders
-    description: Takes a cart and turns it into a paid order.
-    attributes:
-      service: checkout-service
-      aggregates: [Order, Cart]
-  fulfillment:
-    name: Fulfillment
-    domain: orders
-    type: supporting                                # a context can override its domain's type
-    attributes:
-      service: fulfillment-service
-      aggregates: [Shipment, Return]
-
-  crm:
-    name: CRM
+  customer:
+    name: Customer
     type: supporting
+    description: Shippers, consignees and payers, and their agreements.
+    attributes:
+      aggregates: [Customer]
+    downstreams:
+      booking: Says who ships, who receives and who pays for each cargo.
+
+  transport-network:
+    name: Transport Network
+    type: core
+    description: The voyages we run, and the routes we can build from them.
+  voyage-scheduling:
+    name: Voyage Scheduling
+    domain: transport-network
+    type: supporting                                # a context can override its domain's type
+    description: Plans the voyages. A voyage is a list of carrier movements, port to port.
+    attributes:
+      aggregates: [Voyage]
+    downstreams:
+      routing: Gives the voyage schedules to plan routes with.
+      handling-history: Names the voyage a cargo went on or came off.
+  routing:
+    name: Routing
+    domain: transport-network
+    description: Takes a route specification and finds the itineraries that meet it.
+    attributes:
+      service: RoutingService
+    downstreams:
+      booking: Proposes itineraries for a route specification.
+
+  handling:
+    name: Handling
+    type: core
+    description: What really happened to each cargo in the ports.
+  incident-logging:
+    name: Incident Logging
+    domain: handling
+    type: supporting
+    description: Takes the reports from the ports and checks them. Only the good ones count.
+    attributes:
+      service: ApplicationEvents
+    downstreams:
+      handling-history: Turns each good report into a handling event.
+  handling-history:
+    name: Handling History
+    domain: handling
+    description: Every handling event of every cargo. The delivery status comes from here.
+    attributes:
+      service: HandlingEventService
+      aggregates: [HandlingEvent]
+    downstreams:
+      booking: Gives the events that say where a cargo is and whether it's on track.
+      tracking: Shows the customer where the cargo has been.
+    violations:                                     # Handling is upstream of Booking, and still calls it
+      booking: Loads the Cargo to attach each event to it. It's the two-way link Evans warns against.
+
+  cargo:
+    name: Cargo
+    type: core
+    description: The core of the business. What the customer ships, and how it gets there.
+  booking:
+    name: Booking
+    domain: cargo
+    description: Books a cargo, gives it a route and checks it's on track.
+    attributes:
+      service: BookingService
+      aggregates: [Cargo]
+    downstreams:
+      tracking: Gives the itinerary and the expected arrival.
+  tracking:
+    name: Tracking
+    domain: cargo
+    type: supporting
+    description: Lets the customer follow a cargo by its tracking id.
+
+  billing:
+    name: Billing
+    type: generic
+    description: Invoices payers. It knows nothing about cargo.
+    downstreams:
+      booking: Invoices the payer of each delivered cargo. Booking speaks Billing's language, not the other way round.

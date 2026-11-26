@@ -16,14 +16,14 @@ types:
   generic:    { fill: "#adf0c7", stroke: "#067429" }
 
 clusters:
-  foundations: { fill: "#eaf9ef", stroke: "#067429", stroke-dasharray: "4 3", defaultDisplay: collapsed }
+  partners: { fill: "#eaf9ef", stroke: "#067429", stroke-dasharray: "4 3", defaultDisplay: collapsed }
 
 # An entry takes any attributes: a domain's overrides `mermaid.domain_style`
 # below and, drawn as one box, its type colors; a bounded context's styles its
 # own box. Any entry also takes `defaultDisplay`, saying how it first renders —
 # a bounded context, which holds nothing inside, only expanded or hidden.
 context-map:
-  catalog: { fill: "#f7f7ff", stroke: "#6631d7" }
+  cargo: { fill: "#f7f7ff", stroke: "#6631d7" }
 
 # Links the interactive page shows in its header, in this order: the link's
 # text, then where it goes — a repository, an issue tracker, anything.
@@ -31,6 +31,7 @@ context-map:
 links:
   Repository: https://github.com/henriquemoody/context-mapper
   Issues: https://github.com/henriquemoody/context-mapper/issues
+  DDD Sample: https://github.com/citerus/dddsample-core
 
 mermaid:
   direction: BT          # BT: upstream on top. Also TB, LR, RL.
@@ -86,18 +87,18 @@ mermaid:
       title: Domains
       level: domain
       depth: 99
-      hide: [crm]              # the whole system, without CRM
-    - id: foundations-detail
-      title: Shared Foundations in detail
-      focus: foundations
+      hide: [billing]          # the whole system, without Billing
+    - id: partners-detail
+      title: Outside Partners in detail
+      focus: partners
       depth: 1
-    - id: checkout-upstreams
-      title: Everything Checkout depends on
-      focus: checkout
+    - id: booking-upstreams
+      title: Everything Booking depends on
+      focus: booking
       dir: up
       depth: 99
-    - id: orders-detail
-      title: Orders, without Fulfillment
-      focus: orders
+    - id: handling-detail
+      title: Handling, without Incident Logging
+      focus: handling
       depth: 99
-      hide: [fulfillment]      # a domain view can hide one of its bounded contexts
+      hide: [incident-logging] # a domain view can hide one of its bounded contexts
