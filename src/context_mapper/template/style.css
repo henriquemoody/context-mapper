@@ -139,6 +139,11 @@ main {
 #tip p {
   margin: 0;
 }
+/* An arrow's roles in its tooltip, between the names and the comment. */
+#tip p .roles {
+  color: rgba(255, 255, 255, 0.75);
+  font-style: italic;
+}
 #tip p + p {
   margin-top: 6px;
 }
@@ -180,6 +185,10 @@ aside ul {
 /* A list attribute in the panel: its items under the label, a touch apart. */
 aside li ul {
   margin-top: 4px;
+}
+/* The roles of a dependency in the panel's lists: under the name they belong to. */
+aside li .roles {
+  display: block;
 }
 aside a {
   color: var(--accent);

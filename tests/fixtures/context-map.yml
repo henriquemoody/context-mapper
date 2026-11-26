@@ -70,7 +70,10 @@ context-map:
     attributes:
       service: identity-service
     downstreams:
-      checkout: Creates an account for guests who check out.
+      checkout:                                     # roles: what each side of the dependency is
+        comment: Creates an account for guests who check out.
+        upstream: [PublishedLanguage, OpenHostService]   # drawn in the canonical order, not this one
+        downstream: [AnticorruptionLayer]
       crm:                                          # a bare key: depends on it, no comment yet
   payments:
     name: Payments
@@ -80,7 +83,10 @@ context-map:
       service: payments-service
       metadata: { owned by: Payments platform, on-call: "#payments-support" }
     downstreams:
-      checkout: Charges the payment method and signals whether it went through.
+      checkout:
+        comment: Charges the payment method and signals whether it went through.
+        upstream: [Supplier]
+        downstream: [Customer]
       fulfillment: Captures the payment once the order ships, and refunds returns.
 
   catalog:
@@ -107,7 +113,9 @@ context-map:
     name: Orders
     type: core
     downstreams:                                    # a dependency pointing at a whole domain
-      crm: Reads orders to sync them into the ticket system.
+      crm:
+        comment: Reads orders to sync them into the ticket system.
+        downstream: [Conformist]
   checkout:
     name: Checkout
     domain: orders

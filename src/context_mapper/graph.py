@@ -45,6 +45,96 @@ BOX_DISPLAY_STATES = ("expanded", "hidden")
 # What a style fills in when the entry doesn't say: readable text on a light box.
 TEXT_DEFAULTS = {"color": "#1a1a1a"}
 
+# The roles a dependency can carry, from the DDD context-map patterns: what the upstream is, and what
+# the downstream is. Each has a short code for drawing and a display name for tooltips and lists. The
+# order here is the canonical one: roles are always drawn and listed in it, never in the YAML's order.
+UPSTREAM_ROLES = {
+    "OpenHostService": {"code": "OHS", "name": "Open Host Service"},
+    "PublishedLanguage": {"code": "PL", "name": "Published Language"},
+    "Supplier": {"code": "S", "name": "Supplier"},
+}
+DOWNSTREAM_ROLES = {
+    "AnticorruptionLayer": {"code": "ACL", "name": "Anticorruption Layer"},
+    "Conformist": {"code": "CF", "name": "Conformist"},
+    "Customer": {"code": "C", "name": "Customer"},
+}
+# Every role with the side it belongs to, as the interactive page gets them.
+ROLES = {**{role: {**info, "side": "upstream"} for role, info in UPSTREAM_ROLES.items()},
+         **{role: {**info, "side": "downstream"} for role, info in DOWNSTREAM_ROLES.items()}}
+
+
+def role_text(upstream, downstream):
+    """A dependency's roles as a sentence for tooltips and lists: the upstream roles, an arrow, the downstream
+    roles, with the display names. One side alone says which side it is. No roles, no text."""
+    up = ", ".join(ROLES[role]["name"] for role in upstream)
+    down = ", ".join(ROLES[role]["name"] for role in downstream)
+    if up and down:
+        return f"{up} \u2192 {down}"
+    if up:
+        return f"{up} (upstream)"
+    if down:
+        return f"{down} (downstream)"
+    return ""
+
+
+def role_codes(upstream, downstream):
+    """The short codes of a dependency's roles, as (upstream, downstream) lists of strings."""
+    return [ROLES[role]["code"] for role in upstream], [ROLES[role]["code"] for role in downstream]
+
+
+def shared_roles(deps):
+    """The roles a merged edge keeps: those every dependency it stands for carries, exactly. A dependency
+    with no roles is different from one with roles, so one of each drops them all."""
+    seen = {(tuple(dep.get("upstream") or ()), tuple(dep.get("downstream") or ())) for dep in deps}
+    upstream, downstream = seen.pop() if len(seen) == 1 else ((), ())
+    return list(upstream), list(downstream)
+
+
+def check_roles(where, spec, errors):
+    """Check the `upstream` and `downstream` of one dependency and return them as two lists, in the canonical
+    order. A bad side is an error and comes back empty, so one mistake doesn't hide the other side's."""
+    sides = {"upstream": UPSTREAM_ROLES, "downstream": DOWNSTREAM_ROLES}
+    checked, clean = {"upstream": [], "downstream": []}, True
+    for side, known in sides.items():
+        if side not in spec:
+            continue
+        here, value = f"{where}.{side}", spec[side]
+        listing = f"Known: {', '.join(known)}"
+        problems = []
+        if not isinstance(value, list):
+            problems.append(f"{here}: must be a list of roles. {listing}")
+        else:
+            for role in value:
+                if not isinstance(role, str):
+                    problems.append(f"{here}: a role is a string, not {role!r}. {listing}")
+                elif role in sides["downstream" if side == "upstream" else "upstream"]:
+                    elsewhere = "downstream" if side == "upstream" else "upstream"
+                    article = "a" if elsewhere == "downstream" else "an"
+                    problems.append(f"{here}: '{role}' is {article} {elsewhere} role, it goes under `{elsewhere}`")
+                elif role not in known:
+                    problems.append(f"{here}: unknown role '{role}'. {listing}")
+            problems += [f"{here}: '{role}' is listed more than once"
+                         for role in known if value.count(role) > 1]
+        errors += problems
+        if problems:
+            clean = False
+        else:
+            checked[side] = [role for role in known if role in value]
+    if not clean:
+        return [], []
+
+    upstream, downstream = checked["upstream"], checked["downstream"]
+    if "AnticorruptionLayer" in downstream and "Conformist" in downstream:
+        errors.append(f"{where}.downstream: AnticorruptionLayer and Conformist exclude each other, "
+                      "a downstream either translates or conforms")
+    elif "Conformist" in downstream and ("Customer" in downstream or "Supplier" in upstream):
+        errors.append(f"{where}: Conformist can't go with Customer or Supplier, "
+                      "a conformist takes what it is given and has no say")
+    elif ("Supplier" in upstream) != ("Customer" in downstream):
+        missing = "Customer under `downstream`" if "Supplier" in upstream else "Supplier under `upstream`"
+        errors.append(f"{where}: Supplier and Customer come as a pair, it needs {missing}")
+    return upstream, downstream
+
 
 def classdef(attrs, defaults=TEXT_DEFAULTS):
     """A Mermaid classDef string: the attributes as written, then the defaults not set."""
@@ -382,7 +472,8 @@ def normalize(model, styles=None):
     for owner, where, downstreams_map in pending:
         # An edge points from the downstream (the one that depends) to the upstream.
         # A downstream maps to why it depends on the upstream (the tooltip), or to
-        # {comment, style} when the edge also carries a style, or to nothing at all.
+        # {comment, style, upstream, downstream} when the edge also carries a style or relationship roles,
+        # or to nothing at all.
         if not isinstance(downstreams_map, dict):
             errors.append(f"{where}: `downstreams` must be a map from downstream to comment")
             continue
@@ -390,20 +481,22 @@ def normalize(model, styles=None):
             errors.append(f"{where}: `downstreams` is empty")
             continue
         for downstream, spec in downstreams_map.items():
-            comment, edge_style = spec, "solid"
+            comment, edge_style, upstream_roles, downstream_roles = spec, "solid", [], []
             if isinstance(spec, dict):
                 for key in spec:
-                    if key not in ("comment", "style"):
+                    if key not in ("comment", "style", "upstream", "downstream"):
                         errors.append(f"{where}.downstreams.{downstream}.{key}: "
-                                      "unknown option. Known: comment, style")
+                                      "unknown option. Known: comment, style, upstream, downstream")
                 comment, edge_style = spec.get("comment"), spec.get("style") or "solid"
+                upstream_roles, downstream_roles = check_roles(f"{where}.downstreams.{downstream}", spec, errors)
             elif spec is not None and not isinstance(spec, str):
                 errors.append(f"{where}.downstreams.{downstream}: must be a comment "
-                              "string, or a map with `comment` and `style`")
+                              "string, or a map with `comment` and `style` (and `upstream`, `downstream` for roles)")
             for endpoint in (owner, downstream):
                 if endpoint not in seen:
                     errors.append(f"unknown domain or context '{endpoint}' in {where}.downstreams")
-            edges.append({"from": downstream, "to": owner, "style": edge_style, "comment": comment})
+            edges.append({"from": downstream, "to": owner, "style": edge_style, "comment": comment,
+                          "upstream": upstream_roles, "downstream": downstream_roles})
 
     # A violation is a dependency that goes against the direction the model draws: `violations` under an
     # entry names what it depends on although it is upstream of it. It is a real dependency, known to be
@@ -419,7 +512,11 @@ def normalize(model, styles=None):
             errors.append(f"{where}: `violations` is empty")
             continue
         for target, comment in violations_map.items():
-            if comment is not None and not isinstance(comment, str):
+            if isinstance(comment, dict) and {"upstream", "downstream"} & comment.keys():
+                errors.append(f"{where}.violations.{target}: a violation takes no roles, only a comment string. "
+                              "Roles (`upstream`, `downstream`) go on a dependency, under `downstreams`")
+                comment = None
+            elif comment is not None and not isinstance(comment, str):
                 errors.append(f"{where}.violations.{target}: must be a comment string, or nothing")
             if target not in seen:
                 errors.append(f"unknown domain or context '{target}' in {where}.violations")
@@ -431,7 +528,7 @@ def normalize(model, styles=None):
             violations.append({"from": owner, "to": target, "comment": comment})
 
     data = {"types": types, "clusters": clusters, "domains": domains, "contexts": contexts, "edges": edges,
-            "violations": violations, "attributes": attributes}
+            "violations": violations, "attributes": attributes, "roles": ROLES}
     if not errors:
         cycle = find_cycle(level_graph(data, "context"))
         if cycle:
@@ -460,7 +557,8 @@ def level_graph(data, level):
         nodes = set(contexts) | {domain_id for domain_id, domain in domains.items() if not domain["single"]}
         child_of.update({context_id: context["domain"] for context_id, context in contexts.items()
                          if not domains[context["domain"]]["single"]})
-        edges = [{"from": edge["from"], "to": edge["to"], "styles": {edge["style"]}, "via": [edge]} for edge in data["edges"]]
+        edges = [{"from": edge["from"], "to": edge["to"], "styles": {edge["style"]}, "via": [edge],
+                  "upstream": edge["upstream"], "downstream": edge["downstream"]} for edge in data["edges"]]
         violations = [{"from": rule["from"], "to": rule["to"], "via": [rule]} for rule in data["violations"]]
         return {"nodes": nodes, "edges": edges, "violations": violations, "child_of": child_of}
 
@@ -473,6 +571,9 @@ def level_graph(data, level):
                                   {"from": downstream_owner, "to": upstream_owner, "styles": set(), "via": []})
         entry["styles"].add(edge["style"])
         entry["via"].append(edge)
+    # A merged edge keeps the roles its dependencies all carry, exactly, and none otherwise.
+    for entry in merged.values():
+        entry["upstream"], entry["downstream"] = shared_roles(entry["via"])
     # A violation between two domains stands for the ones between what they hold, and goes when the
     # domains depend that way anyway — the dependency's own arrow says it, and drawn twice it would only repeat.
     violations = {}
@@ -593,17 +694,22 @@ def walk(level_graph, starts, depth, direction, hidden):
     return seen
 
 
-def relations(data, item_id):
-    """Direct dependencies of a context, or of a domain (lifted to domain level)."""
+def relation_edges(data, item_id):
+    """Direct dependencies of a context, or of a domain (lifted to domain level), as the edges themselves:
+    (upstreams, downstreams), each sorted by the name of the one at the other end, with the roles the edge
+    carries. In an upstream edge the other end is `to`, in a downstream edge it is `from`."""
     domains, _, _, names = index(data)
     if item_id in domains and not domains[item_id]["single"]:
         graph_at_level = level_graph(data, "domain")
     else:
         graph_at_level = level_graph(data, "context")
-    upstreams = [edge["to"] for edge in graph_at_level["edges"] if edge["from"] == item_id]
-    downstreams = [edge["from"] for edge in graph_at_level["edges"] if edge["to"] == item_id]
+    upstreams = [edge for edge in graph_at_level["edges"] if edge["from"] == item_id]
+    downstreams = [edge for edge in graph_at_level["edges"] if edge["to"] == item_id]
+    return (sorted(upstreams, key=lambda edge: names[edge["to"]]),
+            sorted(downstreams, key=lambda edge: names[edge["from"]]))
 
-    def name_of(entry_id):
-        return names[entry_id]
 
-    return sorted(upstreams, key=name_of), sorted(downstreams, key=name_of)
+def relations(data, item_id):
+    """Direct dependencies of a context, or of a domain (lifted to domain level)."""
+    upstreams, downstreams = relation_edges(data, item_id)
+    return [edge["to"] for edge in upstreams], [edge["from"] for edge in downstreams]

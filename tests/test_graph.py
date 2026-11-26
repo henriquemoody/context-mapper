@@ -870,3 +870,213 @@ def test_relations_of_a_domain_are_lifted_to_the_domain_level(example_data):
     ups, downs = graph.relations(example_data, "orders")
     assert ups == ["catalog", "identity", "payments"]
     assert downs == ["crm"]
+
+
+# --- normalize, relationship roles ------------------------------------------
+
+
+def with_roles(**roles):
+    """alpha, beta and gamma, with beta depending on alpha, carrying `roles`."""
+    return model(
+        alpha={"name": "Alpha", "type": "core", "downstreams": {"beta": {"comment": "x", **roles}}},
+        beta={"name": "Beta", "type": "core"},
+        gamma={"name": "Gamma", "type": "core"},
+    )
+
+
+def test_normalize_gives_a_dependency_no_roles_unless_it_names_some():
+    data, errors = graph.normalize(with_roles(), STYLE)
+    assert errors == []
+    assert data["edges"][0]["upstream"] == []
+    assert data["edges"][0]["downstream"] == []
+
+
+def test_normalize_reads_the_roles_of_a_dependency_in_the_canonical_order():
+    data, errors = graph.normalize(with_roles(upstream=["PublishedLanguage", "OpenHostService"],
+                                              downstream=["AnticorruptionLayer"]), STYLE)
+    assert errors == []
+    assert data["edges"][0]["upstream"] == ["OpenHostService", "PublishedLanguage"]
+    assert data["edges"][0]["downstream"] == ["AnticorruptionLayer"]
+
+
+def test_normalize_reads_the_roles_of_the_example(example_data):
+    edge = next(edge for edge in example_data["edges"] if (edge["from"], edge["to"]) == ("checkout", "identity"))
+    assert edge["upstream"] == ["OpenHostService", "PublishedLanguage"]  # written the other way round
+    assert edge["downstream"] == ["AnticorruptionLayer"]
+
+
+def test_normalize_hands_the_page_the_codes_and_names_of_the_roles(example_data):
+    assert example_data["roles"]["OpenHostService"] == {"code": "OHS", "name": "Open Host Service", "side": "upstream"}
+    assert example_data["roles"]["AnticorruptionLayer"] == {"code": "ACL", "name": "Anticorruption Layer",
+                                                            "side": "downstream"}
+    assert list(example_data["roles"]) == ["OpenHostService", "PublishedLanguage", "Supplier",
+                                           "AnticorruptionLayer", "Conformist", "Customer"]
+
+
+@pytest.mark.parametrize("side", ["upstream", "downstream"])
+def test_normalize_accepts_an_empty_list_of_roles(side):
+    data, errors = graph.normalize(with_roles(**{side: []}), STYLE)
+    assert errors == []
+    assert data["edges"][0][side] == []
+
+
+@pytest.mark.parametrize("roles, expected", [
+    ({"upstream": "OpenHostService"},
+     "context-map.alpha.downstreams.beta.upstream: must be a list of roles. "
+     "Known: OpenHostService, PublishedLanguage, Supplier"),
+    ({"downstream": {"Conformist": True}},
+     "context-map.alpha.downstreams.beta.downstream: must be a list of roles. "
+     "Known: AnticorruptionLayer, Conformist, Customer"),
+    ({"upstream": None}, "context-map.alpha.downstreams.beta.upstream: must be a list of roles"),
+    ({"upstream": ["Gateway"]},
+     "context-map.alpha.downstreams.beta.upstream: unknown role 'Gateway'. "
+     "Known: OpenHostService, PublishedLanguage, Supplier"),
+    ({"downstream": ["ACL"]},
+     "context-map.alpha.downstreams.beta.downstream: unknown role 'ACL'. "
+     "Known: AnticorruptionLayer, Conformist, Customer"),
+    ({"upstream": [42]}, "context-map.alpha.downstreams.beta.upstream: a role is a string, not 42"),
+    ({"upstream": ["Customer"], "downstream": ["Customer"]},
+     "context-map.alpha.downstreams.beta.upstream: 'Customer' is a downstream role, it goes under `downstream`"),
+    ({"downstream": ["Supplier"]},
+     "context-map.alpha.downstreams.beta.downstream: 'Supplier' is an upstream role, it goes under `upstream`"),
+    ({"upstream": ["OpenHostService", "OpenHostService"]},
+     "context-map.alpha.downstreams.beta.upstream: 'OpenHostService' is listed more than once"),
+    ({"downstream": ["Conformist", "Conformist"]},
+     "context-map.alpha.downstreams.beta.downstream: 'Conformist' is listed more than once"),
+    ({"downstream": ["AnticorruptionLayer", "Conformist"]},
+     "context-map.alpha.downstreams.beta.downstream: AnticorruptionLayer and Conformist exclude each other"),
+    ({"upstream": ["Supplier"]},
+     "context-map.alpha.downstreams.beta: Supplier and Customer come as a pair, it needs Customer under `downstream`"),
+    ({"downstream": ["Customer"]},
+     "context-map.alpha.downstreams.beta: Supplier and Customer come as a pair, it needs Supplier under `upstream`"),
+    ({"upstream": ["Supplier"], "downstream": ["Customer", "Conformist"]},
+     "context-map.alpha.downstreams.beta: Conformist can't go with Customer or Supplier"),
+    ({"downstream": ["Conformist", "Customer"]},
+     "context-map.alpha.downstreams.beta: Conformist can't go with Customer or Supplier"),
+])
+def test_normalize_rejects_broken_roles(roles, expected):
+    errors = errors_of(with_roles(**roles))
+    assert any(expected in err for err in errors), errors
+
+
+def test_normalize_reports_each_broken_role_once_and_nothing_else():
+    errors = errors_of(with_roles(upstream=["Gateway"], downstream=["Customer"]))
+    assert errors == ["context-map.alpha.downstreams.beta.upstream: unknown role 'Gateway'. "
+                      "Known: OpenHostService, PublishedLanguage, Supplier"]
+
+
+def test_normalize_accepts_a_supplier_and_a_customer_together_with_the_other_roles():
+    data, errors = graph.normalize(with_roles(upstream=["OpenHostService", "PublishedLanguage", "Supplier"],
+                                              downstream=["AnticorruptionLayer", "Customer"]), STYLE)
+    assert errors == []
+    assert data["edges"][0]["downstream"] == ["AnticorruptionLayer", "Customer"]
+
+
+def test_normalize_names_the_roles_in_the_known_options_of_a_dependency():
+    errors = errors_of(with_roles(speed="fast"))
+    assert any("context-map.alpha.downstreams.beta.speed: unknown option. "
+               "Known: comment, style, upstream, downstream" in err for err in errors), errors
+
+
+@pytest.mark.parametrize("violation, expected", [
+    ({"upstream": ["OpenHostService"]}, "a violation takes no roles, only a comment string"),
+    ({"comment": "x", "downstream": ["AnticorruptionLayer"]}, "a violation takes no roles, only a comment string"),
+    ({"comment": "x"}, "context-map.alpha.violations.beta: must be a comment string, or nothing"),
+])
+def test_normalize_gives_a_violation_no_roles(violation, expected):
+    errors = errors_of(with_violations({"beta": violation}))
+    assert any(f"context-map.alpha.violations.beta: {expected}" in err or expected in err for err in errors), errors
+
+
+def test_a_violation_never_carries_roles():
+    data, errors = graph.normalize(with_violations({"beta": "x"}), STYLE)
+    assert errors == []
+    assert "upstream" not in data["violations"][0]
+    assert "downstream" not in data["violations"][0]
+
+
+# --- merging roles ----------------------------------------------------------
+
+
+def lifted(tiny_model, tiny_style, first, second):
+    """The domain-level edge from Core to Web, which stands for `core_lib → web_ui` and `core_db → web_api`,
+    once those two carry the given roles (None: no roles at all)."""
+    for owner, downstream, roles in (("web_ui", "core_lib", first), ("web_api", "core_db", second)):
+        tiny_model["context-map"][owner]["downstreams"] = {downstream: {"comment": "x", **(roles or {})}}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    edges = graph.level_graph(data, "domain")["edges"]
+    assert [(edge["from"], edge["to"]) for edge in edges] == [("core", "web")]
+    return edges[0]
+
+
+OPEN_HOST = {"upstream": ["OpenHostService"], "downstream": ["AnticorruptionLayer"]}
+
+
+def test_a_merged_edge_keeps_the_roles_every_dependency_carries(tiny_model, tiny_style):
+    edge = lifted(tiny_model, tiny_style, OPEN_HOST, dict(OPEN_HOST))
+    assert (edge["upstream"], edge["downstream"]) == (["OpenHostService"], ["AnticorruptionLayer"])
+
+
+def test_a_merged_edge_drops_the_roles_when_the_dependencies_differ(tiny_model, tiny_style):
+    other = {"upstream": ["PublishedLanguage"], "downstream": ["AnticorruptionLayer"]}
+    edge = lifted(tiny_model, tiny_style, OPEN_HOST, other)
+    assert (edge["upstream"], edge["downstream"]) == ([], [])
+
+
+def test_a_merged_edge_drops_the_roles_when_one_dependency_has_none(tiny_model, tiny_style):
+    edge = lifted(tiny_model, tiny_style, OPEN_HOST, None)
+    assert (edge["upstream"], edge["downstream"]) == ([], [])
+
+
+def test_a_merged_edge_drops_the_roles_when_only_one_side_agrees(tiny_model, tiny_style):
+    edge = lifted(tiny_model, tiny_style, OPEN_HOST, {"downstream": ["AnticorruptionLayer"]})
+    assert (edge["upstream"], edge["downstream"]) == ([], [])
+
+
+def test_a_merged_edge_without_any_roles_has_none(tiny_model, tiny_style):
+    edge = lifted(tiny_model, tiny_style, None, None)
+    assert (edge["upstream"], edge["downstream"]) == ([], [])
+
+
+def test_a_dependency_between_domains_keeps_its_roles(tiny_model, tiny_style):
+    tiny_model["context-map"]["solo"]["downstreams"] = {"web": {"comment": "x", **OPEN_HOST}}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    edge = next(edge for edge in graph.level_graph(data, "domain")["edges"] if (edge["from"], edge["to"]) == ("web", "solo"))
+    assert (edge["upstream"], edge["downstream"]) == (["OpenHostService"], ["AnticorruptionLayer"])
+
+
+def test_a_dependency_at_context_level_keeps_its_roles(tiny_model, tiny_style):
+    lifted(tiny_model, tiny_style, OPEN_HOST, None)
+    data, _ = graph.normalize(tiny_model, tiny_style)
+    edges = {(edge["from"], edge["to"]): edge for edge in graph.level_graph(data, "context")["edges"]}
+    assert edges[("core_lib", "web_ui")]["upstream"] == ["OpenHostService"]
+    assert edges[("core_db", "web_api")]["upstream"] == []
+
+
+def test_shared_roles_of_nothing_is_nothing():
+    assert graph.shared_roles([]) == ([], [])
+
+
+def test_role_text_spells_the_roles_out_in_the_canonical_order():
+    assert graph.role_text(["OpenHostService", "PublishedLanguage"], ["AnticorruptionLayer"]) == \
+        "Open Host Service, Published Language \u2192 Anticorruption Layer"
+    assert graph.role_text(["Supplier"], []) == "Supplier (upstream)"
+    assert graph.role_text([], ["Conformist"]) == "Conformist (downstream)"
+    assert graph.role_text([], []) == ""
+
+
+def test_role_codes_are_the_short_ones():
+    assert graph.role_codes(["OpenHostService", "PublishedLanguage", "Supplier"],
+                            ["AnticorruptionLayer", "Conformist", "Customer"]) == (
+        ["OHS", "PL", "S"], ["ACL", "CF", "C"])
+
+
+def test_relation_edges_carry_the_roles_of_each_dependency(example_data):
+    ups, downs = graph.relation_edges(example_data, "checkout")
+    by_target = {edge["to"]: edge for edge in ups}
+    assert by_target["identity"]["upstream"] == ["OpenHostService", "PublishedLanguage"]
+    assert by_target["payments"]["downstream"] == ["Customer"]
+    assert by_target["catalog"]["upstream"] == []
+    assert downs == []

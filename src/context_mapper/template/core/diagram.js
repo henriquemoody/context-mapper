@@ -10,6 +10,7 @@ import {
 } from "./model.js";
 import { GRAPHS, focusSet, descendants, walk } from "./graph.js";
 import { hashFor } from "./state.js";
+import { roleCodes, roleText } from "./roles.js";
 
 // Same diagram as mermaid.py's render(): keep the two in step.
 export const nodeId = (id) => id.replace(/\W/g, "_");
@@ -215,9 +216,17 @@ export function mermaidSource(s) {
     if (a === b || !drawn.has(a) || !drawn.has(b)) return;
     const key = a + "|" + b;
     if (!merged.has(key))
-      merged.set(key, { a, b, styles: new Set(), names: new Set(), via: [] });
+      merged.set(key, {
+        a,
+        b,
+        styles: new Set(),
+        names: new Set(),
+        roles: new Set(),
+        via: [],
+      });
     const entry = merged.get(key);
     e.styles.forEach((x) => entry.styles.add(x));
+    entry.roles.add(JSON.stringify([e.upstream || [], e.downstream || []]));
     entry.via.push(...e.via);
     if (foldedBoxes.has(b)) entry.names.add(nameOf(e.to));
     else if (foldedBoxes.has(a)) entry.names.add(nameOf(e.from));
@@ -225,16 +234,29 @@ export function mermaidSource(s) {
   const byStyle = {};
   // What the tooltip of each arrow says, in the order the arrows are drawn.
   const tips = [...merged.values()].map((entry) =>
-    entry.via.filter((e) => e.comment).map(tipEntry),
+    entry.via.filter((e) => e.comment || roleText(e)).map(tipEntry),
   );
+  const roleMarks = []; // `index=upstream>downstream`, for the page's script
   [...merged.values()].forEach((entry, i) => {
     const style = entry.styles.has("solid")
       ? "solid"
       : [...entry.styles].sort()[0];
-    const label =
-      entry.names.size && DIAGRAM.child_labels
-        ? `|"${quote([...entry.names].sort().join(", "))}"|`
-        : "";
+    // Roles are kept only when every dependency the arrow stands for carries
+    // the very same ones.
+    let up = [],
+      down = [];
+    if (entry.roles.size === 1) {
+      const [upstream, downstream] = JSON.parse([...entry.roles][0]);
+      [up, down] = roleCodes({ upstream, downstream });
+    }
+    const labelLines = [];
+    if (entry.names.size && DIAGRAM.child_labels)
+      labelLines.push([...entry.names].sort().join(", "));
+    if ((up.length || down.length) && DIAGRAM.relationship_labels)
+      roleMarks.push(`${i}=${up.join(",")}>${down.join(",")}`);
+    const label = labelLines.length
+      ? `|"${quote(labelLines.join("<br/>"))}"|`
+      : "";
     lines.push(
       `  ${nodeId(entry.a)} ${style === "dotted" ? "-.->" : "-->"}${label} ${nodeId(entry.b)}`,
     );
@@ -268,6 +290,10 @@ export function mermaidSource(s) {
   if (byStyle.violation)
     lines.push(`  %% violations: ${byStyle.violation.join(",")}`);
 
+  // The roles are drawn by the page's script, next to each end of the arrow:
+  // see roles.js.
+  if (roleMarks.length) lines.push(`  %% roles: ${roleMarks.join(";")}`);
+
   const highlight =
     s.level === "domain" && owner[s.focus] ? owner[s.focus] : s.focus;
   plainNodes.forEach((n) => {
@@ -289,7 +315,11 @@ export const violationTipEntry = (dep) => ({
   text: dep.comment || "Against the direction of the dependencies.",
 });
 
-export const tipEntry = (dep) => ({
-  title: `${nameOf(dep.from)} → ${nameOf(dep.to)}`,
-  text: dep.comment,
-});
+// The roles, when it has any, spelled out with their display names.
+export const tipEntry = (dep) => {
+  const entry = { title: `${nameOf(dep.from)} → ${nameOf(dep.to)}` };
+  const roles = roleText(dep);
+  if (roles) entry.roles = roles;
+  if (dep.comment) entry.text = dep.comment;
+  return entry;
+};

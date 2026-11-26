@@ -7,7 +7,8 @@ import {
   nameOf,
   isMulti,
 } from "../core/model.js";
-import { GRAPHS, relations } from "../core/graph.js";
+import { GRAPHS, relationEdges } from "../core/graph.js";
+import { roleText } from "../core/roles.js";
 import { attributeSection } from "./attributes.js";
 import { $ } from "../dom/query.js";
 // preact's runtime: the tagged-template html and the render that puts a tree
@@ -21,6 +22,12 @@ const link = (id) => html`<a data-go="${id}">${nameOf(id)}</a>`;
 const list = (ids) =>
   ids.length
     ? html`<ul>${ids.map((id) => html`<li>${link(id)}</li>`)}</ul>`
+    : html`<p class="hint">None</p>`;
+// A list of dependencies: each edge's name at `end`, and the roles the
+// dependency carries, spelled out beside it.
+const dependencyList = (edges, end) =>
+  edges.length
+    ? html`<ul>${edges.map((e) => html`<li>${link(e[end])}${roleText(e) ? html` <span class="hint roles">${roleText(e)}</span>` : null}</li>`)}</ul>`
     : html`<p class="hint">None</p>`;
 const chip = (type) => {
   const t = MODEL.types[type];
@@ -47,21 +54,21 @@ const Panel = ({ s, visible }) => {
   if (clusterById[id])
     return html`<h2>${item.name}</h2><span class="hint">Cluster</span>
       <p><a href="mermaid/index.html">All diagrams</a></p>${attributeSection(item)}<h3>Members</h3><ul>${item.members.map(itemWith)}</ul><h3>Legend</h3>${legend}`;
-  const r = relations(id);
+  const r = relationEdges(id);
   const parent = owner[id];
   const own = GRAPHS.context.edges;
-  const dUps = own.filter((e) => e.from === parent).map((e) => e.to);
-  const dDowns = own.filter((e) => e.to === parent).map((e) => e.from);
+  const dUps = own.filter((e) => e.from === parent);
+  const dDowns = own.filter((e) => e.to === parent);
   const pname = nameOf(parent);
   return html`<h2>${item.name}</h2>${chip(item.type)} <span class="hint">${domainById[id] ? "Domain" : "Bounded context"}</span>
       <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>
       ${item.description ? html`<p class="hint">${item.description}</p>` : null}${attributeSection(item)}
       ${isMulti(id) ? html`<h3>Bounded contexts</h3><ul>${domainById[id].contexts.map(itemWith)}</ul>` : null}
       ${!isMulti(id) && isMulti(parent) ? html`<h3>Domain</h3>${list([parent])}` : null}
-      <h3>Depends on (${r.ups.length})</h3>${list(r.ups)}
-      <h3>Used by (${r.downs.length})</h3>${list(r.downs)}
-      ${!isMulti(id) && isMulti(parent) && dUps.length ? html`<h3>${pname} as a whole depends on</h3>${list(dUps)}` : null}
-      ${!isMulti(id) && isMulti(parent) && dDowns.length ? html`<h3>${pname} as a whole is used by</h3>${list(dDowns)}` : null}
+      <h3>Depends on (${r.ups.length})</h3>${dependencyList(r.ups, "to")}
+      <h3>Used by (${r.downs.length})</h3>${dependencyList(r.downs, "from")}
+      ${!isMulti(id) && isMulti(parent) && dUps.length ? html`<h3>${pname} as a whole depends on</h3>${dependencyList(dUps, "to")}` : null}
+      ${!isMulti(id) && isMulti(parent) && dDowns.length ? html`<h3>${pname} as a whole is used by</h3>${dependencyList(dDowns, "from")}` : null}
       <h3>Legend</h3>${legend}`;
 };
 

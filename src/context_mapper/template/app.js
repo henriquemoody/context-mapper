@@ -7,6 +7,7 @@ import { mermaidSource } from "./core/diagram.js";
 import { renderInfo } from "./components/panel.js";
 import { bindEdgeHover, bindBoxTips } from "./dom/svg.js";
 import { dropViolationHeads } from "./arrowheads.js";
+import { drawRoleLabels } from "./roles.js";
 import { $ } from "./dom/query.js";
 import {
   levelSel,
@@ -46,6 +47,7 @@ async function render() {
     bindFunctions?.($("graph"));
     const svgEl = $("graph").querySelector("svg");
     dropViolationHeads(svgEl, source);
+    drawRoleLabels(svgEl, source);
     bindEdgeHover(svgEl, tips);
     bindBoxTips(svgEl);
   } catch (err) {

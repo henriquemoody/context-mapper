@@ -13,6 +13,7 @@ const expected = JSON.parse(
 const api = {
   ...(await import("../../src/context_mapper/template/core/model.js")),
   ...(await import("../../src/context_mapper/template/core/graph.js")),
+  ...(await import("../../src/context_mapper/template/core/roles.js")),
   ...(await import("../../src/context_mapper/template/core/state.js")),
   ...(await import("../../src/context_mapper/template/core/attributes.js")),
   ...(await import("../../src/context_mapper/template/components/attributes.js")),

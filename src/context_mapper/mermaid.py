@@ -35,6 +35,7 @@ TOP_DEFAULTS = {
     "domain_style": {"fill": "#ffffff", "stroke": "#b0b0b0"},
     "edge_styles": {},
     "attribute_tooltips": True,
+    "relationship_labels": True,
     "pages": "all",
     "views": [],
 }
@@ -76,6 +77,8 @@ def settings(config):
 
     if not isinstance(cfg["attribute_tooltips"], bool):
         errors.append("mermaid.attribute_tooltips must be true or false")
+    if not isinstance(cfg["relationship_labels"], bool):
+        errors.append("mermaid.relationship_labels must be true or false")
 
     for key in cfg["defaults"]:
         if key not in VIEW_DEFAULTS:
@@ -176,6 +179,7 @@ def client_settings(cfg):
         "domain_style": cfg["domain_style"],
         "edge_styles": cfg["edge_styles"],
         "attribute_tooltips": cfg["attribute_tooltips"],
+        "relationship_labels": cfg["relationship_labels"],
         "display": defaults["display"],
         "hide": defaults["hide"],
         "child_labels": defaults["child_labels"],
@@ -375,21 +379,34 @@ def render(data, cfg, view, links=None, markdown=False):
         from_id, to_id = folded_target(edge["from"]), folded_target(edge["to"])
         if from_id == to_id or from_id not in drawn or to_id not in drawn:
             continue
-        entry = merged.setdefault((from_id, to_id), {"styles": set(), "names": set()})
+        entry = merged.setdefault((from_id, to_id), {"styles": set(), "names": set(), "roles": set()})
         entry["styles"] |= edge["styles"]
+        entry["roles"].add((tuple(edge["upstream"]), tuple(edge["downstream"])))
         if to_id in folded_boxes:
             entry["names"].add(names[edge["to"]])
         elif from_id in folded_boxes:
             entry["names"].add(names[edge["from"]])
 
     by_style = {}
+    role_marks = []  # `index=upstream>downstream` for each edge with roles drawn, for the page's script
     arrows = len(merged)
     for edge_index, ((from_id, to_id), entry) in enumerate(merged.items()):
         edge_style = "solid" if "solid" in entry["styles"] else sorted(entry["styles"])[0]
         arrow = "-.->" if edge_style == "dotted" else "-->"
-        label = ""
+        # Roles are kept only when every dependency the arrow stands for carries the very same ones.
+        upstream, downstream = graph.role_codes(*(next(iter(entry["roles"])) if len(entry["roles"]) == 1
+                                                  else ((), ())))
+        label_lines = []
         if entry["names"] and view["child_labels"]:
-            label = f'|"{text(", ".join(sorted(entry["names"])))}"|'
+            label_lines.append(", ".join(sorted(entry["names"])))
+        if (upstream or downstream) and cfg["relationship_labels"]:
+            if markdown:
+                # No script runs where GitLab renders this, so the roles ride on the middle of the arrow.
+                label_lines += [f"{side}: {', '.join(codes)}"
+                                for side, codes in (("U", upstream), ("D", downstream)) if codes]
+            else:
+                role_marks.append(f"{edge_index}={','.join(upstream)}>{','.join(downstream)}")
+        label = f'|"{text("<br/>".join(label_lines))}"|' if label_lines else ""
         lines.append(f"  {node_id(from_id)} {arrow}{label} {node_id(to_id)}")
         by_style.setdefault(edge_style, []).append(str(edge_index))
 
@@ -416,6 +433,10 @@ def render(data, cfg, view, links=None, markdown=False):
 
     if by_style.get("violation"):
         lines.append(f"  %% violations: {','.join(by_style['violation'])}")
+
+    # The roles are drawn by the page's script, next to each end of the arrow: see template/roles.js.
+    if role_marks:
+        lines.append(f"  %% roles: {';'.join(role_marks)}")
 
     # Highlight only the focused item itself: a domain focus marks the domain box, not each context.
     highlight = owner[view["focus"]] if level == "domain" and view.get("focus") in owner else view.get("focus")
@@ -488,6 +509,8 @@ DOWNLOAD_JS = (Path(__file__).parent / "template" / "download.js").read_text().s
     "export function downloadDiagram", "function downloadDiagram")
 ARROWHEADS_JS = (Path(__file__).parent / "template" / "arrowheads.js").read_text().strip().replace(
     "export function dropViolationHeads", "function dropViolationHeads")
+ROLES_JS = (Path(__file__).parent / "template" / "roles.js").read_text().strip().replace(
+    "export function drawRoleLabels", "function drawRoleLabels")
 
 PAGE = """<!doctype html>
 <html lang="en">
@@ -539,6 +562,7 @@ DIAGRAM = """<p class="hint">Download: <a href="#" data-download="png">PNG</a> Â
     el.innerHTML = svg;
     bindFunctions?.(el);
     dropViolationHeads(el.querySelector("svg"), src);
+    drawRoleLabels(el.querySelector("svg"), src);
   }} catch (err) {{
     el.textContent = "Could not render this diagram: " + err.message;
   }}
@@ -549,6 +573,7 @@ DIAGRAM = """<p class="hint">Download: <a href="#" data-download="png">PNG</a> Â
   }}));
 __DOWNLOAD__
 __ARROWHEADS__
+__ROLES__
 </script>"""
 
 ELK = "  mermaid.registerLayoutLoaders(elkLayouts);"
@@ -613,8 +638,16 @@ def attribute_rows(data, focus):
     return rows
 
 
-def facts(data, view):
-    """Membership and direct relations for a focused page, as (heading, [ids]) pairs."""
+def role_notes(edges, end):
+    """The roles of each edge as text, by the id at its `end` ("to" or "from"): what a dependency list says
+    beside a name. An edge with no roles says nothing."""
+    return {edge[end]: graph.role_text(edge["upstream"], edge["downstream"])
+            for edge in edges if edge["upstream"] or edge["downstream"]}
+
+
+def fact_sections(data, view):
+    """Membership and direct relations for a focused page, as (heading, [ids], notes) triples: `notes` maps
+    an id in the list to the roles of the dependency, as text."""
     focus = view.get("focus")
     if not focus:
         return []
@@ -622,26 +655,37 @@ def facts(data, view):
     clusters = {cluster["id"]: cluster for cluster in data["clusters"]}
     sections = []
     if focus in clusters:
-        sections.append(("Members", clusters[focus]["members"]))
+        sections.append(("Members", clusters[focus]["members"], {}))
     elif focus in domains and not domains[focus]["single"]:
-        sections.append(("Bounded contexts", domains[focus]["contexts"]))
+        sections.append(("Bounded contexts", domains[focus]["contexts"], {}))
     elif focus in contexts and not domains[contexts[focus]["domain"]]["single"]:
-        sections.append(("Domain", [contexts[focus]["domain"]]))
+        sections.append(("Domain", [contexts[focus]["domain"]], {}))
+    upstream_edges, downstream_edges = graph.relation_edges(data, focus)
     upstreams, downstreams = graph.relations(data, focus)
-    sections += [(f"Depends on ({len(upstreams)})", upstreams), (f"Used by ({len(downstreams)})", downstreams)]
+    sections += [(f"Depends on ({len(upstreams)})", upstreams, role_notes(upstream_edges, "to")),
+                 (f"Used by ({len(downstreams)})", downstreams, role_notes(downstream_edges, "from"))]
 
     # Dependencies written against the whole domain apply to this context too, we just don't know how yet.
     if focus in contexts:
         parent = contexts[focus]["domain"]
         if not domains[parent]["single"]:
             name = domains[parent]["name"]
-            domain_upstreams = sorted({edge["to"] for edge in data["edges"] if edge["from"] == parent}, key=names.get)
-            domain_downstreams = sorted({edge["from"] for edge in data["edges"] if edge["to"] == parent}, key=names.get)
+            parent_upstream_edges = [edge for edge in data["edges"] if edge["from"] == parent]
+            parent_downstream_edges = [edge for edge in data["edges"] if edge["to"] == parent]
+            domain_upstreams = sorted({edge["to"] for edge in parent_upstream_edges}, key=names.get)
+            domain_downstreams = sorted({edge["from"] for edge in parent_downstream_edges}, key=names.get)
             if domain_upstreams:
-                sections.append((f"{name} as a whole depends on ({len(domain_upstreams)})", domain_upstreams))
+                sections.append((f"{name} as a whole depends on ({len(domain_upstreams)})", domain_upstreams,
+                                 role_notes(parent_upstream_edges, "to")))
             if domain_downstreams:
-                sections.append((f"{name} as a whole is used by ({len(domain_downstreams)})", domain_downstreams))
+                sections.append((f"{name} as a whole is used by ({len(domain_downstreams)})", domain_downstreams,
+                                 role_notes(parent_downstream_edges, "from")))
     return sections
+
+
+def facts(data, view):
+    """Membership and direct relations for a focused page, as (heading, [ids]) pairs."""
+    return [(heading, item_ids) for heading, item_ids, _ in fact_sections(data, view)]
 
 
 def build(data, config, out):
@@ -677,10 +721,14 @@ def build(data, config, out):
             return (f"<a href='{item_id}.html'>{html.escape(names[item_id])}</a>" if item_id in pages
                     else html.escape(names[item_id]))
 
+        def html_item(item_id, notes):
+            note = f" <span class='hint'>{html.escape(notes[item_id])}</span>" if item_id in notes else ""
+            return f"<li>{html_link(item_id)}{note}</li>"
+
         cols = "".join(
-            f"<div><h3>{html.escape(heading)}</h3>" + ("<ul>" + "".join(f"<li>{html_link(item_id)}</li>" for item_id in item_ids) + "</ul>"
+            f"<div><h3>{html.escape(heading)}</h3>" + ("<ul>" + "".join(html_item(item_id, notes) for item_id in item_ids) + "</ul>"
                                                       if item_ids else "<p class='hint'>None</p>") + "</div>"
-            for heading, item_ids in facts(data, view))
+            for heading, item_ids, notes in fact_sections(data, view))
         source = render(data, cfg, view, links=html_links)
         body = DIAGRAM.format(
             relations=f"<div class='cols'>{cols}</div>" if cols else "",
@@ -691,6 +739,7 @@ def build(data, config, out):
         )
         body = body.replace("__DOWNLOAD__", textwrap.indent(DOWNLOAD_JS, "  "))
         body = body.replace("__ARROWHEADS__", textwrap.indent(ARROWHEADS_JS, "  "))
+        body = body.replace("__ROLES__", textwrap.indent(ROLES_JS, "  "))
         rows = attribute_rows(data, view.get("focus"))
         about_html = f'<p class="hint">{html.escape(about)}</p>' if about else ""
         about_html += "".join(f'<p class="hint"><b>{html.escape(label)}:</b> {html.escape(text)}</p>'
@@ -700,8 +749,9 @@ def build(data, config, out):
             about=about_html,
             description=html.escape(desc), interactive=interactive, body=body))
 
-        def md_link(item_id):
-            return f"[{names[item_id]}]({item_id}.md)" if item_id in pages else names[item_id]
+        def md_link(item_id, notes):
+            link = f"[{names[item_id]}]({item_id}.md)" if item_id in pages else names[item_id]
+            return f"{link} ({notes[item_id]})" if item_id in notes else link
 
         md = [f"# {title}", ""]
         if about:
@@ -709,8 +759,8 @@ def build(data, config, out):
         for label, text in rows:
             md += [f"**{label}:** {text}", ""]
         md += [desc, "", "```mermaid", render(data, cfg, view, markdown=True).rstrip(), "```", ""]
-        for heading, item_ids in facts(data, view):
-            md += [f"**{heading}:** " + (", ".join(md_link(item_id) for item_id in item_ids) or "None"), ""]
+        for heading, item_ids, notes in fact_sections(data, view):
+            md += [f"**{heading}:** " + (", ".join(md_link(item_id, notes) for item_id in item_ids) or "None"), ""]
         (md_dir / f"{view['id']}.md").write_text("\n".join(md))
 
         index_rows.append(("Pages" if view.get("page") else "Views", title, view["id"]))

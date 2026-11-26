@@ -29,6 +29,17 @@
 #     violations:
 #       booking: Loads the Cargo to attach each event to it.
 #
+# A dependency can say what each side of it is, with the context-map patterns:
+# `upstream` takes OpenHostService, PublishedLanguage and Supplier; `downstream`
+# takes AnticorruptionLayer, Conformist and Customer. The diagram shows them as
+# short codes next to each end of the arrow, and the tooltip spells them out.
+#
+#   pathfinder:
+#     downstreams:
+#       routing:
+#         upstream: [OpenHostService, PublishedLanguage]
+#         downstream: [AnticorruptionLayer]
+#
 # Every entry can also carry a `description`: the interactive page shows it as
 # a tooltip when you hover over its box, and the item's page shows it in text.
 #
@@ -76,13 +87,17 @@ context-map:
       routing:                                      # a styled edge: colors live in context-map.style.yml
         comment: Finds the paths. Routing translates them behind an anti-corruption layer.
         style: dotted
+        upstream: [OpenHostService, PublishedLanguage]   # a service anyone can call, in a format it publishes
+        downstream: [AnticorruptionLayer]               # Routing keeps the vendor's model out of its own
   port-terminals:
     name: Port Terminals
     type: generic
     cluster: partners
     description: The systems in each port. They see cargo loaded, unloaded and cleared by customs.
     downstreams:
-      incident-logging: Reports each load, unload, receive, claim and customs event.
+      incident-logging:
+        comment: Reports each load, unload, receive, claim and customs event.
+        downstream: [AnticorruptionLayer]               # the reports are checked before anything trusts them
 
   location:
     name: Location
@@ -91,9 +106,15 @@ context-map:
     attributes:
       aggregates: [Location]
     downstreams:
-      booking: Names where the cargo starts and where it ends.
-      voyage-scheduling: Names the ports of each carrier movement.
-      handling-history: Names the port where each event happened.
+      booking:
+        comment: Names where the cargo starts and where it ends.
+        upstream: [PublishedLanguage]                   # UN/LOCODE, a code everyone shares
+      voyage-scheduling:
+        comment: Names the ports of each carrier movement.
+        upstream: [PublishedLanguage]
+      handling-history:
+        comment: Names the port where each event happened.
+        upstream: [PublishedLanguage]
 
   customer:
     name: Customer
@@ -125,7 +146,10 @@ context-map:
     attributes:
       service: RoutingService
     downstreams:
-      booking: Proposes itineraries for a route specification.
+      booking:                                      # Routing answers to what Booking asks for
+        comment: Proposes itineraries for a route specification.
+        upstream: [Supplier]
+        downstream: [Customer]
 
   handling:
     name: Handling
@@ -177,4 +201,6 @@ context-map:
     type: generic
     description: Invoices payers. It knows nothing about cargo.
     downstreams:
-      booking: Invoices the payer of each delivered cargo. Booking speaks Billing's language, not the other way round.
+      booking:
+        comment: Invoices the payer of each delivered cargo. Booking speaks Billing's language, not the other way round.
+        downstream: [Conformist]

@@ -32,7 +32,14 @@
               "from": "checkout",
               "to": "identity",
               "style": "solid",
-              "comment": "Creates an account for guests who check out."
+              "comment": "Creates an account for guests who check out.",
+              "upstream": [
+                "OpenHostService",
+                "PublishedLanguage"
+              ],
+              "downstream": [
+                "AnticorruptionLayer"
+              ]
             }
           ]
         },
@@ -47,7 +54,9 @@
               "from": "crm",
               "to": "identity",
               "style": "solid",
-              "comment": null
+              "comment": null,
+              "upstream": [],
+              "downstream": []
             }
           ]
         },
@@ -62,7 +71,13 @@
               "from": "checkout",
               "to": "payments",
               "style": "solid",
-              "comment": "Charges the payment method and signals whether it went through."
+              "comment": "Charges the payment method and signals whether it went through.",
+              "upstream": [
+                "Supplier"
+              ],
+              "downstream": [
+                "Customer"
+              ]
             }
           ]
         },
@@ -77,7 +92,9 @@
               "from": "fulfillment",
               "to": "payments",
               "style": "solid",
-              "comment": "Captures the payment once the order ships, and refunds returns."
+              "comment": "Captures the payment once the order ships, and refunds returns.",
+              "upstream": [],
+              "downstream": []
             }
           ]
         },
@@ -92,7 +109,9 @@
               "from": "checkout",
               "to": "catalog",
               "style": "dotted",
-              "comment": "Reads prices and availability at checkout time."
+              "comment": "Reads prices and availability at checkout time.",
+              "upstream": [],
+              "downstream": []
             }
           ]
         },
@@ -107,7 +126,11 @@
               "from": "crm",
               "to": "orders",
               "style": "solid",
-              "comment": "Reads orders to sync them into the ticket system."
+              "comment": "Reads orders to sync them into the ticket system.",
+              "upstream": [],
+              "downstream": [
+                "Conformist"
+              ]
             }
           ]
         }
@@ -137,7 +160,14 @@
               "from": "checkout",
               "to": "identity",
               "style": "solid",
-              "comment": "Creates an account for guests who check out."
+              "comment": "Creates an account for guests who check out.",
+              "upstream": [
+                "OpenHostService",
+                "PublishedLanguage"
+              ],
+              "downstream": [
+                "AnticorruptionLayer"
+              ]
             }
           ]
         },
@@ -152,7 +182,9 @@
               "from": "crm",
               "to": "identity",
               "style": "solid",
-              "comment": null
+              "comment": null,
+              "upstream": [],
+              "downstream": []
             }
           ]
         },
@@ -167,13 +199,21 @@
               "from": "checkout",
               "to": "payments",
               "style": "solid",
-              "comment": "Charges the payment method and signals whether it went through."
+              "comment": "Charges the payment method and signals whether it went through.",
+              "upstream": [
+                "Supplier"
+              ],
+              "downstream": [
+                "Customer"
+              ]
             },
             {
               "from": "fulfillment",
               "to": "payments",
               "style": "solid",
-              "comment": "Captures the payment once the order ships, and refunds returns."
+              "comment": "Captures the payment once the order ships, and refunds returns.",
+              "upstream": [],
+              "downstream": []
             }
           ]
         },
@@ -188,7 +228,9 @@
               "from": "checkout",
               "to": "catalog",
               "style": "dotted",
-              "comment": "Reads prices and availability at checkout time."
+              "comment": "Reads prices and availability at checkout time.",
+              "upstream": [],
+              "downstream": []
             }
           ]
         },
@@ -203,7 +245,11 @@
               "from": "crm",
               "to": "orders",
               "style": "solid",
-              "comment": "Reads orders to sync them into the ticket system."
+              "comment": "Reads orders to sync them into the ticket system.",
+              "upstream": [],
+              "downstream": [
+                "Conformist"
+              ]
             }
           ]
         }
@@ -233,7 +279,14 @@
               "from": "checkout",
               "to": "identity",
               "style": "solid",
-              "comment": "Creates an account for guests who check out."
+              "comment": "Creates an account for guests who check out.",
+              "upstream": [
+                "OpenHostService",
+                "PublishedLanguage"
+              ],
+              "downstream": [
+                "AnticorruptionLayer"
+              ]
             }
           ]
         },
@@ -248,7 +301,9 @@
               "from": "crm",
               "to": "identity",
               "style": "solid",
-              "comment": null
+              "comment": null,
+              "upstream": [],
+              "downstream": []
             }
           ]
         },
@@ -263,13 +318,21 @@
               "from": "checkout",
               "to": "payments",
               "style": "solid",
-              "comment": "Charges the payment method and signals whether it went through."
+              "comment": "Charges the payment method and signals whether it went through.",
+              "upstream": [
+                "Supplier"
+              ],
+              "downstream": [
+                "Customer"
+              ]
             },
             {
               "from": "fulfillment",
               "to": "payments",
               "style": "solid",
-              "comment": "Captures the payment once the order ships, and refunds returns."
+              "comment": "Captures the payment once the order ships, and refunds returns.",
+              "upstream": [],
+              "downstream": []
             }
           ]
         },
@@ -284,7 +347,9 @@
               "from": "checkout",
               "to": "catalog",
               "style": "dotted",
-              "comment": "Reads prices and availability at checkout time."
+              "comment": "Reads prices and availability at checkout time.",
+              "upstream": [],
+              "downstream": []
             }
           ]
         },
@@ -299,7 +364,11 @@
               "from": "crm",
               "to": "orders",
               "style": "solid",
-              "comment": "Reads orders to sync them into the ticket system."
+              "comment": "Reads orders to sync them into the ticket system.",
+              "upstream": [],
+              "downstream": [
+                "Conformist"
+              ]
             }
           ]
         }
@@ -502,6 +571,152 @@
       "downs": []
     }
   },
+  "graph/relation-edges": {
+    "checkout": {
+      "ups": [
+        {
+          "from": "checkout",
+          "to": "catalog",
+          "upstream": [],
+          "downstream": []
+        },
+        {
+          "from": "checkout",
+          "to": "identity",
+          "upstream": [
+            "OpenHostService",
+            "PublishedLanguage"
+          ],
+          "downstream": [
+            "AnticorruptionLayer"
+          ]
+        },
+        {
+          "from": "checkout",
+          "to": "payments",
+          "upstream": [
+            "Supplier"
+          ],
+          "downstream": [
+            "Customer"
+          ]
+        }
+      ],
+      "downs": []
+    },
+    "fulfillment": {
+      "ups": [
+        {
+          "from": "fulfillment",
+          "to": "payments",
+          "upstream": [],
+          "downstream": []
+        }
+      ],
+      "downs": []
+    },
+    "orders": {
+      "ups": [
+        {
+          "from": "orders",
+          "to": "catalog",
+          "upstream": [],
+          "downstream": []
+        },
+        {
+          "from": "orders",
+          "to": "identity",
+          "upstream": [
+            "OpenHostService",
+            "PublishedLanguage"
+          ],
+          "downstream": [
+            "AnticorruptionLayer"
+          ]
+        },
+        {
+          "from": "orders",
+          "to": "payments",
+          "upstream": [],
+          "downstream": []
+        }
+      ],
+      "downs": [
+        {
+          "from": "crm",
+          "to": "orders",
+          "upstream": [],
+          "downstream": [
+            "Conformist"
+          ]
+        }
+      ]
+    },
+    "crm": {
+      "ups": [
+        {
+          "from": "crm",
+          "to": "identity",
+          "upstream": [],
+          "downstream": []
+        },
+        {
+          "from": "crm",
+          "to": "orders",
+          "upstream": [],
+          "downstream": [
+            "Conformist"
+          ]
+        }
+      ],
+      "downs": []
+    }
+  },
+  "graph/role-text": {
+    "both": "Open Host Service, Published Language → Anticorruption Layer",
+    "upstream-only": "Supplier (upstream)",
+    "downstream-only": "Conformist (downstream)",
+    "none": "",
+    "codes": [
+      [
+        "OHS",
+        "PL"
+      ],
+      [
+        "ACL"
+      ]
+    ]
+  },
+  "graph/shared-roles": {
+    "same": {
+      "upstream": [
+        "Supplier"
+      ],
+      "downstream": [
+        "Customer"
+      ]
+    },
+    "one-with-one-without": {
+      "upstream": [],
+      "downstream": []
+    },
+    "no-roles-at-all": {
+      "upstream": [],
+      "downstream": []
+    },
+    "different-roles": {
+      "upstream": [],
+      "downstream": []
+    },
+    "single": {
+      "upstream": [
+        "Supplier"
+      ],
+      "downstream": [
+        "Customer"
+      ]
+    }
+  },
   "graph/node-items": {
     "identity": "Identity",
     "payments": "Payments",
@@ -535,7 +750,7 @@
     "\"  4 \"": 4
   },
   "diagram/whole-system-context": {
-    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph catalog[\"Catalog\"]\n    browsing[\"Browsing\"]:::core\n    search[\"Search\"]:::core\n  end\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n    fulfillment[\"Fulfillment\"]:::supporting\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  crm[\"CRM\"]:::supporting\n  foundations[\"<b>Shared Foundations</b><br/>Identity, Payments\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  checkout -->|\"Identity, Payments\"| foundations\n  crm -->|\"Identity\"| foundations\n  fulfillment -->|\"Payments\"| foundations\n  checkout -.-> catalog\n  crm --> orders\n  checkout <--> catalog\n  linkStyle 0,1,2,4 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 3 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 5 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 5\n  click browsing href \"#focus=browsing\"\n  click search href \"#focus=search\"\n  click checkout href \"#focus=checkout\"\n  click fulfillment href \"#focus=fulfillment\"\n  click crm href \"#focus=crm\"\n  click foundations href \"#focus=foundations\"\n",
+    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph catalog[\"Catalog\"]\n    browsing[\"Browsing\"]:::core\n    search[\"Search\"]:::core\n  end\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n    fulfillment[\"Fulfillment\"]:::supporting\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  crm[\"CRM\"]:::supporting\n  foundations[\"<b>Shared Foundations</b><br/>Identity, Payments\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  checkout -->|\"Identity, Payments\"| foundations\n  crm -->|\"Identity\"| foundations\n  fulfillment -->|\"Payments\"| foundations\n  checkout -.-> catalog\n  crm --> orders\n  checkout <--> catalog\n  linkStyle 0,1,2,4 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 3 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 5 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 5\n  %% roles: 4=>CF\n  click browsing href \"#focus=browsing\"\n  click search href \"#focus=search\"\n  click checkout href \"#focus=checkout\"\n  click fulfillment href \"#focus=fulfillment\"\n  click crm href \"#focus=crm\"\n  click foundations href \"#focus=foundations\"\n",
     "visible": [
       "browsing",
       "catalog",
@@ -551,10 +766,12 @@
       [
         {
           "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
           "text": "Creates an account for guests who check out."
         },
         {
           "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
           "text": "Charges the payment method and signals whether it went through."
         }
       ],
@@ -574,6 +791,7 @@
       [
         {
           "title": "CRM → Orders",
+          "roles": "Conformist (downstream)",
           "text": "Reads orders to sync them into the ticket system."
         }
       ],
@@ -586,7 +804,7 @@
     ]
   },
   "diagram/whole-system-domain": {
-    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  catalog[\"<b>Catalog</b><br/>Browsing, Search\"]:::core\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  orders[\"<b>Orders</b><br/>Checkout, Fulfillment\"]:::core\n  crm[\"CRM\"]:::supporting\n  foundations[\"<b>Shared Foundations</b><br/>Identity, Payments\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  orders -->|\"Identity, Payments\"| foundations\n  crm -->|\"Identity\"| foundations\n  orders -.-> catalog\n  crm --> orders\n  orders <--> catalog\n  linkStyle 0,1,3 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 2 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 4 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 4\n  click catalog href \"#level=domain&focus=catalog\"\n  click orders href \"#level=domain&focus=orders\"\n  click crm href \"#level=domain&focus=crm\"\n  click foundations href \"#level=domain&focus=foundations\"\n",
+    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  catalog[\"<b>Catalog</b><br/>Browsing, Search\"]:::core\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  orders[\"<b>Orders</b><br/>Checkout, Fulfillment\"]:::core\n  crm[\"CRM\"]:::supporting\n  foundations[\"<b>Shared Foundations</b><br/>Identity, Payments\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  orders -->|\"Identity, Payments\"| foundations\n  crm -->|\"Identity\"| foundations\n  orders -.-> catalog\n  crm --> orders\n  orders <--> catalog\n  linkStyle 0,1,3 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 2 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 4 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 4\n  %% roles: 3=>CF\n  click catalog href \"#level=domain&focus=catalog\"\n  click orders href \"#level=domain&focus=orders\"\n  click crm href \"#level=domain&focus=crm\"\n  click foundations href \"#level=domain&focus=foundations\"\n",
     "visible": [
       "catalog",
       "crm",
@@ -598,10 +816,12 @@
       [
         {
           "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
           "text": "Creates an account for guests who check out."
         },
         {
           "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
           "text": "Charges the payment method and signals whether it went through."
         },
         {
@@ -619,6 +839,7 @@
       [
         {
           "title": "CRM → Orders",
+          "roles": "Conformist (downstream)",
           "text": "Reads orders to sync them into the ticket system."
         }
       ],
@@ -644,10 +865,12 @@
       [
         {
           "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
           "text": "Creates an account for guests who check out."
         },
         {
           "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
           "text": "Charges the payment method and signals whether it went through."
         }
       ],
@@ -679,10 +902,12 @@
       [
         {
           "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
           "text": "Creates an account for guests who check out."
         },
         {
           "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
           "text": "Charges the payment method and signals whether it went through."
         }
       ],
@@ -724,7 +949,7 @@
     ]
   },
   "diagram/focus-foundations-d1": {
-    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n    fulfillment[\"Fulfillment\"]:::supporting\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  crm[\"CRM\"]:::supporting\n  subgraph foundations[\"Shared Foundations\"]\n    identity[\"Identity\"]:::generic\n    payments[\"Payments\"]:::generic\n  end\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a,stroke-width:4px,font-weight:bold\n  checkout --> identity\n  crm --> identity\n  checkout --> payments\n  fulfillment --> payments\n  linkStyle 0,1,2,3 interpolate step stroke:#313131,stroke-width:1.5px\n  click checkout href \"#focus=checkout\"\n  click fulfillment href \"#focus=fulfillment\"\n  click crm href \"#focus=crm\"\n  click identity href \"#focus=identity\"\n  click payments href \"#focus=payments\"\n",
+    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n    fulfillment[\"Fulfillment\"]:::supporting\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  crm[\"CRM\"]:::supporting\n  subgraph foundations[\"Shared Foundations\"]\n    identity[\"Identity\"]:::generic\n    payments[\"Payments\"]:::generic\n  end\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a,stroke-width:4px,font-weight:bold\n  checkout --> identity\n  crm --> identity\n  checkout --> payments\n  fulfillment --> payments\n  linkStyle 0,1,2,3 interpolate step stroke:#313131,stroke-width:1.5px\n  %% roles: 0=OHS,PL>ACL;2=S>C\n  click checkout href \"#focus=checkout\"\n  click fulfillment href \"#focus=fulfillment\"\n  click crm href \"#focus=crm\"\n  click identity href \"#focus=identity\"\n  click payments href \"#focus=payments\"\n",
     "visible": [
       "checkout",
       "crm",
@@ -737,6 +962,7 @@
       [
         {
           "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
           "text": "Creates an account for guests who check out."
         }
       ],
@@ -744,6 +970,7 @@
       [
         {
           "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
           "text": "Charges the payment method and signals whether it went through."
         }
       ],
@@ -756,7 +983,7 @@
     ]
   },
   "diagram/cluster-contents": {
-    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph catalog[\"Catalog\"]\n    browsing[\"Browsing\"]:::core\n    search[\"Search\"]:::core\n  end\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n    fulfillment[\"Fulfillment\"]:::supporting\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  crm[\"CRM\"]:::supporting\n  identity[\"Identity\"]:::generic\n  payments[\"Payments\"]:::generic\n  checkout --> identity\n  crm --> identity\n  checkout --> payments\n  fulfillment --> payments\n  checkout -.-> catalog\n  crm --> orders\n  checkout <--> catalog\n  linkStyle 0,1,2,3,5 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 4 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 6 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 6\n  click browsing href \"#focus=browsing&display.foundations=contents\"\n  click search href \"#focus=search&display.foundations=contents\"\n  click checkout href \"#focus=checkout&display.foundations=contents\"\n  click fulfillment href \"#focus=fulfillment&display.foundations=contents\"\n  click crm href \"#focus=crm&display.foundations=contents\"\n  click identity href \"#focus=identity&display.foundations=contents\"\n  click payments href \"#focus=payments&display.foundations=contents\"\n",
+    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph catalog[\"Catalog\"]\n    browsing[\"Browsing\"]:::core\n    search[\"Search\"]:::core\n  end\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n    fulfillment[\"Fulfillment\"]:::supporting\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  crm[\"CRM\"]:::supporting\n  identity[\"Identity\"]:::generic\n  payments[\"Payments\"]:::generic\n  checkout --> identity\n  crm --> identity\n  checkout --> payments\n  fulfillment --> payments\n  checkout -.-> catalog\n  crm --> orders\n  checkout <--> catalog\n  linkStyle 0,1,2,3,5 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 4 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 6 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 6\n  %% roles: 0=OHS,PL>ACL;2=S>C;5=>CF\n  click browsing href \"#focus=browsing&display.foundations=contents\"\n  click search href \"#focus=search&display.foundations=contents\"\n  click checkout href \"#focus=checkout&display.foundations=contents\"\n  click fulfillment href \"#focus=fulfillment&display.foundations=contents\"\n  click crm href \"#focus=crm&display.foundations=contents\"\n  click identity href \"#focus=identity&display.foundations=contents\"\n  click payments href \"#focus=payments&display.foundations=contents\"\n",
     "visible": [
       "browsing",
       "catalog",
@@ -772,6 +999,7 @@
       [
         {
           "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
           "text": "Creates an account for guests who check out."
         }
       ],
@@ -779,6 +1007,7 @@
       [
         {
           "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
           "text": "Charges the payment method and signals whether it went through."
         }
       ],
@@ -797,6 +1026,7 @@
       [
         {
           "title": "CRM → Orders",
+          "roles": "Conformist (downstream)",
           "text": "Reads orders to sync them into the ticket system."
         }
       ],
@@ -809,7 +1039,7 @@
     ]
   },
   "diagram/catalog-collapsed": {
-    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  catalog[\"<b>Catalog</b><br/>Browsing, Search\"]:::core\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n    fulfillment[\"Fulfillment\"]:::supporting\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  crm[\"CRM\"]:::supporting\n  foundations[\"<b>Shared Foundations</b><br/>Identity, Payments\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  checkout -->|\"Identity, Payments\"| foundations\n  crm -->|\"Identity\"| foundations\n  fulfillment -->|\"Payments\"| foundations\n  checkout -.->|\"Catalog\"| catalog\n  crm --> orders\n  checkout <--> catalog\n  linkStyle 0,1,2,4 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 3 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 5 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 5\n  click catalog href \"#focus=catalog&display.catalog=collapsed\"\n  click checkout href \"#focus=checkout&display.catalog=collapsed\"\n  click fulfillment href \"#focus=fulfillment&display.catalog=collapsed\"\n  click crm href \"#focus=crm&display.catalog=collapsed\"\n  click foundations href \"#focus=foundations&display.catalog=collapsed\"\n",
+    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  catalog[\"<b>Catalog</b><br/>Browsing, Search\"]:::core\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n    fulfillment[\"Fulfillment\"]:::supporting\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  crm[\"CRM\"]:::supporting\n  foundations[\"<b>Shared Foundations</b><br/>Identity, Payments\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  checkout -->|\"Identity, Payments\"| foundations\n  crm -->|\"Identity\"| foundations\n  fulfillment -->|\"Payments\"| foundations\n  checkout -.->|\"Catalog\"| catalog\n  crm --> orders\n  checkout <--> catalog\n  linkStyle 0,1,2,4 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 3 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 5 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 5\n  %% roles: 4=>CF\n  click catalog href \"#focus=catalog&display.catalog=collapsed\"\n  click checkout href \"#focus=checkout&display.catalog=collapsed\"\n  click fulfillment href \"#focus=fulfillment&display.catalog=collapsed\"\n  click crm href \"#focus=crm&display.catalog=collapsed\"\n  click foundations href \"#focus=foundations&display.catalog=collapsed\"\n",
     "visible": [
       "browsing",
       "catalog",
@@ -825,10 +1055,12 @@
       [
         {
           "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
           "text": "Creates an account for guests who check out."
         },
         {
           "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
           "text": "Charges the payment method and signals whether it went through."
         }
       ],
@@ -848,6 +1080,7 @@
       [
         {
           "title": "CRM → Orders",
+          "roles": "Conformist (downstream)",
           "text": "Reads orders to sync them into the ticket system."
         }
       ],
@@ -875,10 +1108,12 @@
       [
         {
           "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
           "text": "Creates an account for guests who check out."
         },
         {
           "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
           "text": "Charges the payment method and signals whether it went through."
         }
       ],
@@ -903,7 +1138,7 @@
     ]
   },
   "diagram/hide-catalog": {
-    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n    fulfillment[\"Fulfillment\"]:::supporting\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  crm[\"CRM\"]:::supporting\n  foundations[\"<b>Shared Foundations</b><br/>Identity, Payments\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  checkout -->|\"Identity, Payments\"| foundations\n  crm -->|\"Identity\"| foundations\n  fulfillment -->|\"Payments\"| foundations\n  crm --> orders\n  linkStyle 0,1,2,3 interpolate step stroke:#313131,stroke-width:1.5px\n  click checkout href \"#focus=checkout&hide.catalog=1\"\n  click fulfillment href \"#focus=fulfillment&hide.catalog=1\"\n  click crm href \"#focus=crm&hide.catalog=1\"\n  click foundations href \"#focus=foundations&hide.catalog=1\"\n",
+    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n    fulfillment[\"Fulfillment\"]:::supporting\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  crm[\"CRM\"]:::supporting\n  foundations[\"<b>Shared Foundations</b><br/>Identity, Payments\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  checkout -->|\"Identity, Payments\"| foundations\n  crm -->|\"Identity\"| foundations\n  fulfillment -->|\"Payments\"| foundations\n  crm --> orders\n  linkStyle 0,1,2,3 interpolate step stroke:#313131,stroke-width:1.5px\n  %% roles: 3=>CF\n  click checkout href \"#focus=checkout&hide.catalog=1\"\n  click fulfillment href \"#focus=fulfillment&hide.catalog=1\"\n  click crm href \"#focus=crm&hide.catalog=1\"\n  click foundations href \"#focus=foundations&hide.catalog=1\"\n",
     "visible": [
       "checkout",
       "crm",
@@ -916,10 +1151,12 @@
       [
         {
           "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
           "text": "Creates an account for guests who check out."
         },
         {
           "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
           "text": "Charges the payment method and signals whether it went through."
         }
       ],
@@ -933,6 +1170,7 @@
       [
         {
           "title": "CRM → Orders",
+          "roles": "Conformist (downstream)",
           "text": "Reads orders to sync them into the ticket system."
         }
       ]
@@ -952,10 +1190,12 @@
       [
         {
           "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
           "text": "Creates an account for guests who check out."
         },
         {
           "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
           "text": "Charges the payment method and signals whether it went through."
         }
       ],
@@ -974,7 +1214,7 @@
     ]
   },
   "diagram/single-domain-domain-level": {
-    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  orders[\"<b>Orders</b><br/>Checkout, Fulfillment\"]:::core\n  crm[\"CRM\"]:::supporting\n  foundations[\"<b>Shared Foundations</b><br/>Identity\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  orders -->|\"Identity\"| foundations\n  crm -->|\"Identity\"| foundations\n  crm --> orders\n  linkStyle 0,1,2 interpolate step stroke:#313131,stroke-width:1.5px\n  class crm focus\n  click orders href \"#level=domain&focus=orders\"\n  click crm href \"#level=domain&focus=crm\"\n  click foundations href \"#level=domain&focus=foundations\"\n",
+    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  orders[\"<b>Orders</b><br/>Checkout, Fulfillment\"]:::core\n  crm[\"CRM\"]:::supporting\n  foundations[\"<b>Shared Foundations</b><br/>Identity\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  orders -->|\"Identity\"| foundations\n  crm -->|\"Identity\"| foundations\n  crm --> orders\n  linkStyle 0,1,2 interpolate step stroke:#313131,stroke-width:1.5px\n  %% roles: 0=OHS,PL>ACL;2=>CF\n  class crm focus\n  click orders href \"#level=domain&focus=orders\"\n  click crm href \"#level=domain&focus=crm\"\n  click foundations href \"#level=domain&focus=foundations\"\n",
     "visible": [
       "crm",
       "identity",
@@ -984,6 +1224,7 @@
       [
         {
           "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
           "text": "Creates an account for guests who check out."
         }
       ],
@@ -991,13 +1232,14 @@
       [
         {
           "title": "CRM → Orders",
+          "roles": "Conformist (downstream)",
           "text": "Reads orders to sync them into the ticket system."
         }
       ]
     ]
   },
   "diagram/group-by-type": {
-    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph type_core[\"Core\"]\n    catalog[\"<b>Catalog</b><br/>Browsing, Search\"]:::core\n    style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n    orders[\"<b>Orders</b><br/>Checkout, Fulfillment\"]:::core\n  end\n  subgraph type_supporting[\"Supporting\"]\n    crm[\"CRM\"]:::supporting\n  end\n  orders -.-> catalog\n  crm --> orders\n  orders <--> catalog\n  linkStyle 0 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 1 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 2 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 2\n  click catalog href \"#level=domain&focus=catalog\"\n  click orders href \"#level=domain&focus=orders\"\n  click crm href \"#level=domain&focus=crm\"\n",
+    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph type_core[\"Core\"]\n    catalog[\"<b>Catalog</b><br/>Browsing, Search\"]:::core\n    style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n    orders[\"<b>Orders</b><br/>Checkout, Fulfillment\"]:::core\n  end\n  subgraph type_supporting[\"Supporting\"]\n    crm[\"CRM\"]:::supporting\n  end\n  orders -.-> catalog\n  crm --> orders\n  orders <--> catalog\n  linkStyle 0 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 1 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 2 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 2\n  %% roles: 1=>CF\n  click catalog href \"#level=domain&focus=catalog\"\n  click orders href \"#level=domain&focus=orders\"\n  click crm href \"#level=domain&focus=crm\"\n",
     "visible": [
       "catalog",
       "crm",
@@ -1015,6 +1257,7 @@
       [
         {
           "title": "CRM → Orders",
+          "roles": "Conformist (downstream)",
           "text": "Reads orders to sync them into the ticket system."
         }
       ],
@@ -1026,8 +1269,8 @@
       ]
     ]
   },
-  "diagram/child-labels-off": {
-    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  catalog[\"Catalog\"]:::core\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n    fulfillment[\"Fulfillment\"]:::supporting\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  crm[\"CRM\"]:::supporting\n  foundations[\"Shared Foundations\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  checkout --> foundations\n  crm --> foundations\n  fulfillment --> foundations\n  checkout -.-> catalog\n  crm --> orders\n  checkout <--> catalog\n  linkStyle 0,1,2,4 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 3 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 5 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 5\n  click catalog href \"#focus=catalog&display.catalog=collapsed\"\n  click checkout href \"#focus=checkout&display.catalog=collapsed\"\n  click fulfillment href \"#focus=fulfillment&display.catalog=collapsed\"\n  click crm href \"#focus=crm&display.catalog=collapsed\"\n  click foundations href \"#focus=foundations&display.catalog=collapsed\"\n",
+  "diagram/roles-collapsed-merge": {
+    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph catalog[\"Catalog\"]\n    browsing[\"Browsing\"]:::core\n    search[\"Search\"]:::core\n  end\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  orders[\"<b>Orders</b><br/>Checkout, Fulfillment\"]:::core\n  crm[\"CRM\"]:::supporting\n  subgraph foundations[\"Shared Foundations\"]\n    identity[\"Identity\"]:::generic\n    payments[\"Payments\"]:::generic\n  end\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  orders -->|\"Checkout\"| identity\n  crm --> identity\n  orders -->|\"Checkout, Fulfillment\"| payments\n  orders -.->|\"Checkout\"| catalog\n  crm -->|\"Orders\"| orders\n  orders <--> catalog\n  linkStyle 0,1,2,4 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 3 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 5 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 5\n  %% roles: 0=OHS,PL>ACL;4=>CF\n  click browsing href \"#focus=browsing&display.foundations=expanded&display.orders=collapsed\"\n  click search href \"#focus=search&display.foundations=expanded&display.orders=collapsed\"\n  click orders href \"#focus=orders&display.foundations=expanded&display.orders=collapsed\"\n  click crm href \"#focus=crm&display.foundations=expanded&display.orders=collapsed\"\n  click identity href \"#focus=identity&display.foundations=expanded&display.orders=collapsed\"\n  click payments href \"#focus=payments&display.foundations=expanded&display.orders=collapsed\"\n",
     "visible": [
       "browsing",
       "catalog",
@@ -1043,10 +1286,157 @@
       [
         {
           "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
+          "text": "Creates an account for guests who check out."
+        }
+      ],
+      [],
+      [
+        {
+          "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
+          "text": "Charges the payment method and signals whether it went through."
+        },
+        {
+          "title": "Fulfillment → Payments",
+          "text": "Captures the payment once the order ships, and refunds returns."
+        }
+      ],
+      [
+        {
+          "title": "Checkout → Catalog",
+          "text": "Reads prices and availability at checkout time."
+        }
+      ],
+      [
+        {
+          "title": "CRM → Orders",
+          "roles": "Conformist (downstream)",
+          "text": "Reads orders to sync them into the ticket system."
+        }
+      ],
+      [
+        {
+          "title": "Catalog → Checkout (violation)",
+          "text": "Reads the open carts to decide what to keep in its cache."
+        }
+      ]
+    ]
+  },
+  "diagram/roles-collapsed-merge-no-child-labels": {
+    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph catalog[\"Catalog\"]\n    browsing[\"Browsing\"]:::core\n    search[\"Search\"]:::core\n  end\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  orders[\"Orders\"]:::core\n  crm[\"CRM\"]:::supporting\n  subgraph foundations[\"Shared Foundations\"]\n    identity[\"Identity\"]:::generic\n    payments[\"Payments\"]:::generic\n  end\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  orders --> identity\n  crm --> identity\n  orders --> payments\n  orders -.-> catalog\n  crm --> orders\n  orders <--> catalog\n  linkStyle 0,1,2,4 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 3 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 5 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 5\n  %% roles: 0=OHS,PL>ACL;4=>CF\n  click browsing href \"#focus=browsing&display.foundations=expanded&display.orders=collapsed\"\n  click search href \"#focus=search&display.foundations=expanded&display.orders=collapsed\"\n  click orders href \"#focus=orders&display.foundations=expanded&display.orders=collapsed\"\n  click crm href \"#focus=crm&display.foundations=expanded&display.orders=collapsed\"\n  click identity href \"#focus=identity&display.foundations=expanded&display.orders=collapsed\"\n  click payments href \"#focus=payments&display.foundations=expanded&display.orders=collapsed\"\n",
+    "visible": [
+      "browsing",
+      "catalog",
+      "checkout",
+      "crm",
+      "fulfillment",
+      "identity",
+      "orders",
+      "payments",
+      "search"
+    ],
+    "tips": [
+      [
+        {
+          "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
+          "text": "Creates an account for guests who check out."
+        }
+      ],
+      [],
+      [
+        {
+          "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
+          "text": "Charges the payment method and signals whether it went through."
+        },
+        {
+          "title": "Fulfillment → Payments",
+          "text": "Captures the payment once the order ships, and refunds returns."
+        }
+      ],
+      [
+        {
+          "title": "Checkout → Catalog",
+          "text": "Reads prices and availability at checkout time."
+        }
+      ],
+      [
+        {
+          "title": "CRM → Orders",
+          "roles": "Conformist (downstream)",
+          "text": "Reads orders to sync them into the ticket system."
+        }
+      ],
+      [
+        {
+          "title": "Catalog → Checkout (violation)",
+          "text": "Reads the open carts to decide what to keep in its cache."
+        }
+      ]
+    ]
+  },
+  "diagram/roles-labels-off": {
+    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  subgraph catalog[\"Catalog\"]\n    browsing[\"Browsing\"]:::core\n    search[\"Search\"]:::core\n  end\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  foundations[\"<b>Shared Foundations</b><br/>Identity, Payments\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  checkout -->|\"Identity, Payments\"| foundations\n  checkout -.-> catalog\n  checkout <--> catalog\n  linkStyle 0 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 1 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 2 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 2\n  class checkout focus\n  click browsing href \"#focus=browsing\"\n  click search href \"#focus=search\"\n  click checkout href \"#focus=checkout\"\n  click foundations href \"#focus=foundations\"\n",
+    "visible": [
+      "browsing",
+      "catalog",
+      "checkout",
+      "identity",
+      "payments",
+      "search"
+    ],
+    "tips": [
+      [
+        {
+          "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
           "text": "Creates an account for guests who check out."
         },
         {
           "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
+          "text": "Charges the payment method and signals whether it went through."
+        }
+      ],
+      [
+        {
+          "title": "Checkout → Catalog",
+          "text": "Reads prices and availability at checkout time."
+        }
+      ],
+      [
+        {
+          "title": "Catalog → Checkout (violation)",
+          "text": "Reads the open carts to decide what to keep in its cache."
+        }
+      ]
+    ]
+  },
+  "diagram/child-labels-off": {
+    "source": "---\n{\"config\":{\"theme\":\"base\",\"layout\":\"elk\",\"look\":\"handDrawn\",\"flowchart\":{\"curve\":\"step\",\"htmlLabels\":true},\"themeVariables\":{\"fontFamily\":\"system-ui, sans-serif\",\"fontSize\":\"14px\",\"lineColor\":\"#313131\"},\"elk\":{\"mergeEdges\":false,\"nodePlacementStrategy\":\"BRANDES_KOEPF\"}}}\n---\nflowchart BT\n  classDef core fill:#dedaff,stroke:#6631d7,color:#1a1a1a\n  classDef supporting fill:#c6dcff,stroke:#305bab,color:#1a1a1a\n  classDef generic fill:#adf0c7,stroke:#067429,color:#1a1a1a\n  classDef focus stroke-width:4px,font-weight:bold\n  catalog[\"Catalog\"]:::core\n  style catalog fill:#f7f7ff,stroke:#6631d7,color:#1a1a1a\n  subgraph orders[\"Orders\"]\n    checkout[\"Checkout\"]:::core\n    fulfillment[\"Fulfillment\"]:::supporting\n  end\n  style orders fill:#ffffff,stroke:#b0b0b0\n  crm[\"CRM\"]:::supporting\n  foundations[\"Shared Foundations\"]\n  style foundations fill:#eaf9ef,stroke:#067429,stroke-dasharray:4 3,color:#1a1a1a\n  checkout --> foundations\n  crm --> foundations\n  fulfillment --> foundations\n  checkout -.-> catalog\n  crm --> orders\n  checkout <--> catalog\n  linkStyle 0,1,2,4 interpolate step stroke:#313131,stroke-width:1.5px\n  linkStyle 3 interpolate step stroke:#313131,stroke-width:1.5px,stroke-dasharray:3 3\n  linkStyle 5 interpolate step stroke:#d32f2f,stroke-width:2px\n  %% violations: 5\n  %% roles: 4=>CF\n  click catalog href \"#focus=catalog&display.catalog=collapsed\"\n  click checkout href \"#focus=checkout&display.catalog=collapsed\"\n  click fulfillment href \"#focus=fulfillment&display.catalog=collapsed\"\n  click crm href \"#focus=crm&display.catalog=collapsed\"\n  click foundations href \"#focus=foundations&display.catalog=collapsed\"\n",
+    "visible": [
+      "browsing",
+      "catalog",
+      "checkout",
+      "crm",
+      "fulfillment",
+      "identity",
+      "orders",
+      "payments",
+      "search"
+    ],
+    "tips": [
+      [
+        {
+          "title": "Checkout → Identity",
+          "roles": "Open Host Service, Published Language → Anticorruption Layer",
+          "text": "Creates an account for guests who check out."
+        },
+        {
+          "title": "Checkout → Payments",
+          "roles": "Supplier → Customer",
           "text": "Charges the payment method and signals whether it went through."
         }
       ],
@@ -1066,6 +1456,7 @@
       [
         {
           "title": "CRM → Orders",
+          "roles": "Conformist (downstream)",
           "text": "Reads orders to sync them into the ticket system."
         }
       ],
@@ -1161,15 +1552,26 @@
     "cluster": [],
     "tooltips-off": []
   },
+  "attributes/tip-entry-roles": {
+    "both": {
+      "title": "Identity → Checkout",
+      "roles": "Open Host Service, Published Language → Anticorruption Layer",
+      "text": "Creates an account for guests who check out."
+    },
+    "roles-only": {
+      "title": "Payments → Checkout",
+      "roles": "Supplier → Customer"
+    }
+  },
   "attributes/tip-entry": {
     "title": "Catalog → Checkout",
     "text": "Reads prices and availability at checkout time."
   },
   "panel/whole-system": "<h2>Whole system</h2><p class=\"hint\">9 items shown. Pick a domain, cluster or bounded context to see only what it touches.</p><p><a href=\"mermaid/index.html\">Static diagrams</a></p><div class=\"legend\"><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span><span class=\"chip\" style=\"background: #adf0c7; border-color: #067429;\">Generic</span></div>",
-  "panel/focus-checkout": "<h2>Checkout</h2><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span> <span class=\"hint\">Bounded context</span><p><a href=\"mermaid/checkout.html\">Static diagram</a> · <a href=\"mermaid/index.html\">All diagrams</a></p><p class=\"hint\">Takes a cart and turns it into a paid order.</p><h3>Attributes</h3><ul><li class=\"hint\"><b>Service:</b> checkout-service</li><li class=\"hint\"><b>Aggregates:</b> <ul><li>Order</li><li>Cart</li></ul></li></ul><h3>Domain</h3><ul><li><a data-go=\"orders\">Orders</a></li></ul><h3>Depends on (3)</h3><ul><li><a data-go=\"catalog\">Catalog</a></li><li><a data-go=\"identity\">Identity</a></li><li><a data-go=\"payments\">Payments</a></li></ul><h3>Used by (0)</h3><p class=\"hint\">None</p><h3>Orders as a whole is used by</h3><ul><li><a data-go=\"crm\">CRM</a></li></ul><h3>Legend</h3><div class=\"legend\"><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span><span class=\"chip\" style=\"background: #adf0c7; border-color: #067429;\">Generic</span></div>",
-  "panel/focus-checkout-hidden-neighbor": "<h2>Checkout</h2><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span> <span class=\"hint\">Bounded context</span><p><a href=\"mermaid/checkout.html\">Static diagram</a> · <a href=\"mermaid/index.html\">All diagrams</a></p><p class=\"hint\">Takes a cart and turns it into a paid order.</p><h3>Attributes</h3><ul><li class=\"hint\"><b>Service:</b> checkout-service</li><li class=\"hint\"><b>Aggregates:</b> <ul><li>Order</li><li>Cart</li></ul></li></ul><h3>Domain</h3><ul><li><a data-go=\"orders\">Orders</a></li></ul><h3>Depends on (3)</h3><ul><li><a data-go=\"catalog\">Catalog</a></li><li><a data-go=\"identity\">Identity</a></li><li><a data-go=\"payments\">Payments</a></li></ul><h3>Used by (0)</h3><p class=\"hint\">None</p><h3>Orders as a whole is used by</h3><ul><li><a data-go=\"crm\">CRM</a></li></ul><h3>Legend</h3><div class=\"legend\"><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span><span class=\"chip\" style=\"background: #adf0c7; border-color: #067429;\">Generic</span></div>",
-  "panel/focus-orders": "<h2>Orders</h2><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span> <span class=\"hint\">Domain</span><p><a href=\"mermaid/orders.html\">Static diagram</a> · <a href=\"mermaid/index.html\">All diagrams</a></p><h3>Attributes</h3><ul></ul><h3>Bounded contexts</h3><ul><li><a data-go=\"checkout\">Checkout</a> <a data-hide=\"checkout\" class=\"toggle\">hide</a></li><li><a data-go=\"fulfillment\">Fulfillment</a> <a data-hide=\"fulfillment\" class=\"toggle\">hide</a></li></ul><h3>Depends on (3)</h3><ul><li><a data-go=\"catalog\">Catalog</a></li><li><a data-go=\"identity\">Identity</a></li><li><a data-go=\"payments\">Payments</a></li></ul><h3>Used by (1)</h3><ul><li><a data-go=\"crm\">CRM</a></li></ul><h3>Legend</h3><div class=\"legend\"><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span><span class=\"chip\" style=\"background: #adf0c7; border-color: #067429;\">Generic</span></div>",
-  "panel/focus-crm": "<h2>CRM</h2><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span> <span class=\"hint\">Domain</span><p><a href=\"mermaid/crm.html\">Static diagram</a> · <a href=\"mermaid/index.html\">All diagrams</a></p><h3>Attributes</h3><ul></ul><h3>Depends on (2)</h3><ul><li><a data-go=\"identity\">Identity</a></li><li><a data-go=\"orders\">Orders</a></li></ul><h3>Used by (0)</h3><p class=\"hint\">None</p><h3>Legend</h3><div class=\"legend\"><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span><span class=\"chip\" style=\"background: #adf0c7; border-color: #067429;\">Generic</span></div>",
-  "panel/focus-fulfillment": "<h2>Fulfillment</h2><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span> <span class=\"hint\">Bounded context</span><p><a href=\"mermaid/fulfillment.html\">Static diagram</a> · <a href=\"mermaid/index.html\">All diagrams</a></p><h3>Attributes</h3><ul><li class=\"hint\"><b>Service:</b> fulfillment-service</li><li class=\"hint\"><b>Aggregates:</b> <ul><li>Shipment</li><li>Return</li></ul></li></ul><h3>Domain</h3><ul><li><a data-go=\"orders\">Orders</a></li></ul><h3>Depends on (1)</h3><ul><li><a data-go=\"payments\">Payments</a></li></ul><h3>Used by (0)</h3><p class=\"hint\">None</p><h3>Orders as a whole is used by</h3><ul><li><a data-go=\"crm\">CRM</a></li></ul><h3>Legend</h3><div class=\"legend\"><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span><span class=\"chip\" style=\"background: #adf0c7; border-color: #067429;\">Generic</span></div>",
+  "panel/focus-checkout": "<h2>Checkout</h2><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span> <span class=\"hint\">Bounded context</span><p><a href=\"mermaid/checkout.html\">Static diagram</a> · <a href=\"mermaid/index.html\">All diagrams</a></p><p class=\"hint\">Takes a cart and turns it into a paid order.</p><h3>Attributes</h3><ul><li class=\"hint\"><b>Service:</b> checkout-service</li><li class=\"hint\"><b>Aggregates:</b> <ul><li>Order</li><li>Cart</li></ul></li></ul><h3>Domain</h3><ul><li><a data-go=\"orders\">Orders</a></li></ul><h3>Depends on (3)</h3><ul><li><a data-go=\"catalog\">Catalog</a></li><li><a data-go=\"identity\">Identity</a> <span class=\"hint roles\">Open Host Service, Published Language → Anticorruption Layer</span></li><li><a data-go=\"payments\">Payments</a> <span class=\"hint roles\">Supplier → Customer</span></li></ul><h3>Used by (0)</h3><p class=\"hint\">None</p><h3>Orders as a whole is used by</h3><ul><li><a data-go=\"crm\">CRM</a> <span class=\"hint roles\">Conformist (downstream)</span></li></ul><h3>Legend</h3><div class=\"legend\"><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span><span class=\"chip\" style=\"background: #adf0c7; border-color: #067429;\">Generic</span></div>",
+  "panel/focus-checkout-hidden-neighbor": "<h2>Checkout</h2><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span> <span class=\"hint\">Bounded context</span><p><a href=\"mermaid/checkout.html\">Static diagram</a> · <a href=\"mermaid/index.html\">All diagrams</a></p><p class=\"hint\">Takes a cart and turns it into a paid order.</p><h3>Attributes</h3><ul><li class=\"hint\"><b>Service:</b> checkout-service</li><li class=\"hint\"><b>Aggregates:</b> <ul><li>Order</li><li>Cart</li></ul></li></ul><h3>Domain</h3><ul><li><a data-go=\"orders\">Orders</a></li></ul><h3>Depends on (3)</h3><ul><li><a data-go=\"catalog\">Catalog</a></li><li><a data-go=\"identity\">Identity</a> <span class=\"hint roles\">Open Host Service, Published Language → Anticorruption Layer</span></li><li><a data-go=\"payments\">Payments</a> <span class=\"hint roles\">Supplier → Customer</span></li></ul><h3>Used by (0)</h3><p class=\"hint\">None</p><h3>Orders as a whole is used by</h3><ul><li><a data-go=\"crm\">CRM</a> <span class=\"hint roles\">Conformist (downstream)</span></li></ul><h3>Legend</h3><div class=\"legend\"><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span><span class=\"chip\" style=\"background: #adf0c7; border-color: #067429;\">Generic</span></div>",
+  "panel/focus-orders": "<h2>Orders</h2><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span> <span class=\"hint\">Domain</span><p><a href=\"mermaid/orders.html\">Static diagram</a> · <a href=\"mermaid/index.html\">All diagrams</a></p><h3>Attributes</h3><ul></ul><h3>Bounded contexts</h3><ul><li><a data-go=\"checkout\">Checkout</a> <a data-hide=\"checkout\" class=\"toggle\">hide</a></li><li><a data-go=\"fulfillment\">Fulfillment</a> <a data-hide=\"fulfillment\" class=\"toggle\">hide</a></li></ul><h3>Depends on (3)</h3><ul><li><a data-go=\"catalog\">Catalog</a></li><li><a data-go=\"identity\">Identity</a> <span class=\"hint roles\">Open Host Service, Published Language → Anticorruption Layer</span></li><li><a data-go=\"payments\">Payments</a></li></ul><h3>Used by (1)</h3><ul><li><a data-go=\"crm\">CRM</a> <span class=\"hint roles\">Conformist (downstream)</span></li></ul><h3>Legend</h3><div class=\"legend\"><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span><span class=\"chip\" style=\"background: #adf0c7; border-color: #067429;\">Generic</span></div>",
+  "panel/focus-crm": "<h2>CRM</h2><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span> <span class=\"hint\">Domain</span><p><a href=\"mermaid/crm.html\">Static diagram</a> · <a href=\"mermaid/index.html\">All diagrams</a></p><h3>Attributes</h3><ul></ul><h3>Depends on (2)</h3><ul><li><a data-go=\"identity\">Identity</a></li><li><a data-go=\"orders\">Orders</a> <span class=\"hint roles\">Conformist (downstream)</span></li></ul><h3>Used by (0)</h3><p class=\"hint\">None</p><h3>Legend</h3><div class=\"legend\"><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span><span class=\"chip\" style=\"background: #adf0c7; border-color: #067429;\">Generic</span></div>",
+  "panel/focus-fulfillment": "<h2>Fulfillment</h2><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span> <span class=\"hint\">Bounded context</span><p><a href=\"mermaid/fulfillment.html\">Static diagram</a> · <a href=\"mermaid/index.html\">All diagrams</a></p><h3>Attributes</h3><ul><li class=\"hint\"><b>Service:</b> fulfillment-service</li><li class=\"hint\"><b>Aggregates:</b> <ul><li>Shipment</li><li>Return</li></ul></li></ul><h3>Domain</h3><ul><li><a data-go=\"orders\">Orders</a></li></ul><h3>Depends on (1)</h3><ul><li><a data-go=\"payments\">Payments</a></li></ul><h3>Used by (0)</h3><p class=\"hint\">None</p><h3>Orders as a whole is used by</h3><ul><li><a data-go=\"crm\">CRM</a> <span class=\"hint roles\">Conformist (downstream)</span></li></ul><h3>Legend</h3><div class=\"legend\"><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span><span class=\"chip\" style=\"background: #adf0c7; border-color: #067429;\">Generic</span></div>",
   "panel/focus-foundations-hidden-member": "<h2>Shared Foundations</h2><span class=\"hint\">Cluster</span><p><a href=\"mermaid/index.html\">All diagrams</a></p><h3>Attributes</h3><ul></ul><h3>Members</h3><ul><li><a data-go=\"identity\">Identity</a> <span class=\"hint\">(hidden)</span> <a data-show=\"identity\" class=\"toggle\">show</a></li><li><a data-go=\"payments\">Payments</a> <a data-hide=\"payments\" class=\"toggle\">hide</a></li></ul><h3>Legend</h3><div class=\"legend\"><span class=\"chip\" style=\"background: #dedaff; border-color: #6631d7;\">Core</span><span class=\"chip\" style=\"background: #c6dcff; border-color: #305bab;\">Supporting</span><span class=\"chip\" style=\"background: #adf0c7; border-color: #067429;\">Generic</span></div>"
 }

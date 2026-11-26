@@ -20,7 +20,15 @@ export function showTip(note, ev) {
       if (n.kind) p.className = n.kind;
       const title = document.createElement("b");
       title.textContent = n.title;
-      p.append(title, document.createElement("br"), n.text);
+      p.append(title);
+      // An arrow's roles, spelled out, then its comment.
+      if (n.roles) {
+        const roles = document.createElement("span");
+        roles.className = "roles";
+        roles.textContent = n.roles;
+        p.append(document.createElement("br"), roles);
+      }
+      if (n.text) p.append(document.createElement("br"), n.text);
       return p;
     }),
   );

@@ -95,6 +95,30 @@ function parseHash(hash) {
   };
 }
 
+// src/context_mapper/template/core/roles.js
+var names = (ids) => (ids || []).map((id) => MODEL.roles[id].name).join(", ");
+var codes = (ids) => (ids || []).map((id) => MODEL.roles[id].code);
+var roleCodes = (edge) => [
+  codes(edge.upstream),
+  codes(edge.downstream)
+];
+function roleText(edge) {
+  const up = names(edge.upstream);
+  const down = names(edge.downstream);
+  if (up && down) return `${up} \u2192 ${down}`;
+  if (up) return `${up} (upstream)`;
+  if (down) return `${down} (downstream)`;
+  return "";
+}
+function sharedRoles(deps) {
+  const keys = new Set(
+    deps.map((d2) => JSON.stringify([d2.upstream || [], d2.downstream || []]))
+  );
+  if (keys.size !== 1) return { upstream: [], downstream: [] };
+  const [upstream, downstream] = JSON.parse([...keys][0]);
+  return { upstream, downstream };
+}
+
 // src/context_mapper/template/core/graph.js
 function levelGraph(level) {
   const childOf = {};
@@ -112,7 +136,9 @@ function levelGraph(level) {
         from: e2.from,
         to: e2.to,
         styles: /* @__PURE__ */ new Set([e2.style]),
-        via: [e2]
+        via: [e2],
+        upstream: e2.upstream,
+        downstream: e2.downstream
       })),
       violations: MODEL.violations.map((r2) => ({
         from: r2.from,
@@ -131,6 +157,7 @@ function levelGraph(level) {
     merged.get(key).styles.add(e2.style);
     merged.get(key).via.push(e2);
   });
+  merged.forEach((entry) => Object.assign(entry, sharedRoles(entry.via)));
   const violations = /* @__PURE__ */ new Map();
   MODEL.violations.forEach((r2) => {
     const a2 = owner[r2.from], b2 = owner[r2.to];
@@ -213,12 +240,12 @@ function walk(g2, starts, depth, dir, hidden) {
   if (dir !== "up") go(down);
   return seen;
 }
-function relations(id) {
+function relationEdges(id) {
   const g2 = isMulti(id) ? GRAPHS.domain : GRAPHS.context;
-  const byName = (a2, b2) => nameOf(a2).localeCompare(nameOf(b2));
+  const by = (end) => (a2, b2) => nameOf(a2[end]).localeCompare(nameOf(b2[end]));
   return {
-    ups: g2.edges.filter((e2) => e2.from === id).map((e2) => e2.to).sort(byName),
-    downs: g2.edges.filter((e2) => e2.to === id).map((e2) => e2.from).sort(byName)
+    ups: g2.edges.filter((e2) => e2.from === id).sort(by("to")),
+    downs: g2.edges.filter((e2) => e2.to === id).sort(by("from"))
   };
 }
 
@@ -371,20 +398,39 @@ function mermaidSource(s2) {
     if (a2 === b2 || !drawn.has(a2) || !drawn.has(b2)) return;
     const key = a2 + "|" + b2;
     if (!merged.has(key))
-      merged.set(key, { a: a2, b: b2, styles: /* @__PURE__ */ new Set(), names: /* @__PURE__ */ new Set(), via: [] });
+      merged.set(key, {
+        a: a2,
+        b: b2,
+        styles: /* @__PURE__ */ new Set(),
+        names: /* @__PURE__ */ new Set(),
+        roles: /* @__PURE__ */ new Set(),
+        via: []
+      });
     const entry = merged.get(key);
     e2.styles.forEach((x2) => entry.styles.add(x2));
+    entry.roles.add(JSON.stringify([e2.upstream || [], e2.downstream || []]));
     entry.via.push(...e2.via);
     if (foldedBoxes.has(b2)) entry.names.add(nameOf(e2.to));
     else if (foldedBoxes.has(a2)) entry.names.add(nameOf(e2.from));
   });
   const byStyle = {};
   const tips = [...merged.values()].map(
-    (entry) => entry.via.filter((e2) => e2.comment).map(tipEntry)
+    (entry) => entry.via.filter((e2) => e2.comment || roleText(e2)).map(tipEntry)
   );
+  const roleMarks = [];
   [...merged.values()].forEach((entry, i2) => {
     const style = entry.styles.has("solid") ? "solid" : [...entry.styles].sort()[0];
-    const label = entry.names.size && DIAGRAM.child_labels ? `|"${quote([...entry.names].sort().join(", "))}"|` : "";
+    let up = [], down = [];
+    if (entry.roles.size === 1) {
+      const [upstream, downstream] = JSON.parse([...entry.roles][0]);
+      [up, down] = roleCodes({ upstream, downstream });
+    }
+    const labelLines = [];
+    if (entry.names.size && DIAGRAM.child_labels)
+      labelLines.push([...entry.names].sort().join(", "));
+    if ((up.length || down.length) && DIAGRAM.relationship_labels)
+      roleMarks.push(`${i2}=${up.join(",")}>${down.join(",")}`);
+    const label = labelLines.length ? `|"${quote(labelLines.join("<br/>"))}"|` : "";
     lines.push(
       `  ${nodeId(entry.a)} ${style === "dotted" ? "-.->" : "-->"}${label} ${nodeId(entry.b)}`
     );
@@ -411,6 +457,7 @@ function mermaidSource(s2) {
   );
   if (byStyle.violation)
     lines.push(`  %% violations: ${byStyle.violation.join(",")}`);
+  if (roleMarks.length) lines.push(`  %% roles: ${roleMarks.join(";")}`);
   const highlight = s2.level === "domain" && owner[s2.focus] ? owner[s2.focus] : s2.focus;
   plainNodes.forEach((n2) => {
     if (n2 === highlight) lines.push(`  class ${nodeId(n2)} focus`);
@@ -425,10 +472,13 @@ var violationTipEntry = (dep) => ({
   title: `${nameOf(dep.from)} \u2192 ${nameOf(dep.to)} (violation)`,
   text: dep.comment || "Against the direction of the dependencies."
 });
-var tipEntry = (dep) => ({
-  title: `${nameOf(dep.from)} \u2192 ${nameOf(dep.to)}`,
-  text: dep.comment
-});
+var tipEntry = (dep) => {
+  const entry = { title: `${nameOf(dep.from)} \u2192 ${nameOf(dep.to)}` };
+  const roles = roleText(dep);
+  if (roles) entry.roles = roles;
+  if (dep.comment) entry.text = dep.comment;
+  return entry;
+};
 
 // src/context_mapper/template/core/attributes.js
 var attributeText = (v2) => Array.isArray(v2) ? v2.map(attributeText).join(", ") : v2 && typeof v2 === "object" ? Object.entries(v2).map(([k2, item]) => `${k2}: ${attributeText(item)}`).join(" \xB7 ") : String(v2);
@@ -881,6 +931,7 @@ var $2 = (id) => document.getElementById(id);
 var { html, render } = standalone_module_exports;
 var link = (id) => html`<a data-go="${id}">${nameOf(id)}</a>`;
 var list = (ids) => ids.length ? html`<ul>${ids.map((id) => html`<li>${link(id)}</li>`)}</ul>` : html`<p class="hint">None</p>`;
+var dependencyList = (edges, end) => edges.length ? html`<ul>${edges.map((e2) => html`<li>${link(e2[end])}${roleText(e2) ? html` <span class="hint roles">${roleText(e2)}</span>` : null}</li>`)}</ul>` : html`<p class="hint">None</p>`;
 var chip = (type) => {
   const t2 = MODEL.types[type];
   return html`<span class="chip" style="background:${t2.fill};border-color:${t2.stroke}">${t2.name}</span>`;
@@ -901,21 +952,21 @@ var Panel = ({ s: s2, visible }) => {
   if (clusterById[id])
     return html`<h2>${item.name}</h2><span class="hint">Cluster</span>
       <p><a href="mermaid/index.html">All diagrams</a></p>${attributeSection(item)}<h3>Members</h3><ul>${item.members.map(itemWith)}</ul><h3>Legend</h3>${legend}`;
-  const r2 = relations(id);
+  const r2 = relationEdges(id);
   const parent = owner[id];
   const own = GRAPHS.context.edges;
-  const dUps = own.filter((e2) => e2.from === parent).map((e2) => e2.to);
-  const dDowns = own.filter((e2) => e2.to === parent).map((e2) => e2.from);
+  const dUps = own.filter((e2) => e2.from === parent);
+  const dDowns = own.filter((e2) => e2.to === parent);
   const pname = nameOf(parent);
   return html`<h2>${item.name}</h2>${chip(item.type)} <span class="hint">${domainById[id] ? "Domain" : "Bounded context"}</span>
       <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>
       ${item.description ? html`<p class="hint">${item.description}</p>` : null}${attributeSection(item)}
       ${isMulti(id) ? html`<h3>Bounded contexts</h3><ul>${domainById[id].contexts.map(itemWith)}</ul>` : null}
       ${!isMulti(id) && isMulti(parent) ? html`<h3>Domain</h3>${list([parent])}` : null}
-      <h3>Depends on (${r2.ups.length})</h3>${list(r2.ups)}
-      <h3>Used by (${r2.downs.length})</h3>${list(r2.downs)}
-      ${!isMulti(id) && isMulti(parent) && dUps.length ? html`<h3>${pname} as a whole depends on</h3>${list(dUps)}` : null}
-      ${!isMulti(id) && isMulti(parent) && dDowns.length ? html`<h3>${pname} as a whole is used by</h3>${list(dDowns)}` : null}
+      <h3>Depends on (${r2.ups.length})</h3>${dependencyList(r2.ups, "to")}
+      <h3>Used by (${r2.downs.length})</h3>${dependencyList(r2.downs, "from")}
+      ${!isMulti(id) && isMulti(parent) && dUps.length ? html`<h3>${pname} as a whole depends on</h3>${dependencyList(dUps, "to")}` : null}
+      ${!isMulti(id) && isMulti(parent) && dDowns.length ? html`<h3>${pname} as a whole is used by</h3>${dependencyList(dDowns, "from")}` : null}
       <h3>Legend</h3>${legend}`;
 };
 function renderInfo(s2, visible) {
@@ -945,7 +996,14 @@ function showTip(note, ev) {
       if (n2.kind) p2.className = n2.kind;
       const title = document.createElement("b");
       title.textContent = n2.title;
-      p2.append(title, document.createElement("br"), n2.text);
+      p2.append(title);
+      if (n2.roles) {
+        const roles = document.createElement("span");
+        roles.className = "roles";
+        roles.textContent = n2.roles;
+        p2.append(document.createElement("br"), roles);
+      }
+      if (n2.text) p2.append(document.createElement("br"), n2.text);
       return p2;
     })
   );
@@ -1059,6 +1117,69 @@ function dropViolationHeads(svg, source) {
   if (!svg || !found) return;
   const paths = svg.querySelectorAll("path.flowchart-link");
   found[1].split(",").forEach((i2) => paths[Number(i2)]?.removeAttribute("marker-end"));
+}
+
+// src/context_mapper/template/roles.js
+function drawRoleLabels(svg, source) {
+  const found = /^\s*%% roles: (.+)$/m.exec(source);
+  if (!svg || !found) return;
+  const ns = "http://www.w3.org/2000/svg";
+  const paths = svg.querySelectorAll("path.flowchart-link");
+  const group = document.createElementNS(ns, "g");
+  group.setAttribute("class", "role-labels");
+  group.setAttribute("style", "pointer-events:none");
+  const place = (path, total, end, text) => {
+    const at = (l2) => path.getPointAtLength(Math.min(Math.max(l2, 0), total));
+    const start = end === "start";
+    const tip2 = at(start ? 0 : total);
+    const next = at(start ? 3 : total - 3);
+    const span = Math.hypot(next.x - tip2.x, next.y - tip2.y) || 1;
+    const inward = { x: (next.x - tip2.x) / span, y: (next.y - tip2.y) / span };
+    const width = text.length * 7 + 8;
+    const height = 15;
+    const reach = (d2) => (Math.abs(d2.x) * width + Math.abs(d2.y) * height) / 2;
+    const along = Math.min(Math.max(16, reach(inward) + 6), total / 2);
+    const center = at(start ? along : total - along);
+    const travel = start ? inward : { x: -inward.x, y: -inward.y };
+    const normal = { x: -travel.y, y: travel.x };
+    const away = reach(normal) + 2;
+    const x2 = center.x + normal.x * away;
+    const y2 = center.y + normal.y * away;
+    const box = document.createElementNS(ns, "rect");
+    box.setAttribute("x", x2 - width / 2);
+    box.setAttribute("y", y2 - height / 2);
+    box.setAttribute("width", width);
+    box.setAttribute("height", height);
+    box.setAttribute("rx", 3);
+    box.setAttribute(
+      "style",
+      "fill:#fff;fill-opacity:0.92;stroke:#8a8a8a;stroke-width:0.75px"
+    );
+    const label = document.createElementNS(ns, "text");
+    label.setAttribute("x", x2);
+    label.setAttribute("y", y2);
+    label.setAttribute("text-anchor", "middle");
+    label.setAttribute("dominant-baseline", "central");
+    label.setAttribute(
+      "style",
+      "fill:#1a1a1a;font-size:11px;font-weight:600;stroke:none"
+    );
+    label.textContent = text;
+    group.append(box, label);
+  };
+  let host = null;
+  found[1].split(";").forEach((mark) => {
+    const [index, roles] = mark.split("=");
+    const path = paths[Number(index)];
+    if (!path || !roles || typeof path.getTotalLength !== "function") return;
+    const total = path.getTotalLength();
+    if (!(total > 0)) return;
+    const [upstream, downstream] = roles.split(">").map((side) => side.split(",").filter(Boolean).join(", "));
+    host = host || path.parentNode.parentNode;
+    if (downstream) place(path, total, "start", downstream);
+    if (upstream) place(path, total, "end", upstream);
+  });
+  if (group.childNodes.length) (host || svg).appendChild(group);
 }
 
 // src/context_mapper/template/dom/controls.js
@@ -1281,6 +1402,7 @@ async function render2() {
     bindFunctions?.($2("graph"));
     const svgEl = $2("graph").querySelector("svg");
     dropViolationHeads(svgEl, source);
+    drawRoleLabels(svgEl, source);
     bindEdgeHover(svgEl, tips);
     bindBoxTips(svgEl);
   } catch (err) {

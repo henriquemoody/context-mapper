@@ -138,6 +138,57 @@ add("graph", "relations", (api) =>
   ),
 );
 
+// The edges behind a relation list carry the roles: a context's own, a
+// domain's merged — kept only where every dependency it stands for agrees.
+add("graph", "relation-edges", (api) => {
+  const shape = (edges) =>
+    edges.map((e) => ({
+      from: e.from,
+      to: e.to,
+      upstream: e.upstream,
+      downstream: e.downstream,
+    }));
+  return Object.fromEntries(
+    ["checkout", "fulfillment", "orders", "crm"].map((id) => {
+      const { ups, downs } = api.relationEdges(id);
+      return [id, { ups: shape(ups), downs: shape(downs) }];
+    }),
+  );
+});
+
+add("graph", "role-text", (api) => ({
+  both: api.roleText({
+    upstream: ["OpenHostService", "PublishedLanguage"],
+    downstream: ["AnticorruptionLayer"],
+  }),
+  "upstream-only": api.roleText({
+    upstream: ["Supplier"],
+    downstream: [],
+  }),
+  "downstream-only": api.roleText({ downstream: ["Conformist"] }),
+  none: api.roleText({ upstream: [], downstream: [] }),
+  codes: api.roleCodes({
+    upstream: ["OpenHostService", "PublishedLanguage"],
+    downstream: ["AnticorruptionLayer"],
+  }),
+}));
+
+// A merged edge keeps roles only when every dependency carries the same ones.
+add("graph", "shared-roles", (api) => {
+  const same = { upstream: ["Supplier"], downstream: ["Customer"] };
+  const none = { upstream: [], downstream: [] };
+  return {
+    same: api.sharedRoles([same, { ...same }]),
+    "one-with-one-without": api.sharedRoles([same, none]),
+    "no-roles-at-all": api.sharedRoles([none, none]),
+    "different-roles": api.sharedRoles([
+      same,
+      { upstream: ["OpenHostService"], downstream: ["Customer"] },
+    ]),
+    single: api.sharedRoles([same]),
+  };
+});
+
 add("graph", "node-items", (api) =>
   Object.fromEntries(
     Object.entries(api.itemOfNode).map(([node, item]) => [node, item.name]),
@@ -228,6 +279,30 @@ add("state", "clamp-depth", (api) =>
       api.DIAGRAM.group_by_type = false;
     }
   });
+  // An edge to a collapsed container merges what it holds. With the cluster
+  // open, Orders folds Checkout and Fulfillment: Identity reaches only
+  // Checkout, so it keeps its roles toward Orders; Payments reaches both, one
+  // with roles and one without, so it loses them.
+  const ordersFolded = { foundations: "expanded", orders: "collapsed" };
+  add("diagram", "roles-collapsed-merge", (api) =>
+    d(api)(st("context", "", 1, "both", ordersFolded)),
+  );
+  add("diagram", "roles-collapsed-merge-no-child-labels", (api) => {
+    api.DIAGRAM.child_labels = false;
+    try {
+      return d(api)(st("context", "", 1, "both", ordersFolded));
+    } finally {
+      api.DIAGRAM.child_labels = true;
+    }
+  });
+  add("diagram", "roles-labels-off", (api) => {
+    api.DIAGRAM.relationship_labels = false;
+    try {
+      return d(api)(st("context", "checkout"));
+    } finally {
+      api.DIAGRAM.relationship_labels = true;
+    }
+  });
   add("diagram", "child-labels-off", (api) => {
     api.DIAGRAM.child_labels = false;
     try {
@@ -288,6 +363,24 @@ add("attributes", "box-tips", (api) => {
     })(),
   };
 });
+
+// A tooltip spells out the roles with their display names, with the comment.
+add("attributes", "tip-entry-roles", (api) => ({
+  both: api.tipEntry({
+    from: "identity",
+    to: "checkout",
+    comment: "Creates an account for guests who check out.",
+    upstream: ["OpenHostService", "PublishedLanguage"],
+    downstream: ["AnticorruptionLayer"],
+  }),
+  "roles-only": api.tipEntry({
+    from: "payments",
+    to: "checkout",
+    comment: null,
+    upstream: ["Supplier"],
+    downstream: ["Customer"],
+  }),
+}));
 
 add("attributes", "tip-entry", (api) =>
   api.tipEntry({

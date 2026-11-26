@@ -18,6 +18,7 @@ def test_settings_fills_in_the_defaults():
     assert cfg["curve"] == "basis"
     assert cfg["pages"] == "all"
     assert cfg["attribute_tooltips"] is True
+    assert cfg["relationship_labels"] is True
     assert cfg["defaults"]["level"] == "context"
     assert cfg["defaults"]["depth"] == 1
     assert cfg["defaults"]["dir"] == "both"
@@ -44,6 +45,24 @@ def test_settings_accepts_attribute_tooltips_off():
 def test_settings_rejects_an_attribute_tooltips_that_is_not_a_boolean():
     _, errors = mermaid.settings({"attribute_tooltips": "show"})
     assert any("mermaid.attribute_tooltips must be true or false" in err for err in errors), errors
+
+
+def test_settings_accepts_relationship_labels_off():
+    cfg, errors = mermaid.settings({"relationship_labels": False})
+    assert errors == []
+    assert cfg["relationship_labels"] is False
+    assert mermaid.client_settings(cfg)["relationship_labels"] is False
+
+
+def test_settings_hands_the_page_the_relationship_labels_on_by_default():
+    cfg, _ = mermaid.settings({})
+    assert mermaid.client_settings(cfg)["relationship_labels"] is True
+
+
+@pytest.mark.parametrize("value", ["yes", 1, None, {}])
+def test_settings_rejects_a_relationship_labels_that_is_not_a_boolean(value):
+    _, errors = mermaid.settings({"relationship_labels": value})
+    assert any("mermaid.relationship_labels must be true or false" in err for err in errors), errors
 
 
 def test_settings_turns_style_maps_into_classdef_strings():
@@ -382,6 +401,237 @@ def test_render_uses_the_markdown_layout_only_for_markdown(example_data, example
     markdown_source = mermaid.render(example_data, example_cfg, view, None, True)
     assert '"layout": "elk"' in html_source
     assert '"layout": "dagre"' in markdown_source
+
+
+# --- relationship roles -----------------------------------------------------
+
+
+def arrows_of(source):
+    """The dependency arrows of a source, in the order `linkStyle` counts them, a label and all."""
+    return [line.strip() for line in source.splitlines() if re.match(r"  \w+ (-->|-\.->)", line)]
+
+
+def roles_line(source):
+    found = [line.strip() for line in source.splitlines() if line.strip().startswith("%% roles:")]
+    assert len(found) <= 1
+    return found[0] if found else None
+
+
+def checkout_view(cfg, **extra):
+    """Checkout and its neighbors, with the foundations cluster open so Identity and Payments are arrows of
+    their own."""
+    return {**cfg["defaults"], "id": "checkout", "focus": "checkout", "display": {"foundations": "expanded"}, **extra}
+
+
+def test_render_says_which_arrows_carry_roles_and_what_they_are(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg, checkout_view(example_cfg))
+    arrows = arrows_of(source)
+    identity, payments = arrows.index("checkout --> identity"), arrows.index("checkout --> payments")
+    assert roles_line(source) == f"%% roles: {identity}=OHS,PL>ACL;{payments}=S>C"
+
+
+def test_render_writes_the_roles_in_the_canonical_order_not_the_one_in_the_yaml(example_model, example_style):
+    """The fixture lists PublishedLanguage before OpenHostService."""
+    spec = example_model["context-map"]["identity"]["downstreams"]["checkout"]
+    assert spec["upstream"] == ["PublishedLanguage", "OpenHostService"]
+    data, errors = graph.normalize(example_model, example_style)
+    assert errors == []
+    cfg, _ = mermaid.settings(example_style["mermaid"])
+    assert "=OHS,PL>ACL" in mermaid.render(data, cfg, checkout_view(cfg))
+
+
+def test_render_leaves_the_roles_out_of_the_arrow_label(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg, checkout_view(example_cfg))
+    assert "OHS" not in "\n".join(arrows_of(source))
+    assert "<br/>" not in "\n".join(arrows_of(source))
+
+
+def test_render_says_nothing_about_roles_when_no_arrow_has_any(example_data, example_cfg, find_view):
+    source = mermaid.render(example_data, example_cfg, find_view(mermaid.views(example_data, example_cfg), "catalog"))
+    assert "%% roles" not in source
+
+
+def test_render_leaves_a_side_with_no_roles_empty(example_data, example_cfg):
+    view = {**example_cfg["defaults"], "id": "orders", "focus": "orders"}
+    source = mermaid.render(example_data, example_cfg, view)
+    assert roles_line(source) == f"%% roles: {arrows_of(source).index('crm --> orders')}=>CF"
+
+
+def test_render_drops_the_roles_of_an_arrow_whose_dependencies_differ(example_data, example_cfg):
+    """With the foundations cluster collapsed, one arrow stands for Checkout's dependency on Identity and on
+    Payments, which carry different roles."""
+    source = mermaid.render(example_data, example_cfg, checkout_view(example_cfg, display={}))
+    assert "checkout -->|\"Identity, Payments\"| foundations" in source
+    assert "%% roles" not in source
+
+
+def collapsed_data(tiny_model, tiny_style, first, second):
+    """Web's contexts depend on `core_lib` and `core_db`, with the given roles on each."""
+    for owner, downstream, roles in (("web_ui", "core_lib", first), ("web_api", "core_db", second)):
+        tiny_model["context-map"][owner]["downstreams"] = {downstream: {"comment": "x", **(roles or {})}}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    return data
+
+
+def collapsed_source(data, markdown=False, **extra):
+    cfg, _ = mermaid.settings({})
+    return mermaid.render(data, cfg, {**cfg["defaults"], "id": "all", "display": {"web": "collapsed", "core": "collapsed"},
+                         **extra}, markdown=markdown)
+
+
+def test_render_keeps_the_roles_of_a_collapsed_box_when_what_it_holds_agrees(tiny_model, tiny_style):
+    roles = {"upstream": ["OpenHostService"], "downstream": ["AnticorruptionLayer"]}
+    source = collapsed_source(collapsed_data(tiny_model, tiny_style, roles, dict(roles)))
+    assert arrows_of(source)[0].startswith("core -")  # one arrow for Web's two contexts
+    assert roles_line(source) == "%% roles: 0=OHS>ACL"
+
+
+def test_render_drops_the_roles_of_a_collapsed_box_when_what_it_holds_differs(tiny_model, tiny_style):
+    first = {"upstream": ["OpenHostService"], "downstream": ["AnticorruptionLayer"]}
+    second = {"upstream": ["PublishedLanguage"], "downstream": ["AnticorruptionLayer"]}
+    assert roles_line(collapsed_source(collapsed_data(tiny_model, tiny_style, first, second))) is None
+
+
+def test_render_drops_the_roles_of_a_collapsed_box_when_one_dependency_has_none(tiny_model, tiny_style):
+    first = {"upstream": ["OpenHostService"], "downstream": ["AnticorruptionLayer"]}
+    assert roles_line(collapsed_source(collapsed_data(tiny_model, tiny_style, first, None))) is None
+
+
+def test_render_lifts_the_roles_to_the_domains_when_they_agree(tiny_model, tiny_style):
+    roles = {"upstream": ["Supplier"], "downstream": ["Customer"]}
+    cfg, _ = mermaid.settings({})
+    data = collapsed_data(tiny_model, tiny_style, roles, dict(roles))
+    source = mermaid.render(data, cfg, {**cfg["defaults"], "id": "all", "level": "domain"})
+    assert roles_line(source) == "%% roles: 0=S>C"
+    data = collapsed_data(tiny_model, tiny_style, roles, None)
+    assert roles_line(mermaid.render(data, cfg, {**cfg["defaults"], "id": "all", "level": "domain"})) is None
+
+
+def test_render_counts_the_arrows_the_way_linkstyle_does(example_data, example_cfg, find_view):
+    source = mermaid.render(example_data, example_cfg, find_view(mermaid.views(example_data, example_cfg), "orders"))
+    arrows = arrows_of(source)
+    index = int(re.search(r"%% roles: (\d+)=", source).group(1))
+    assert arrows[index].startswith("crm -->")  # the Conformist's
+    styled = [int(i) for line in source.splitlines() if "linkStyle" in line
+              for i in line.split()[1].split(",")]
+    assert index in styled  # the same number linkStyle uses for that arrow
+
+
+def test_render_turns_the_role_labels_off(example_model, example_style):
+    example_style["mermaid"]["relationship_labels"] = False
+    data, errors = graph.normalize(example_model, example_style)
+    assert errors == []
+    cfg, errors = mermaid.settings(example_style["mermaid"])
+    assert errors == []
+    view = checkout_view(cfg)
+    assert roles_line(mermaid.render(data, cfg, view)) is None
+    markdown = mermaid.render(data, cfg, view, markdown=True)
+    assert "U:" not in markdown and "D:" not in markdown
+    assert "%% roles" not in markdown
+
+
+def test_render_puts_the_roles_of_a_markdown_diagram_on_the_middle_of_the_arrow(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg, checkout_view(example_cfg), markdown=True)
+    arrows = arrows_of(source)
+    assert 'checkout -->|"U: OHS, PL<br/>D: ACL"| identity' in arrows
+    assert 'checkout -->|"U: S<br/>D: C"| payments' in arrows
+    assert "%% roles" not in source  # there is no script to read it
+
+
+def test_render_leaves_a_side_with_no_roles_off_the_markdown_label(example_data, example_cfg):
+    view = {**example_cfg["defaults"], "id": "crm", "focus": "crm"}
+    source = mermaid.render(example_data, example_cfg, view, markdown=True)
+    assert 'crm -->|"D: CF"| orders' in arrows_of(source)
+
+
+def test_render_leaves_an_arrow_without_roles_unlabeled_in_markdown(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg, checkout_view(example_cfg), markdown=True)
+    assert "checkout -.-> catalog" in arrows_of(source)
+
+
+def test_render_puts_the_names_of_a_collapsed_box_above_the_roles_in_markdown(tiny_model, tiny_style):
+    roles = {"upstream": ["OpenHostService"], "downstream": ["AnticorruptionLayer"]}
+    data = collapsed_data(tiny_model, tiny_style, roles, dict(roles))
+    markdown = collapsed_source(data, markdown=True)
+    assert 'core -->|"Web API, Web UI<br/>U: OHS<br/>D: ACL"| web' in arrows_of(markdown)
+
+
+def test_render_leaves_the_names_alone_when_child_labels_are_off_in_markdown(tiny_model, tiny_style):
+    roles = {"upstream": ["OpenHostService"], "downstream": []}
+    data = collapsed_data(tiny_model, tiny_style, roles, dict(roles))
+    markdown = collapsed_source(data, markdown=True, child_labels=False)
+    assert '|"U: OHS"|' in markdown
+    assert "Web UI" not in "\n".join(arrows_of(markdown))
+
+
+# --- relationship roles, in the lists and the pages --------------------------
+
+
+def test_fact_sections_say_which_roles_a_dependency_carries(example_data):
+    sections = {heading: notes for heading, _, notes in
+                mermaid.fact_sections(example_data, {"focus": "checkout", "depth": 1, "dir": "both"})}
+    notes = sections["Depends on (3)"]
+    assert notes == {"identity": "Open Host Service, Published Language \u2192 Anticorruption Layer",
+                     "payments": "Supplier \u2192 Customer"}
+    assert sections["Used by (0)"] == {}
+
+
+def test_fact_sections_say_it_about_the_dependencies_of_the_whole_domain(example_data):
+    sections = {heading: notes for heading, _, notes in
+                mermaid.fact_sections(example_data, {"focus": "checkout", "depth": 1, "dir": "both"})}
+    assert sections["Orders as a whole is used by (1)"] == {"crm": "Conformist (downstream)"}
+
+
+def test_fact_sections_lift_the_roles_of_a_domain(example_data):
+    sections = {heading: notes for heading, _, notes in
+                mermaid.fact_sections(example_data, {"focus": "orders", "depth": 1, "dir": "both"})}
+    # Payments is reached by two dependencies of the domain, one with roles and one without: none are kept.
+    assert sections["Depends on (3)"] == {"identity": "Open Host Service, Published Language \u2192 Anticorruption Layer"}
+
+
+def test_facts_stay_pairs_of_a_heading_and_ids(example_data):
+    for entry in mermaid.facts(example_data, {"focus": "checkout", "depth": 1, "dir": "both"}):
+        assert len(entry) == 2
+
+
+def test_build_shows_the_roles_in_the_lists_of_a_static_page(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "checkout.html").read_text()
+    assert "<span class='hint'>Open Host Service, Published Language \u2192 Anticorruption Layer</span>" in page
+    assert "<span class='hint'>Supplier \u2192 Customer</span>" in page
+
+
+def test_build_shows_the_roles_in_the_lists_of_a_markdown_page(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    markdown = (tmp_path / "markdown" / "checkout.md").read_text()
+    assert "(Open Host Service, Published Language \u2192 Anticorruption Layer)" in markdown
+    assert "(Supplier \u2192 Customer)" in markdown
+
+
+def test_build_shows_the_roles_in_the_lists_even_with_the_labels_off(tmp_path, example_data, example_style):
+    example_style["mermaid"]["relationship_labels"] = False
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    markdown = (tmp_path / "markdown" / "checkout.md").read_text()
+    assert "(Supplier \u2192 Customer)" in markdown
+    assert "U: S" not in markdown
+
+
+def test_build_writes_the_role_labels_into_the_markdown_diagram(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    markdown = (tmp_path / "markdown" / "identity.md").read_text()
+    assert "U: OHS, PL<br/>D: ACL" in markdown
+    assert "%% roles" not in markdown
+
+
+def test_build_gives_every_static_page_the_script_that_draws_the_roles(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "checkout.html").read_text()
+    assert "function drawRoleLabels(svg, source)" in page
+    assert 'drawRoleLabels(el.querySelector("svg"), src);' in page
+    assert "%% roles:" in page  # in the source the script reads
+    assert "__ROLES__" not in page
+    assert "export " not in page.split('<script type="module">')[1]  # spliced as plain functions
 
 
 # --- reaching a domain ------------------------------------------------------

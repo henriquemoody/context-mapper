@@ -52,6 +52,10 @@ mermaid:
   markdown_config:
     layout: dagre
 
+  # Whether a dependency's roles are drawn: short codes (OHS, PL, S, ACL, CF, C) beside each end of the arrow,
+  # or on the middle of it in the Markdown. Tooltips and the lists still show them when this is false.
+  relationship_labels: true
+
   # Defaults for every view. Each view below can override any of these.
   defaults:
     level: context         # context (bounded contexts inside domain boxes) or domain (one box per domain)

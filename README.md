@@ -95,6 +95,44 @@ It draws a red arrow from the entry to each one, with the comment as the tooltip
 
 At domain level, context dependencies are lifted to their domains and merged, and dependencies inside a domain disappear.
 
+### Relationship roles
+
+A dependency can say what each side of it is, with the patterns from DDD's context maps. Two optional keys on a `downstreams` entry, next to `comment` and `style`:
+
+```yaml
+voyage:
+  downstreams:
+    booking:
+      comment: Books cargo against the published itinerary format.
+      upstream: [OpenHostService, PublishedLanguage]   # what voyage is to booking
+      downstream: [AnticorruptionLayer]                # what booking is to voyage
+```
+
+| Key | Allowed roles | Code |
+| --- | --- | --- |
+| `upstream` | `OpenHostService` | OHS |
+| | `PublishedLanguage` | PL |
+| | `Supplier` | S |
+| `downstream` | `AnticorruptionLayer` | ACL |
+| | `Conformist` | CF |
+| | `Customer` | C |
+
+Each key is a list of those names, and the order you write them in doesn't matter. The build fails on a value that isn't a list, an unknown role, a role listed twice, or a role under the wrong key. It fails on combinations that make no sense too:
+
+- `AnticorruptionLayer` and `Conformist` together. A downstream either translates or conforms.
+- `Supplier` without `Customer`, or `Customer` without `Supplier`. They come as a pair.
+- `Conformist` with `Customer` or `Supplier`. A conformist has no say.
+
+A violation takes a comment and nothing else, so it has no roles. The build says so if you give it a map with `upstream` or `downstream`.
+
+On the interactive page and the static Mermaid pages, the codes are drawn next to the ends of the arrow: the upstream's next to the upstream, the downstream's next to the downstream, each in a small box. They are part of the SVG, so a PNG or SVG download keeps them. This needs the page's script: Mermaid's own label sits in the middle of the arrow, and the source only carries a `%% roles:` line that tells the script where to put them. In the Markdown files, where no script runs, the codes go on the middle of the arrow instead: `U: OHS, PL` and `D: ACL` on two lines, leaving out a side with no roles. A collapsed box that names what it holds puts the names first.
+
+Hovering an arrow on the interactive page spells the roles out, in full, above the comment: *Open Host Service, Published Language → Anticorruption Layer*. The panel's "depends on" and "used by" lists show the same text beside each name, and so do the lists on every item's page, static and Markdown.
+
+When arrows merge, the merged one keeps roles only if every dependency it stands for has the same `upstream` and the same `downstream`. A dependency with no roles is different from one with roles, so one of each drops them. This applies to the domain level, where context dependencies are lifted and merged, and to a collapsed container that folds several arrows into one. A dependency written between two domains keeps its roles, unless context dependencies between them are merged with it. The tooltip and the lists show each dependency's own roles either way.
+
+`mermaid.relationship_labels: false` in the style file stops the drawing: no codes on the diagrams, no `%% roles:` line, no label in the Markdown. The tooltips and the lists keep the roles.
+
 ## Attributes
 
 An optional `attributes` section declares what extra data the model carries: which service a context is, the aggregates inside it, anything. Nothing is built in — a model declares its own attributes, one type each, and any entry in `context-map` or `clusters` carries its values under `attributes:` too. The build fails on an attribute that was never declared or a value of the wrong shape, so a typo in the data breaks the build instead of hiding. A declared attribute no entry sets is fine, like a type nobody uses.
@@ -185,6 +223,7 @@ The rest lives in the `mermaid` section. Every style in it is a map of the same 
 | `config` | map | Any other [Mermaid config](https://mermaid.js.org/config/schema-docs/config.html), merged over the above. For example `elk.nodePlacementStrategy`. |
 | `markdown_config` | map | Merged over everything for `<out>/markdown/*.md` only. GitLab's built-in Mermaid has no ELK, so the example sets `layout: dagre` here. |
 | `attribute_tooltips` | `true`, `false` | Whether hovering a box shows its attributes too. The interactive page only; `true` by default. |
+| `relationship_labels` | `true`, `false` | Whether the roles of a dependency are drawn on the diagrams, as codes at the ends of the arrow or, in the Markdown, on its middle. Tooltips and lists show them either way; `true` by default. |
 | `focus_style` | map of Mermaid attributes | How the focused item is highlighted. |
 | `domain_style` | map of Mermaid attributes | Style of the box around a domain's bounded contexts. A domain with its own style under `context-map` overrides it — and its type colors, when drawn as one box. |
 | `edge_styles.solid`, `edge_styles.dotted`, `edge_styles.violation` | map of Mermaid attributes | Line styles. Dotted comes from `style: dotted` on a downstream; violation is the arrow of a `violations` entry, red by default. |

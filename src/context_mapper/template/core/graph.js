@@ -6,6 +6,7 @@ import {
   nameOf,
   isMulti,
 } from "./model.js";
+import { sharedRoles } from "./roles.js";
 
 // Same graphs as graph.py: context level as written, domain level lifted and merged.
 // childOf says which container a node renders inside: a context inside its domain, a member inside its cluster.
@@ -30,6 +31,8 @@ export function levelGraph(level) {
         to: e.to,
         styles: new Set([e.style]),
         via: [e],
+        upstream: e.upstream,
+        downstream: e.downstream,
       })),
       violations: MODEL.violations.map((r) => ({
         from: r.from,
@@ -49,6 +52,9 @@ export function levelGraph(level) {
     merged.get(key).styles.add(e.style);
     merged.get(key).via.push(e);
   });
+  // A merged edge keeps the roles its dependencies all carry, exactly, and
+  // none otherwise.
+  merged.forEach((entry) => Object.assign(entry, sharedRoles(entry.via)));
   // A violation between two domains stands for the ones between what they
   // hold, and goes when the domains depend that way anyway.
   const violations = new Map();
@@ -141,17 +147,19 @@ export function walk(g, starts, depth, dir, hidden) {
   return seen;
 }
 
-export function relations(id) {
+// The edges of an item's direct dependencies, each side sorted by the name of
+// the one at the other end: the item's upstreams (edges it is the downstream
+// of) and its downstreams. A domain's are lifted to domain level.
+export function relationEdges(id) {
   const g = isMulti(id) ? GRAPHS.domain : GRAPHS.context;
-  const byName = (a, b) => nameOf(a).localeCompare(nameOf(b));
+  const by = (end) => (a, b) => nameOf(a[end]).localeCompare(nameOf(b[end]));
   return {
-    ups: g.edges
-      .filter((e) => e.from === id)
-      .map((e) => e.to)
-      .sort(byName),
-    downs: g.edges
-      .filter((e) => e.to === id)
-      .map((e) => e.from)
-      .sort(byName),
+    ups: g.edges.filter((e) => e.from === id).sort(by("to")),
+    downs: g.edges.filter((e) => e.to === id).sort(by("from")),
   };
+}
+
+export function relations(id) {
+  const { ups, downs } = relationEdges(id);
+  return { ups: ups.map((e) => e.to), downs: downs.map((e) => e.from) };
 }
