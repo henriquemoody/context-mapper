@@ -31,6 +31,11 @@ export function levelGraph(level) {
         styles: new Set([e.style]),
         via: [e],
       })),
+      violations: MODEL.violations.map((r) => ({
+        from: r.from,
+        to: r.to,
+        via: [r],
+      })),
     };
   }
   const merged = new Map();
@@ -44,10 +49,22 @@ export function levelGraph(level) {
     merged.get(key).styles.add(e.style);
     merged.get(key).via.push(e);
   });
+  // A violation between two domains stands for the ones between what they
+  // hold, and goes when the domains depend that way anyway.
+  const violations = new Map();
+  MODEL.violations.forEach((r) => {
+    const a = owner[r.from],
+      b = owner[r.to];
+    const key = a + "|" + b;
+    if (a === b || merged.has(key)) return;
+    if (!violations.has(key)) violations.set(key, { from: a, to: b, via: [] });
+    violations.get(key).via.push(r);
+  });
   return {
     nodes: new Set(MODEL.domains.map((d) => d.id)),
     childOf,
     edges: [...merged.values()],
+    violations: [...violations.values()],
   };
 }
 export const GRAPHS = {

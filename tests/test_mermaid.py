@@ -1,4 +1,6 @@
 """The Mermaid layer: settings, checks, rendering and the static pages."""
+import re
+
 import pytest
 
 from context_mapper import graph, mermaid
@@ -53,7 +55,7 @@ def test_settings_turns_style_maps_into_classdef_strings():
     assert errors == []
     assert cfg["focus_style"] == "stroke-width:4px,font-weight:bold"
     assert cfg["domain_style"] == "fill:#ffffff,stroke:#b0b0b0"
-    assert cfg["edge_styles"] == {"dotted": "stroke:#313131,stroke-dasharray:3 3"}
+    assert cfg["edge_styles"]["dotted"] == "stroke:#313131,stroke-dasharray:3 3"
 
 
 def test_settings_default_styles_are_maps_too():
@@ -61,7 +63,13 @@ def test_settings_default_styles_are_maps_too():
     assert errors == []
     assert cfg["focus_style"] == "stroke-width:4px,font-weight:bold"
     assert cfg["domain_style"] == "fill:#ffffff,stroke:#b0b0b0"
-    assert cfg["edge_styles"] == {}
+    assert cfg["edge_styles"] == {"violation": "stroke:#d32f2f,stroke-width:2px"}
+
+
+def test_settings_lets_the_style_file_restyle_the_violation_arrow():
+    cfg, errors = mermaid.settings({"edge_styles": {"violation": {"stroke": "#ff0000", "stroke-dasharray": "6 2"}}})
+    assert errors == []
+    assert cfg["edge_styles"] == {"violation": "stroke:#ff0000,stroke-dasharray:6 2"}
 
 
 @pytest.mark.parametrize("key, value", [
@@ -288,6 +296,69 @@ def test_render_draws_the_styled_edge_as_a_dotted_arrow(example_data, example_cf
     views = mermaid.views(example_data, example_cfg)
     source = mermaid.render(example_data, example_cfg, find_view(views, "orders"))
     assert "checkout -.-> catalog" in source
+
+
+def test_render_draws_a_violation_as_a_red_arrow(example_data, example_cfg, find_view):
+    views = mermaid.views(example_data, example_cfg)
+    lines = mermaid.render(example_data, example_cfg, find_view(views, "orders")).splitlines()
+    arrows = [line for line in lines if re.match(r"  \w+ (-->|-\.->|<-->)", line)]  # a label may follow the arrow
+    position = arrows.index("  checkout <--> catalog")
+    assert position == len(arrows) - 1  # after the dependencies
+    assert f"  linkStyle {position} interpolate step stroke:#d32f2f,stroke-width:2px" in lines
+
+
+def test_render_lays_a_violation_out_the_way_the_dependency_runs(example_data, example_cfg, find_view):
+    """Catalog calls Checkout against the direction, but the arrow is written from Checkout to Catalog, like the
+    dependency, so the layout keeps Catalog above Checkout; the page's script drops the head at Catalog."""
+    views = mermaid.views(example_data, example_cfg)
+    lines = mermaid.render(example_data, example_cfg, find_view(views, "orders")).splitlines()
+    assert "  catalog --> checkout" not in lines
+    arrows = [line for line in lines if re.match(r"  \w+ (-->|-\.->|<-->)", line)]
+    assert f"  %% violations: {len(arrows) - 1}" in lines
+
+
+def test_render_draws_a_violation_between_the_domains(example_data, example_cfg, find_view):
+    views = mermaid.views(example_data, example_cfg)
+    source = mermaid.render(example_data, example_cfg, find_view(views, "overview"))
+    assert "  orders <--> catalog" in source
+    assert "stroke:#d32f2f" in source
+
+
+def test_render_leaves_a_violation_out_when_an_end_is_not_drawn(example_data, example_cfg, find_view):
+    views = mermaid.views(example_data, example_cfg)
+    view = {**find_view(views, "orders"), "hide": ["checkout"]}
+    source = mermaid.render(example_data, example_cfg, view)
+    assert "<-->" not in source
+    assert "%% violations" not in source
+
+
+def test_render_does_not_reach_anything_through_a_violation(tiny_model, tiny_style):
+    tiny_model["context-map"]["solo"]["violations"] = {"core_lib": "Solo calls the core."}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    cfg, errors = mermaid.settings({})
+    assert errors == []
+    whole = mermaid.render(data, cfg, {**cfg["defaults"], "id": "all"})
+    assert "  core_lib <--> solo" in whole
+    focused = mermaid.render(data, cfg, {**cfg["defaults"], "id": "solo", "focus": "solo", "depth": 99})
+    assert "core_lib" not in focused
+
+
+def test_render_draws_a_violation_into_a_collapsed_box(tiny_model, tiny_style):
+    tiny_model["context-map"]["solo"]["violations"] = {"core_lib": "x", "core_db": "y"}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    cfg, _ = mermaid.settings({})
+    source = mermaid.render(data, cfg, {**cfg["defaults"], "id": "all", "display": "collapsed"})
+    assert source.count("  base <--> solo") == 1  # the cluster holds both, and the two violations become one arrow
+
+
+def test_build_gives_every_static_page_the_script_that_drops_the_extra_head(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "orders.html").read_text()
+    assert "function dropViolationHeads(svg, source)" in page
+    assert 'dropViolationHeads(el.querySelector("svg"), src);' in page
+    assert "export function" not in page
 
 
 def test_render_writes_click_handlers_for_the_links(example_data, example_cfg, find_view):

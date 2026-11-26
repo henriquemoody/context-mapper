@@ -17,6 +17,15 @@
 #       packaging: Charges for Packages and Subscriptions
 #       pro-account: Charges the monthly subscription
 #
+# An entry can also record a `violations`: a dependency that goes against the
+# direction, such as an upstream that calls its own downstream. It is real, and
+# wrong, so the build draws it as a red arrow instead of failing on the cycle it
+# makes, and keeps it out of what a focus reaches. Fix it, then delete the line.
+#
+#   catalog:
+#     violations:
+#       checkout: Reads the open carts to warm its cache.
+#
 # Every entry can also carry a `description`: the interactive page shows it as
 # a tooltip when you hover over its box, and the item's page shows it in text.
 #
@@ -84,6 +93,8 @@ context-map:
       checkout:
         comment: Reads prices and availability at checkout time.
         style: dotted                               # a styled edge: colors live in context-map.style.yml
+    violations:                                     # Catalog is upstream of Checkout, and still calls it
+      checkout: Reads the open carts to decide what to keep in its cache.
   browsing:
     name: Browsing
     domain: catalog

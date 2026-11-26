@@ -113,6 +113,11 @@ function levelGraph(level) {
         to: e2.to,
         styles: /* @__PURE__ */ new Set([e2.style]),
         via: [e2]
+      })),
+      violations: MODEL.violations.map((r2) => ({
+        from: r2.from,
+        to: r2.to,
+        via: [r2]
       }))
     };
   }
@@ -126,10 +131,19 @@ function levelGraph(level) {
     merged.get(key).styles.add(e2.style);
     merged.get(key).via.push(e2);
   });
+  const violations = /* @__PURE__ */ new Map();
+  MODEL.violations.forEach((r2) => {
+    const a2 = owner[r2.from], b2 = owner[r2.to];
+    const key = a2 + "|" + b2;
+    if (a2 === b2 || merged.has(key)) return;
+    if (!violations.has(key)) violations.set(key, { from: a2, to: b2, via: [] });
+    violations.get(key).via.push(r2);
+  });
   return {
     nodes: new Set(MODEL.domains.map((d2) => d2.id)),
     childOf,
-    edges: [...merged.values()]
+    edges: [...merged.values()],
+    violations: [...violations.values()]
   };
 }
 var GRAPHS = {
@@ -376,11 +390,27 @@ function mermaidSource(s2) {
     );
     (byStyle[style] = byStyle[style] || []).push(i2);
   });
+  const violations = /* @__PURE__ */ new Map();
+  g2.violations.forEach((r2) => {
+    if (!visible.has(r2.from) || !visible.has(r2.to)) return;
+    const a2 = target(r2.from), b2 = target(r2.to);
+    const key = a2 + "|" + b2;
+    if (a2 === b2 || !drawn.has(a2) || !drawn.has(b2) || merged.has(key)) return;
+    if (!violations.has(key)) violations.set(key, { a: a2, b: b2, via: [] });
+    violations.get(key).via.push(...r2.via);
+  });
+  [...violations.values()].forEach((entry) => {
+    lines.push(`  ${nodeId(entry.b)} <--> ${nodeId(entry.a)}`);
+    (byStyle.violation = byStyle.violation || []).push(tips.length);
+    tips.push(entry.via.map(violationTipEntry));
+  });
   Object.entries(byStyle).forEach(
     ([style, indexes]) => lines.push(
       `  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${DIAGRAM.edge_styles[style] || ""}`.trimEnd()
     )
   );
+  if (byStyle.violation)
+    lines.push(`  %% violations: ${byStyle.violation.join(",")}`);
   const highlight = s2.level === "domain" && owner[s2.focus] ? owner[s2.focus] : s2.focus;
   plainNodes.forEach((n2) => {
     if (n2 === highlight) lines.push(`  class ${nodeId(n2)} focus`);
@@ -391,6 +421,10 @@ function mermaidSource(s2) {
   });
   return { source: lines.join("\n") + "\n", visible, tips };
 }
+var violationTipEntry = (dep) => ({
+  title: `${nameOf(dep.from)} \u2192 ${nameOf(dep.to)} (violation)`,
+  text: dep.comment || "Against the direction of the dependencies."
+});
 var tipEntry = (dep) => ({
   title: `${nameOf(dep.from)} \u2192 ${nameOf(dep.to)}`,
   text: dep.comment
@@ -1019,6 +1053,14 @@ function bindBoxTips(svg) {
   svg.addEventListener("pointerleave", hideTip);
 }
 
+// src/context_mapper/template/arrowheads.js
+function dropViolationHeads(svg, source) {
+  const found = /^\s*%% violations: ([\d,]+)$/m.exec(source);
+  if (!svg || !found) return;
+  const paths = svg.querySelectorAll("path.flowchart-link");
+  found[1].split(",").forEach((i2) => paths[Number(i2)]?.removeAttribute("marker-end"));
+}
+
 // src/context_mapper/template/dom/controls.js
 var levelSel = $2("level");
 var focusSel = $2("focus");
@@ -1238,6 +1280,7 @@ async function render2() {
     $2("graph").innerHTML = svg;
     bindFunctions?.($2("graph"));
     const svgEl = $2("graph").querySelector("svg");
+    dropViolationHeads(svgEl, source);
     bindEdgeHover(svgEl, tips);
     bindBoxTips(svgEl);
   } catch (err) {

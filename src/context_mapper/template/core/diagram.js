@@ -240,11 +240,33 @@ export function mermaidSource(s) {
     );
     (byStyle[style] = byStyle[style] || []).push(i);
   });
+  // A violation is drawn after the real dependencies, when both ends are
+  // drawn. Folded into a collapsed box it can land on a pair that depends
+  // that way anyway, and then the dependency says it all.
+  const violations = new Map();
+  g.violations.forEach((r) => {
+    if (!visible.has(r.from) || !visible.has(r.to)) return;
+    const a = target(r.from),
+      b = target(r.to);
+    const key = a + "|" + b;
+    if (a === b || !drawn.has(a) || !drawn.has(b) || merged.has(key)) return;
+    if (!violations.has(key)) violations.set(key, { a, b, via: [] });
+    violations.get(key).via.push(...r.via);
+  });
+  [...violations.values()].forEach((entry) => {
+    // Drawn the way the dependency runs, not the way the violation points: see arrowheads.js.
+    lines.push(`  ${nodeId(entry.b)} <--> ${nodeId(entry.a)}`);
+    (byStyle.violation = byStyle.violation || []).push(tips.length);
+    tips.push(entry.via.map(violationTipEntry));
+  });
   Object.entries(byStyle).forEach(([style, indexes]) =>
     lines.push(
       `  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${DIAGRAM.edge_styles[style] || ""}`.trimEnd(),
     ),
   );
+
+  if (byStyle.violation)
+    lines.push(`  %% violations: ${byStyle.violation.join(",")}`);
 
   const highlight =
     s.level === "domain" && owner[s.focus] ? owner[s.focus] : s.focus;
@@ -261,6 +283,12 @@ export function mermaidSource(s) {
 
 // One entry of a tooltip: always a title (who depends on whom) and a description (the comment).
 // An arrow can stand for several dependencies, so every entry names its own.
+// A violation always has a tooltip: it is worth saying even without a reason.
+export const violationTipEntry = (dep) => ({
+  title: `${nameOf(dep.from)} → ${nameOf(dep.to)} (violation)`,
+  text: dep.comment || "Against the direction of the dependencies.",
+});
+
 export const tipEntry = (dep) => ({
   title: `${nameOf(dep.from)} → ${nameOf(dep.to)}`,
   text: dep.comment,

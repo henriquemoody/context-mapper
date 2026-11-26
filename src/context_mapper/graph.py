@@ -159,7 +159,7 @@ def box_style(section, item_id, style, defaults, required, errors, allowed=None,
 
 def normalize(model, styles=None):
     """Turn context-map.yml and context-map.style.yml into {types, clusters, domains, contexts, edges,
-    attributes} plus a list of errors.
+    violations, attributes} plus a list of errors.
 
     `styles` is the parsed context-map.style.yml. Its sections mirror the model's —
     `types`, `clusters`, `context-map` — keyed by the same ids.
@@ -169,15 +169,15 @@ def normalize(model, styles=None):
     cluster_styles = styles.get("clusters") or {}
     entry_styles = styles.get("context-map") or {}
     errors = []
-    domains, contexts, pending = [], [], []
+    domains, contexts, pending, pending_violations = [], [], [], []
     model = model or {}
 
     for section in ("types", "context-map"):
         if not model.get(section):
             errors.append(f"context-map.yml: `{section}` is missing or empty")
     if errors:
-        return ({"types": {}, "clusters": [], "domains": [], "contexts": [], "edges": [], "attributes": {}},
-                errors)
+        return ({"types": {}, "clusters": [], "domains": [], "contexts": [], "edges": [], "violations": [],
+                 "attributes": {}}, errors)
 
     types = {}
     for type_id, type_entry in model["types"].items():
@@ -281,8 +281,8 @@ def normalize(model, styles=None):
             errors.append(f"context-map.{entry_id}: needs a map with `name` and `type`")
             continue
         if "domain" in entry:
-            check_keys(entry_id, entry, ("name", "domain", "type", "cluster", "downstreams", "description",
-                                         "attributes"))
+            check_keys(entry_id, entry, ("name", "domain", "type", "cluster", "downstreams", "violations",
+                                         "description", "attributes"))
             if entry.get("cluster") is not None:
                 errors.append(f"context-map.{entry_id}: a bounded context is inside its domain "
                               "already, it can't also be in a cluster")
@@ -291,7 +291,8 @@ def normalize(model, styles=None):
                 errors.append(f"context-map.{entry_id}: unknown domain '{entry.get('domain')}'")
             raw_contexts.append((entry_id, entry))
         else:
-            check_keys(entry_id, entry, ("name", "type", "cluster", "downstreams", "description", "attributes"))
+            check_keys(entry_id, entry, ("name", "type", "cluster", "downstreams", "violations", "description",
+                                         "attributes"))
             check_cluster(entry_id, entry.get("cluster"))
             if entry.get("cluster") is not None:
                 member_of[entry_id] = entry["cluster"]
@@ -306,6 +307,8 @@ def normalize(model, styles=None):
         domain_style = entry_styles.get(domain_id) or {}
         if "downstreams" in domain:
             pending.append((domain_id, f"context-map.{domain_id}", domain["downstreams"]))
+        if "violations" in domain:
+            pending_violations.append((domain_id, f"context-map.{domain_id}", domain["violations"]))
         context_ids = []
         for context_id, context in raw_contexts:
             if context.get("domain") != domain_id:
@@ -329,6 +332,8 @@ def normalize(model, styles=None):
             context_ids.append(context_id)
             if "downstreams" in context:
                 pending.append((context_id, f"context-map.{context_id}", context["downstreams"]))
+            if "violations" in context:
+                pending_violations.append((context_id, f"context-map.{context_id}", context["violations"]))
         # A domain with no bounded contexts is one itself: one box, with nothing
         # inside, so its defaultDisplay is a bounded context's.
         mermaid_style = box_style("context-map", domain_id, domain_style, TEXT_DEFAULTS, (), errors,
@@ -400,8 +405,33 @@ def normalize(model, styles=None):
                     errors.append(f"unknown domain or context '{endpoint}' in {where}.downstreams")
             edges.append({"from": downstream, "to": owner, "style": edge_style, "comment": comment})
 
+    # A violation is a dependency that goes against the direction the model draws: `violations` under an
+    # entry names what it depends on although it is upstream of it. It is a real dependency, known to be
+    # wrong, so it has to be writable — and it never joins `edges`, or the cycle it makes with the
+    # downstream it breaks would fail the build. It takes no part in cycles, walks or relations.
+    real = {(edge["from"], edge["to"]) for edge in edges}
+    violations = []
+    for owner, where, violations_map in pending_violations:
+        if not isinstance(violations_map, dict):
+            errors.append(f"{where}: `violations` must be a map from what it depends on, against the direction, to a comment")
+            continue
+        if not violations_map:
+            errors.append(f"{where}: `violations` is empty")
+            continue
+        for target, comment in violations_map.items():
+            if comment is not None and not isinstance(comment, str):
+                errors.append(f"{where}.violations.{target}: must be a comment string, or nothing")
+            if target not in seen:
+                errors.append(f"unknown domain or context '{target}' in {where}.violations")
+            elif target == owner:
+                errors.append(f"{where}.violations.{target}: an entry can't violate its direction toward itself")
+            elif (owner, target) in real:
+                errors.append(f"{where}.violations.{target}: '{owner}' depends on '{target}' already "
+                              f"(in context-map.{target}.downstreams), so it is not against the direction")
+            violations.append({"from": owner, "to": target, "comment": comment})
+
     data = {"types": types, "clusters": clusters, "domains": domains, "contexts": contexts, "edges": edges,
-            "attributes": attributes}
+            "violations": violations, "attributes": attributes}
     if not errors:
         cycle = find_cycle(level_graph(data, "context"))
         if cycle:
@@ -431,7 +461,8 @@ def level_graph(data, level):
         child_of.update({context_id: context["domain"] for context_id, context in contexts.items()
                          if not domains[context["domain"]]["single"]})
         edges = [{"from": edge["from"], "to": edge["to"], "styles": {edge["style"]}, "via": [edge]} for edge in data["edges"]]
-        return {"nodes": nodes, "edges": edges, "child_of": child_of}
+        violations = [{"from": rule["from"], "to": rule["to"], "via": [rule]} for rule in data["violations"]]
+        return {"nodes": nodes, "edges": edges, "violations": violations, "child_of": child_of}
 
     merged = {}
     for edge in data["edges"]:
@@ -442,9 +473,19 @@ def level_graph(data, level):
                                   {"from": downstream_owner, "to": upstream_owner, "styles": set(), "via": []})
         entry["styles"].add(edge["style"])
         entry["via"].append(edge)
+    # A violation between two domains stands for the ones between what they hold, and goes when the
+    # domains depend that way anyway — the dependency's own arrow says it, and drawn twice it would only repeat.
+    violations = {}
+    for rule in data["violations"]:
+        downstream_owner, upstream_owner = owner[rule["from"]], owner[rule["to"]]
+        key = (downstream_owner, upstream_owner)
+        if downstream_owner == upstream_owner or key in merged:
+            continue
+        violations.setdefault(key, {"from": downstream_owner, "to": upstream_owner, "via": []})["via"].append(rule)
     return {
         "nodes": set(domains),
         "edges": list(merged.values()),
+        "violations": list(violations.values()),
         "child_of": child_of,
     }
 

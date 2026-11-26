@@ -41,8 +41,12 @@ TOP_DEFAULTS = {
 
 VIEW_ONLY = {"id", "title", "focus", "description", "direction"}
 
-# The kinds of edge `edge_styles` can style: a plain one, and `style: dotted` on a downstream.
-EDGE_KINDS = ("solid", "dotted")
+# The kinds of edge `edge_styles` can style: a plain one, `style: dotted` on a downstream, and the
+# red arrow of a violation: a dependency that goes against the direction.
+EDGE_KINDS = ("solid", "dotted", "violation")
+
+# What a violation's arrow looks like unless the style file says otherwise.
+VIOLATION_STYLE = {"stroke": "#d32f2f", "stroke-width": "2px"}
 
 ALLOWED = {
     "direction": {"TB", "BT", "LR", "RL"},
@@ -110,8 +114,9 @@ def settings(config):
         cfg["edge_styles"] = {kind: attribute_string(f"mermaid.edge_styles.{kind}", attrs, errors)
                               for kind, attrs in edge_styles.items()}
     else:
-        errors.append("mermaid.edge_styles must be a map from solid or dotted to Mermaid attributes")
+        errors.append("mermaid.edge_styles must be a map from solid, dotted or violation to Mermaid attributes")
         cfg["edge_styles"] = {}
+    cfg["edge_styles"].setdefault("violation", graph.classdef(VIOLATION_STYLE, {}))
     return cfg, errors
 
 
@@ -378,6 +383,7 @@ def render(data, cfg, view, links=None, markdown=False):
             entry["names"].add(names[edge["from"]])
 
     by_style = {}
+    arrows = len(merged)
     for edge_index, ((from_id, to_id), entry) in enumerate(merged.items()):
         edge_style = "solid" if "solid" in entry["styles"] else sorted(entry["styles"])[0]
         arrow = "-.->" if edge_style == "dotted" else "-->"
@@ -387,11 +393,29 @@ def render(data, cfg, view, links=None, markdown=False):
         lines.append(f"  {node_id(from_id)} {arrow}{label} {node_id(to_id)}")
         by_style.setdefault(edge_style, []).append(str(edge_index))
 
+    # A violation is drawn after the real dependencies, when both ends are drawn. Folded into a
+    # collapsed box it can land on a pair that depends that way anyway, and then the dependency says it all.
+    violation_pairs = {}
+    for rule in level_graph["violations"]:
+        if rule["from"] not in visible or rule["to"] not in visible:
+            continue
+        pair = folded_target(rule["from"]), folded_target(rule["to"])
+        if pair[0] == pair[1] or pair[0] not in drawn or pair[1] not in drawn or pair in merged:
+            continue
+        violation_pairs[pair] = None
+    for offset, (from_id, to_id) in enumerate(violation_pairs):
+        # Drawn the way the dependency runs, not the way the violation points: see template/arrowheads.js.
+        lines.append(f"  {node_id(to_id)} <--> {node_id(from_id)}")
+        by_style.setdefault("violation", []).append(str(arrows + offset))
+
     # `interpolate` sets the curve per edge, which works even where the config is ignored.
     for edge_style, edge_indexes in by_style.items():
         extra = cfg["edge_styles"].get(edge_style, "")
         curve = mermaid_config(cfg, markdown)["flowchart"].get("curve", cfg["curve"])
         lines.append(f"  linkStyle {','.join(edge_indexes)} interpolate {curve} {extra}".rstrip())
+
+    if by_style.get("violation"):
+        lines.append(f"  %% violations: {','.join(by_style['violation'])}")
 
     # Highlight only the focused item itself: a domain focus marks the domain box, not each context.
     highlight = owner[view["focus"]] if level == "domain" and view.get("focus") in owner else view.get("focus")
@@ -462,6 +486,8 @@ def check(data, cfg):
 # plain functions, without the module syntax.
 DOWNLOAD_JS = (Path(__file__).parent / "template" / "download.js").read_text().strip().replace(
     "export function downloadDiagram", "function downloadDiagram")
+ARROWHEADS_JS = (Path(__file__).parent / "template" / "arrowheads.js").read_text().strip().replace(
+    "export function dropViolationHeads", "function dropViolationHeads")
 
 PAGE = """<!doctype html>
 <html lang="en">
@@ -512,6 +538,7 @@ DIAGRAM = """<p class="hint">Download: <a href="#" data-download="png">PNG</a> Â
     const {{ svg, bindFunctions }} = await mermaid.render("domain-diagram", src);
     el.innerHTML = svg;
     bindFunctions?.(el);
+    dropViolationHeads(el.querySelector("svg"), src);
   }} catch (err) {{
     el.textContent = "Could not render this diagram: " + err.message;
   }}
@@ -521,6 +548,7 @@ DIAGRAM = """<p class="hint">Download: <a href="#" data-download="png">PNG</a> Â
     if (svg) downloadDiagram(svg, a.dataset.download, {name});
   }}));
 __DOWNLOAD__
+__ARROWHEADS__
 </script>"""
 
 ELK = "  mermaid.registerLayoutLoaders(elkLayouts);"
@@ -662,6 +690,7 @@ def build(data, config, out):
             name=json.dumps(view["id"]),
         )
         body = body.replace("__DOWNLOAD__", textwrap.indent(DOWNLOAD_JS, "  "))
+        body = body.replace("__ARROWHEADS__", textwrap.indent(ARROWHEADS_JS, "  "))
         rows = attribute_rows(data, view.get("focus"))
         about_html = f'<p class="hint">{html.escape(about)}</p>' if about else ""
         about_html += "".join(f'<p class="hint"><b>{html.escape(label)}:</b> {html.escape(text)}</p>'

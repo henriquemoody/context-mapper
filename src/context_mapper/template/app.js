@@ -6,6 +6,7 @@ import { hashFor } from "./core/state.js";
 import { mermaidSource } from "./core/diagram.js";
 import { renderInfo } from "./components/panel.js";
 import { bindEdgeHover, bindBoxTips } from "./dom/svg.js";
+import { dropViolationHeads } from "./arrowheads.js";
 import { $ } from "./dom/query.js";
 import {
   levelSel,
@@ -44,6 +45,7 @@ async function render() {
     $("graph").innerHTML = svg;
     bindFunctions?.($("graph"));
     const svgEl = $("graph").querySelector("svg");
+    dropViolationHeads(svgEl, source);
     bindEdgeHover(svgEl, tips);
     bindBoxTips(svgEl);
   } catch (err) {

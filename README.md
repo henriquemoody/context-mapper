@@ -78,6 +78,20 @@ Every entry can carry a `description`: the interactive page shows it as a toolti
 
 A domain no context points at is a single bounded context with the same name.
 
+### Violations
+
+`downstreams` says who depends on an entry, and the build fails on a dependency cycle. An existing system doesn't always follow the direction you drew: an upstream calls its own downstream, and writing that as a dependency would make a cycle. Record it as a violation instead, under the one that makes the call, naming what it calls — the same shape as `downstreams`, a key with a comment or a bare key:
+
+```yaml
+catalog:
+  downstreams:
+    checkout: Reads prices and availability at checkout time.   # Checkout → Catalog
+  violations:
+    checkout: Reads the open carts to warm its cache.           # Catalog → Checkout, in red
+```
+
+It draws a red arrow from the entry to each one, with the comment as the tooltip on the interactive page. A violation is a real dependency that is known to be wrong, so it stays out of the dependency graph: it takes no part in cycles, in what a focus or depth reaches, or in a page's "depends on" and "used by" lists, and it is drawn only when both ends are. Between domains it is lifted like a dependency, and it goes when the domains depend that way anyway. A violation never moves anything: Mermaid lays out by the direction of the arrows, so the source draws it the way the dependency runs and the page's script drops the head at the upstream end, leaving the red head where the call goes. Where that script doesn't run — the Markdown files on GitLab — it shows as a red arrow with a head at both ends. The build fails when a violation names an unknown id, the entry itself, or a dependency that is declared already — that one isn't against the direction. Fix the code, then delete the line, and the red arrow goes with it. The arrow's look is `mermaid.edge_styles.violation` in the style file, red by default.
+
 At domain level, context dependencies are lifted to their domains and merged, and dependencies inside a domain disappear.
 
 ## Attributes
@@ -172,7 +186,7 @@ The rest lives in the `mermaid` section. Every style in it is a map of the same 
 | `attribute_tooltips` | `true`, `false` | Whether hovering a box shows its attributes too. The interactive page only; `true` by default. |
 | `focus_style` | map of Mermaid attributes | How the focused item is highlighted. |
 | `domain_style` | map of Mermaid attributes | Style of the box around a domain's bounded contexts. A domain with its own style under `context-map` overrides it — and its type colors, when drawn as one box. |
-| `edge_styles.solid`, `edge_styles.dotted` | map of Mermaid attributes | Line styles. Dotted comes from `style: dotted` on a downstream. |
+| `edge_styles.solid`, `edge_styles.dotted`, `edge_styles.violation` | map of Mermaid attributes | Line styles. Dotted comes from `style: dotted` on a downstream; violation is the arrow of a `violations` entry, red by default. |
 | `pages` | `all`, `domains`, `contexts`, or a list of ids | Which items get their own page. |
 
 These can be set under `defaults` and overridden per view:

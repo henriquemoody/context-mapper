@@ -455,7 +455,7 @@ def attributes_model(attributes, values):
         },
         STYLE,
         "context-map.alpha.customFields: unknown option. "
-        "Known: attributes, cluster, description, downstreams, name, type",
+        "Known: attributes, cluster, description, downstreams, name, type, violations",
     ),
     (
         {
@@ -465,7 +465,7 @@ def attributes_model(attributes, values):
         },
         STYLE,
         "context-map.alpha.properties: unknown option. "
-        "Known: attributes, cluster, description, downstreams, name, type",
+        "Known: attributes, cluster, description, downstreams, name, type, violations",
     ),
     (
         {
@@ -478,7 +478,7 @@ def attributes_model(attributes, values):
         },
         STYLE,
         "context-map.ctx.customFields: unknown option. "
-        "Known: attributes, cluster, description, domain, downstreams, name, type",
+        "Known: attributes, cluster, description, domain, downstreams, name, type, violations",
     ),
     (
         {
@@ -558,6 +558,101 @@ def attributes_model(attributes, values):
 def test_normalize_rejects_a_broken_model(model, style, expected):
     errors = errors_of(model, style)
     assert any(expected in err for err in errors), errors
+
+
+# --- normalize, violations --------------------------------------------------
+
+
+def with_violations(violations, **extra):
+    """alpha, beta and gamma, with `violations` set on alpha."""
+    entries = {
+        "alpha": {"name": "Alpha", "type": "core", "violations": violations},
+        "beta": {"name": "Beta", "type": "core"},
+        "gamma": {"name": "Gamma", "type": "core"},
+    }
+    for entry_id, entry in extra.items():
+        entries[entry_id] = {**entries[entry_id], **entry}
+    return model(**entries)
+
+
+def test_normalize_keeps_a_violation_apart_from_the_dependencies():
+    data, errors = graph.normalize(with_violations({"beta": "Alpha calls Beta anyway.", "gamma": None}), STYLE)
+    assert errors == []
+    assert data["violations"] == [
+        {"from": "alpha", "to": "beta", "comment": "Alpha calls Beta anyway."},
+        {"from": "alpha", "to": "gamma", "comment": None},
+    ]
+    assert data["edges"] == []
+
+
+def test_normalize_reads_the_violations_of_the_example(example_data):
+    assert example_data["violations"] == [
+        {"from": "catalog", "to": "checkout",
+         "comment": "Reads the open carts to decide what to keep in its cache."}]
+
+
+def test_normalize_lets_a_violation_close_a_cycle_the_dependencies_would_not():
+    """Beta depends on Alpha, and Alpha depends on Beta against the direction: written as a
+    dependency it would be a cycle and fail the build, which is why it is written as a violation."""
+    data, errors = graph.normalize(with_violations({"beta": "Calls back."}, alpha={"downstreams": {"beta": "x"}}), STYLE)
+    assert errors == []
+    assert [(edge["from"], edge["to"]) for edge in data["edges"]] == [("beta", "alpha")]
+    assert [(rule["from"], rule["to"]) for rule in data["violations"]] == [("alpha", "beta")]
+    assert graph.find_cycle(graph.level_graph(data, "context")) is None
+    _, errors = graph.normalize(model(
+        alpha={"name": "Alpha", "type": "core", "downstreams": {"beta": "x"}},
+        beta={"name": "Beta", "type": "core", "downstreams": {"alpha": "x"}}), STYLE)
+    assert any("dependency cycle" in err for err in errors), errors
+
+
+@pytest.mark.parametrize("violations, extra, expected", [
+    ({"ghost": "x"}, {}, "unknown domain or context 'ghost' in context-map.alpha.violations"),
+    ({"alpha": "x"}, {}, "context-map.alpha.violations.alpha: an entry can't violate its direction toward itself"),
+    ({"beta": 42}, {}, "context-map.alpha.violations.beta: must be a comment string, or nothing"),
+    ({}, {}, "context-map.alpha: `violations` is empty"),
+    (["beta"], {}, "context-map.alpha: `violations` must be a map"),
+    ({"beta": "x"}, {"beta": {"downstreams": {"alpha": "y"}}},
+     "context-map.alpha.violations.beta: 'alpha' depends on 'beta' already"),
+])
+def test_normalize_rejects_a_broken_violation(violations, extra, expected):
+    errors = errors_of(with_violations(violations, **extra))
+    assert any(expected in err for err in errors), errors
+
+
+def test_level_graph_does_not_walk_through_a_violation():
+    data, errors = graph.normalize(with_violations({"beta": "x"}), STYLE)
+    assert errors == []
+    context = graph.level_graph(data, "context")
+    assert context["edges"] == []
+    assert [(rule["from"], rule["to"]) for rule in context["violations"]] == [("alpha", "beta")]
+    assert graph.walk(context, {"alpha"}, 99, "both", set()) == {"alpha"}
+
+
+def test_level_graph_lifts_a_violation_to_the_domains(tiny_model, tiny_style):
+    tiny_model["context-map"]["web_ui"]["violations"] = {"core_db": "UI reads the db."}
+    tiny_model["context-map"]["solo"]["violations"] = {"core_lib": "x", "core_db": "y"}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    violations = graph.level_graph(data, "domain")["violations"]
+    assert [(rule["from"], rule["to"], len(rule["via"])) for rule in violations] == [
+        ("web", "core", 1), ("solo", "core", 2)]
+
+
+def test_level_graph_drops_a_violation_inside_a_domain(tiny_model, tiny_style):
+    tiny_model["context-map"]["core_lib"]["violations"] = {"core_db": "The lib calls the db."}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    assert len(graph.level_graph(data, "context")["violations"]) == 1
+    assert graph.level_graph(data, "domain")["violations"] == []
+
+
+def test_level_graph_drops_a_violation_the_domains_have_anyway(tiny_model, tiny_style):
+    """Core depends on Web through Core DB → Web API, so Core DB → Web UI adds no arrow between them."""
+    tiny_model["context-map"]["core_db"]["violations"] = {"web_ui": "x"}
+    data, errors = graph.normalize(tiny_model, tiny_style)
+    assert errors == []
+    assert len(graph.level_graph(data, "context")["violations"]) == 1
+    assert graph.level_graph(data, "domain")["violations"] == []
 
 
 # --- normalize, defaultDisplay ----------------------------------------------
