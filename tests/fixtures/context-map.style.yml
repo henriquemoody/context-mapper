@@ -53,7 +53,7 @@ mermaid:
 
   # Defaults for every view. Each view below can override any of these.
   defaults:
-    level: context         # context (bounded contexts inside domain boxes) or domain (one box per domain)
+    level: context         # context (bounded contexts inside domain boxes), domain (one box per domain) or aggregate (each context around its aggregates)
     depth: 1               # Hops out from the focus. 99 means everything.
     dir: both              # both, up (depends on), down (used by)
     display: {}            # How containers first render: expanded, collapsed, contents, hidden — or a map by id

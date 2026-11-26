@@ -7,6 +7,7 @@ import html
 import json
 import re
 import textwrap
+from functools import partial
 from pathlib import Path
 
 from . import graph
@@ -51,13 +52,19 @@ VIOLATION_STYLE = {"stroke": "#d32f2f", "stroke-width": "2px"}
 
 # A partnership's line and a shared kernel's look like a solid dependency, unless the style file says otherwise.
 
+# At the aggregate level an aggregate is a white box inside its context, which keeps the colors of its type.
+AGGREGATE_STYLE = {"fill": "#ffffff", "stroke": "#6b6b6b"}
+
+# In the class diagram of a context's aggregates, the aggregates of other contexts it references are muted.
+MUTED_STYLE = {"fill": "#f4f4f4", "stroke": "#9a9a9a", "stroke-dasharray": "4 3", "color": "#6b6b6b"}
+
 ALLOWED = {
     "direction": {"TB", "BT", "LR", "RL"},
     "layout": {"dagre", "elk"},
     "look": {"classic", "handDrawn"},
     "curve": {"basis", "bumpX", "bumpY", "cardinal", "catmullRom", "linear", "monotoneX",
               "monotoneY", "natural", "step", "stepAfter", "stepBefore"},
-    "level": {"context", "domain"},
+    "level": {"aggregate", "context", "domain"},
     "dir": {"both", "up", "down"},
     "display": set(graph.DISPLAY_STATES),
 }
@@ -214,12 +221,20 @@ def text(value):
     return value.replace('"', "#quot;")
 
 
+def aggregate_node(context_id, name):
+    """The node id of an aggregate's box at the aggregate level, as template/core/diagram.js spells it."""
+    return f"{node_id(context_id)}__{node_id(name)}"
+
+
 def render(data, cfg, view, links=None, markdown=False):
     """Return Mermaid source for one view. `links` maps an id to a URL for click handlers.
     With `markdown`, `markdown_config` is merged in, for renderers like GitLab's that lack ELK."""
     domains, contexts, owner, names = graph.index(data)
     types = data["types"]
-    level = view["level"]
+    # The aggregate level walks the graph of the context level, and then draws the contexts that were
+    # reached with their aggregates inside.
+    show_aggregates = view["level"] == "aggregate"
+    level = "context" if show_aggregates else view["level"]
     level_graph = graph.level_graph(data, level)
     starts = graph.focus_set(data, level, view.get("focus"))
 
@@ -285,9 +300,12 @@ def render(data, cfg, view, links=None, markdown=False):
     for type_id, type_entry in types.items():
         lines.append(f"  classDef {type_id} {type_entry['mermaid_style']}")
     lines.append(f"  classDef focus {cfg['focus_style']}")
+    if show_aggregates:
+        lines.append(f"  classDef aggregate {graph.classdef(AGGREGATE_STYLE)}")
 
     plain_nodes = []  # ids drawn as plain boxes, for focus and click lines
     drawn = set()     # ids drawn at all: a box, or a wrapper around others
+    aggregate_nodes = {}  # the node of each aggregate box -> the context it is in
 
     def box(item_id, label, type_id, indent):
         plain_nodes.append(item_id)
@@ -295,10 +313,30 @@ def render(data, cfg, view, links=None, markdown=False):
         cls = f":::{type_id}" if type_id else ""
         return f'{indent}{node_id(item_id)}["{label}"]{cls}'
 
+    def draw_aggregates(item, indent):
+        """A bounded context with aggregates, at the aggregate level: a wrapper in the colors of its type,
+        with a white box inside for each aggregate. It keeps the context's id, so the arrows that end at
+        the context end at the wrapper."""
+        context_id = item["id"]
+        entry_lines = [f'{indent}subgraph {node_id(context_id)}["{text(item["name"])}"]']
+        for aggregate in contexts[context_id]["aggregates"]:
+            aggregate_id = aggregate_node(context_id, aggregate["name"])
+            aggregate_nodes[aggregate_id] = context_id
+            entry_lines.append(f'{indent}  {aggregate_id}["{text(aggregate["name"])}"]:::aggregate')
+        entry_lines.append(f"{indent}end")
+        drawn.add(context_id)
+        style = merge_styles(types.get(item.get("type"), {}).get("mermaid_style"), item.get("mermaid_style"))
+        if context_id == view.get("focus"):
+            style = merge_styles(style, cfg["focus_style"])
+        entry_lines.append(f"{indent}style {node_id(context_id)} {style}")
+        return entry_lines
+
     def draw_child(child_id, indent):
         """One child of a container. A single bounded context is in both payloads;
         the domain entry carries its style, so it wins."""
         if child_id in contexts and child_id not in domains:
+            if show_aggregates and contexts[child_id].get("aggregates"):
+                return draw_aggregates(contexts[child_id], indent)
             lines = [box(child_id, text(contexts[child_id]["name"]), contexts[child_id]["type"], indent)]
             if contexts[child_id].get("mermaid_style"):
                 lines.append(f"{indent}style {node_id(child_id)} {contexts[child_id]['mermaid_style']}")
@@ -352,6 +390,8 @@ def render(data, cfg, view, links=None, markdown=False):
                     style += "," + cfg["focus_style"]
                 entry_lines.append(f"{indent}style {node_id(container_id)} {style}")
                 return entry_lines
+        if show_aggregates and container.get("single") and contexts[container_id].get("aggregates"):
+            return draw_aggregates(container, indent)
         # A plain box: the container alone. With `child_labels`, it names what it holds.
         label = text(container["name"])
         if view["child_labels"] and not container.get("single", False):
@@ -437,8 +477,27 @@ def render(data, cfg, view, links=None, markdown=False):
     by_style = {}
     role_marks = []  # `index=upstream>downstream` for each edge with roles drawn, for the page's script
     kernel_marks = []  # the index of each edge that shares a kernel, for the page's script
-    arrows = len(merged)
-    for edge_index, ((from_id, to_id), entry) in enumerate(merged.items()):
+
+    # At the aggregate level, a reference is an arrow from the aggregate that holds it to the one it points at,
+    # the one that is upstream, like a dependency. Where a drawn reference runs between two contexts that
+    # depend on each other that way, it says the same thing as the arrow between their containers, so the
+    # dependency is drawn on the reference instead, with its style, role codes, shared kernel and all, and the
+    # container arrow goes. When several references cover one dependency, the first one carries it: the one
+    # of the context that is first in the model, then its first aggregate, then its first reference.
+    references = []  # (from node, to node, from context, to context)
+    carried = {}  # the pair of contexts of a dependency -> the position of the reference that carries it
+    if show_aggregates:
+        references = [(aggregate_node(context["id"], aggregate["name"]), aggregate_node(ref["context"], ref["name"]),
+                       context["id"], ref["context"])
+                      for context in data["contexts"] for aggregate in context.get("aggregates", [])
+                      for ref in aggregate["references"]]
+        references = [item for item in references if item[0] in aggregate_nodes and item[1] in aggregate_nodes]
+        for position, (_, _, from_context, to_context) in enumerate(references):
+            if (from_context, to_context) in merged:
+                carried.setdefault((from_context, to_context), position)
+
+    def draw_dependency(edge_index, from_id, to_id, entry):
+        """One arrow for a dependency, the shared kernel it carries, and the roles."""
         edge_style = "solid" if "solid" in entry["styles"] else sorted(entry["styles"])[0]
         arrow = "-.->" if edge_style == "dotted" else "-->"
         # Roles are kept only when every dependency the arrow stands for carries the very same ones.
@@ -464,6 +523,11 @@ def render(data, cfg, view, links=None, markdown=False):
         label = f'|"{text("<br/>".join(label_lines))}"|' if label_lines else ""
         lines.append(f"  {node_id(from_id)} {arrow}{label} {node_id(to_id)}")
         by_style.setdefault(f"{edge_style}+sharedKernel" if kernel else edge_style, []).append(str(edge_index))
+
+    plain_dependencies = [(pair, entry) for pair, entry in merged.items() if pair not in carried]
+    arrows = len(plain_dependencies)
+    for edge_index, ((from_id, to_id), entry) in enumerate(plain_dependencies):
+        draw_dependency(edge_index, from_id, to_id, entry)
 
     # A violation is drawn after the real dependencies, when both ends are drawn. Folded into a
     # collapsed box it can land on a pair that depends that way anyway, and then the dependency says it all.
@@ -498,6 +562,16 @@ def render(data, cfg, view, links=None, markdown=False):
         lines.append(f"  {node_id(entry['b'])} {info['link']}{label} {node_id(entry['a'])}")
         by_style.setdefault(entry["kind"], []).append(str(first_link + offset))
 
+    # The references come last, so the arrows above keep their indexes: everything the page's script counts is
+    # where it says, and what a reference carries is counted at the reference.
+    first_reference = first_link + len(lone_links)
+    for offset, (from_node, to_node, from_context, to_context) in enumerate(references):
+        if carried.get((from_context, to_context)) == offset:
+            draw_dependency(first_reference + offset, from_node, to_node, merged[(from_context, to_context)])
+        else:
+            lines.append(f"  {from_node} --> {to_node}")
+            by_style.setdefault("solid", []).append(str(first_reference + offset))
+
     # `interpolate` sets the curve per edge, which works even where the config is ignored.
     for edge_style, edge_indexes in by_style.items():
         extra = merge_styles(*(cfg["edge_styles"].get(kind, "") for kind in edge_style.split("+")))
@@ -523,6 +597,9 @@ def render(data, cfg, view, links=None, markdown=False):
         for node in plain_nodes:
             if node in links:
                 lines.append(f'  click {node_id(node)} href "{links[node]}"')
+        for aggregate_id, context_id in aggregate_nodes.items():
+            if context_id in links:
+                lines.append(f'  click {aggregate_id} href "{links[context_id]}"')
 
     return "\n".join(lines) + "\n"
 
@@ -600,11 +677,12 @@ PAGE = """<!doctype html>
   a:hover {{ text-decoration: underline; }}
   nav {{ display: flex; gap: 16px; font-size: 14px; }}
   h1 {{ font-size: 24px; margin: 12px 0 4px; }}
+  h2 {{ font-size: 18px; margin: 28px 0 4px; }}
   h3 {{ margin-bottom: 4px; }}
   .hint {{ color: #595959; margin: 0 0 16px; }}
   li .hint {{ font-size: 13px; margin: 0; }}
-  #diagram {{ overflow: auto; border: 1px solid #e7e7e7; border-radius: 8px; padding: 16px; }}
-  #diagram svg {{ max-width: 100%; height: auto; }}
+  #diagram, #aggregates-diagram {{ overflow: auto; border: 1px solid #e7e7e7; border-radius: 8px; padding: 16px; }}
+  #diagram svg, #aggregates-diagram svg {{ max-width: 100%; height: auto; }}
   #diagram a, #diagram a *, #diagram .clickable, #diagram .clickable * {{ cursor: pointer; }}
   ul {{ padding-left: 18px; margin-top: 4px; }}
   .cols {{ display: flex; flex-wrap: wrap; gap: 8px 48px; }}
@@ -626,6 +704,7 @@ PAGE = """<!doctype html>
 DIAGRAM = """<p class="hint">Download: <a href="#" data-download="png">PNG</a> · <a href="#" data-download="svg">SVG</a></p>
 <div id="diagram">Loading diagram...</div>
 {relations}
+{aggregates}
 <details><summary>Mermaid source</summary><pre>{escaped}</pre></details>
 <script type="text/plain" id="source">{raw}</script>
 <script type="module">
@@ -643,6 +722,7 @@ DIAGRAM = """<p class="hint">Download: <a href="#" data-download="png">PNG</a> �
   }} catch (err) {{
     el.textContent = "Could not render this diagram: " + err.message;
   }}
+__CLASSES__
   document.querySelectorAll("[data-download]").forEach(a => a.addEventListener("click", ev => {{
     ev.preventDefault();
     const svg = el.querySelector("svg");
@@ -655,11 +735,25 @@ __ROLES__
 
 ELK = "  mermaid.registerLayoutLoaders(elkLayouts);"
 
+# A context's aggregates are drawn as a class diagram under the flowchart, when the page has one.
+CLASSES = """  const classSource = document.getElementById("aggregates-source");
+  if (classSource) {
+    const classes = document.getElementById("aggregates-diagram");
+    try {
+      const { svg } = await mermaid.render("aggregates-svg", classSource.textContent);
+      classes.innerHTML = svg;
+    } catch (err) {
+      classes.textContent = "Could not render this diagram: " + err.message;
+    }
+  }"""
+
 
 def describe(data, view):
     domains, contexts, _, names = graph.index(data)
     reading = "Arrows point to what something depends on. "
     reading += "Upstream is at the top." if view.get("direction", "BT") == "BT" else ""
+    if view.get("level") == "aggregate":
+        reading += " Aggregates are inside their bounded contexts, and an arrow between two is a reference."
     if view.get("hide"):
         reading += " Some items are hidden in this view."
     focus = view.get("focus")
@@ -704,15 +798,103 @@ def attribute_rows(data, focus):
     domains, contexts, _, _ = graph.index(data)
     clusters = {cluster["id"]: cluster for cluster in data["clusters"]}
     item = domains.get(focus) or contexts.get(focus) or clusters.get(focus)
-    if not item:
-        return []
-    values = item.get("attributes") or {}
-    rows = []
-    for attribute_id, definition in (data.get("attributes") or {}).items():
-        if attribute_id not in values:
-            continue
-        rows.append((definition.get("name") or attribute_id, attribute_text(values[attribute_id])))
-    return rows
+    return values_rows(data, (item or {}).get("attributes"))
+
+
+def values_rows(data, values):
+    """The attribute values one item sets, as (label, text) pairs, in the order the model declared them."""
+    values = values or {}
+    return [(definition.get("name") or attribute_id, attribute_text(values[attribute_id]))
+            for attribute_id, definition in (data.get("attributes") or {}).items() if attribute_id in values]
+
+
+def aggregates_of(data, focus):
+    """The aggregates of the focused bounded context, a single domain included, or none."""
+    _, contexts, _, _ = graph.index(data)
+    return (contexts.get(focus) or {}).get("aggregates") or []
+
+
+def aggregate_rows(data, aggregate, cell, reference):
+    """What an aggregate holds, as (label, text) pairs for a page: the root, the entities and the value objects
+    with their descriptions, the references, and the attributes. `cell` makes a piece of text safe for the
+    page, and `reference` writes a reference to another aggregate."""
+    def members(items):
+        return ", ".join(cell(item["name"]) + (f" ({cell(item['description'])})" if item["description"] else "")
+                         for item in items)
+
+    rows = [("Root", cell(aggregate["root"]))]
+    for label, key in (("Entities", "entities"), ("Value objects", "valueObjects")):
+        if aggregate[key]:
+            rows.append((label, members(aggregate[key])))
+    if aggregate["references"]:
+        rows.append(("References", ", ".join(reference(ref) for ref in aggregate["references"])))
+    return rows + [(label, cell(value)) for label, value in values_rows(data, aggregate.get("attributes"))]
+
+
+def reference_text(focus, names, link, cell, ref):
+    """A reference to an aggregate for a page: the name alone in the focused context, else the other context,
+    as `link` writes it, and the name after a slash — the way the model writes it. When the context has the
+    aggregate's own name, that is said once: the link."""
+    if ref["context"] == focus:
+        return cell(ref["name"])
+    if names[ref["context"]] == ref["name"]:
+        return link(ref["context"])
+    return f"{link(ref['context'])} / {cell(ref['name'])}"
+
+
+def class_id(context_id, name):
+    return f"{node_id(context_id)}__{node_id(name)}"
+
+
+def aggregate_diagram(data, cfg, focus, direction=None, markdown=False):
+    """Mermaid source of a classDiagram of a bounded context's aggregates, or None when it has none. Each
+    aggregate is a namespace, and its members are classes annotated as the root, an entity or a value object.
+    A reference is an arrow between root classes. The aggregates of other contexts that these reference are
+    classes outside the namespaces, muted, and named for their context."""
+    aggregates = aggregates_of(data, focus)
+    if not aggregates:
+        return None
+    domains, contexts, _, names = graph.index(data)
+    item = domains.get(focus) or contexts[focus]  # a single domain's own entry carries the box style
+    box_style = merge_styles(data["types"].get(item.get("type"), {}).get("mermaid_style"), item.get("mermaid_style"))
+    lines = ["---", json.dumps({"config": mermaid_config(cfg, markdown)}), "---", "classDiagram",
+             f"  direction {direction or cfg['direction']}"]
+    # The aggregates inside have the colors of the context's type, as its box has in the other diagrams. The
+    # class is named on each class itself: a `cssClass` line leaves them as they were.
+    inside = ":::inside" if box_style else ""
+    for aggregate in aggregates:
+        lines.append(f"  namespace {node_id(aggregate['name'])} {{")
+        members = [(aggregate["root"], "root")]
+        members += [(item["name"], "entity") for item in aggregate["entities"]]
+        members += [(item["name"], "value object") for item in aggregate["valueObjects"]]
+        for member, annotation in members:
+            member_id = class_id(focus, aggregate["name"] + "_" + member)
+            lines += [f'    class {member_id}["{text(member)}"]{inside} {{', f"      <<{annotation}>>", "    }"]
+        lines.append("  }")
+    outside = {}
+    arrows = []
+    for aggregate in aggregates:
+        for ref in aggregate["references"]:
+            if ref["context"] == focus:
+                other = next(item for item in aggregates if item["name"] == ref["name"])
+                target = class_id(focus, other["name"] + "_" + other["root"])
+            else:
+                target = "ext_" + class_id(ref["context"], ref["name"])
+                outside[target] = ref
+            arrows.append(f"  {class_id(focus, aggregate['name'] + '_' + aggregate['root'])} --> {target}")
+    for target, ref in outside.items():
+        # The context's name goes over the aggregate's, unless it is the same name, which once is enough.
+        label = f'  class {target}["{text(ref["name"])}"]:::muted'
+        if names[ref["context"]] == ref["name"]:
+            lines.append(label)
+        else:
+            lines += [f"{label} {{", f"    <<{text(names[ref['context']])}>>", "  }"]
+    lines += arrows
+    if box_style:
+        lines.append(f"  classDef inside {box_style}")
+    if outside:
+        lines.append(f"  classDef muted {graph.classdef(MUTED_STYLE, {})}")
+    return "\n".join(lines) + "\n"
 
 
 def role_notes(edges, end):
@@ -799,8 +981,8 @@ def build(data, config, out):
         desc = view.get("description") or describe(data, view)
         about = item_description(data, view)
         interactive = "index.html" + (f"#focus={view['focus']}" if view.get("focus") else "")
-        if view["level"] == "domain":
-            interactive += ("&" if view.get("focus") else "#") + "level=domain"
+        if view["level"] != "context":
+            interactive += ("&" if view.get("focus") else "#") + f"level={view['level']}"
 
         def html_link(item_id):
             return (f"<a href='{item_id}.html'>{html.escape(names[item_id])}</a>" if item_id in pages
@@ -815,8 +997,27 @@ def build(data, config, out):
                                                       if item_ids else "<p class='hint'>None</p>") + "</div>"
             for heading, item_ids, notes in fact_sections(data, view))
         source = render(data, cfg, view, links=html_links)
+        aggregates = aggregates_of(data, view.get("focus"))
+        class_source = aggregate_diagram(data, cfg, view.get("focus"), view.get("direction"))
+
+        aggregates_html = ""
+        if aggregates:
+            blocks = ""
+            for aggregate in aggregates:
+                about_aggregate = (f'<p class="hint">{html.escape(aggregate["description"])}</p>'
+                                   if aggregate["description"] else "")
+                rows_html = "".join(f"<li><b>{label}:</b> {value}</li>" for label, value in
+                                    aggregate_rows(data, aggregate, html.escape,
+                                                 partial(reference_text, view.get("focus"), names, html_link, html.escape)))
+                blocks += f"<div><h3>{html.escape(aggregate['name'])}</h3>{about_aggregate}<ul>{rows_html}</ul></div>"
+            aggregates_html = (f"<h2>Aggregates</h2><div class='cols'>{blocks}</div>"
+                               '<div id="aggregates-diagram">Loading diagram...</div>'
+                               f"<details><summary>Aggregates class diagram source</summary>"
+                               f"<pre>{html.escape(class_source)}</pre></details>"
+                               f'<script type="text/plain" id="aggregates-source">{class_source}</script>')
         body = DIAGRAM.format(
             relations=f"<div class='cols'>{cols}</div>" if cols else "",
+            aggregates=aggregates_html,
             escaped=html.escape(source),
             raw=source,
             elk=ELK if uses_elk(cfg) else "",
@@ -825,6 +1026,7 @@ def build(data, config, out):
         body = body.replace("__DOWNLOAD__", textwrap.indent(DOWNLOAD_JS, "  "))
         body = body.replace("__ARROWHEADS__", textwrap.indent(ARROWHEADS_JS, "  "))
         body = body.replace("__ROLES__", textwrap.indent(ROLES_JS, "  "))
+        body = body.replace("__CLASSES__", CLASSES if aggregates else "")
         rows = attribute_rows(data, view.get("focus"))
         about_html = f'<p class="hint">{html.escape(about)}</p>' if about else ""
         about_html += "".join(f'<p class="hint"><b>{html.escape(label)}:</b> {html.escape(text)}</p>'
@@ -846,6 +1048,18 @@ def build(data, config, out):
         md += [desc, "", "```mermaid", render(data, cfg, view, markdown=True).rstrip(), "```", ""]
         for heading, item_ids, notes in fact_sections(data, view):
             md += [f"**{heading}:** " + (", ".join(md_link(item_id, notes) for item_id in item_ids) or "None"), ""]
+        if aggregates:
+            md += ["## Aggregates", ""]
+            for aggregate in aggregates:
+                md += [f"### {aggregate['name']}", ""]
+                if aggregate["description"]:
+                    md += [aggregate["description"], ""]
+                md += [f"- **{label}:** {value}" for label, value in
+                       aggregate_rows(data, aggregate, str,
+                                                 partial(reference_text, view.get("focus"), names,
+                                                         partial(md_link, notes={}), str))] + [""]
+            md += ["```mermaid", aggregate_diagram(data, cfg, view["focus"], view.get("direction"),
+                                                    markdown=True).rstrip(), "```", ""]
         (md_dir / f"{view['id']}.md").write_text("\n".join(md))
 
         index_rows.append(("Pages" if view.get("page") else "Views", title, view["id"]))

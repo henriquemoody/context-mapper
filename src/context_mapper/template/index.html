@@ -17,6 +17,7 @@
         <select id="level">
           <option value="context">Bounded contexts</option>
           <option value="domain">Domains</option>
+          <option value="aggregate">Aggregates</option>
         </select>
       </label>
       <label
@@ -66,10 +67,12 @@
             control for every domain and cluster: a multi-context domain or a
             cluster can be expanded (the boxes inside it), collapsed (one box),
             or hidden — a dashed underline marks a cluster's — and a one-box
-            domain hides with a toggle. Focusing on a domain or a cluster lists
-            what it holds, and each item there can be hidden too. Click a box to
-            focus on it. Download saves the diagram you are looking at as a PNG
-            or SVG image.
+            domain hides with a toggle. The Aggregates level draws each bounded
+            context around its aggregates, and an arrow between two aggregates
+            is a reference. Focusing on a domain or a cluster lists what it
+            holds, and each item there can be hidden too. Click a box to focus
+            on it. Download saves the diagram you are looking at as a PNG or SVG
+            image.
           </p>
         </div>
       </aside>

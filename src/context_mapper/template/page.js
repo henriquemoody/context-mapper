@@ -43,6 +43,7 @@ var DEFAULT_HIDE = /* @__PURE__ */ new Set([
 ]);
 
 // src/context_mapper/template/core/state.js
+var LEVELS = ["context", "domain", "aggregate"];
 var clampDepth = (raw) => Math.max(1, Math.trunc(Number(raw) || 1));
 function hashFor(s2) {
   const p2 = new URLSearchParams();
@@ -86,7 +87,7 @@ function parseHash(hash) {
     if (hide.has(id)) display[id] = "hidden";
   });
   return {
-    level: p2.get("level") === "domain" ? "domain" : "context",
+    level: LEVELS.includes(p2.get("level")) ? p2.get("level") : "context",
     focus: p2.has("focus") && (owner[p2.get("focus")] || clusterById[p2.get("focus")]) ? p2.get("focus") : "",
     depth: clampDepth(p2.get("depth")),
     dir: p2.get("dir") || "both",
@@ -293,6 +294,17 @@ var itemOfNode = {};
 [...MODEL.contexts, ...MODEL.domains, ...MODEL.clusters].forEach(
   (item) => itemOfNode[nodeId(item.id)] = item
 );
+var aggregateNode = (contextId, name) => `${nodeId(contextId)}__${nodeId(name)}`;
+var aggregateOfNode = {};
+MODEL.contexts.forEach(
+  (c2) => (c2.aggregates || []).forEach(
+    (a2) => aggregateOfNode[aggregateNode(c2.id, a2.name)] = {
+      ...a2,
+      context: c2.id
+    }
+  )
+);
+var AGGREGATE_STYLE = "fill:#ffffff,stroke:#6b6b6b,color:#1a1a1a";
 var mergeStyles = (...styles) => {
   const merged = /* @__PURE__ */ new Map();
   styles.forEach(
@@ -305,8 +317,10 @@ var mergeStyles = (...styles) => {
 };
 var styleOf = (kind) => mergeStyles(...kind.split("+").map((k2) => DIAGRAM.edge_styles[k2] || ""));
 function mermaidSource(s2) {
-  const g2 = GRAPHS[s2.level];
-  let starts = focusSet(s2.level, s2.focus);
+  const showAggregates = s2.level === "aggregate";
+  const level = showAggregates ? "context" : s2.level;
+  const g2 = GRAPHS[level];
+  let starts = focusSet(level, s2.focus);
   const containers = [
     ...MODEL.domains.filter((d2) => !d2.single),
     ...MODEL.clusters
@@ -322,14 +336,14 @@ function mermaidSource(s2) {
   if (s2.focus) {
     starts = new Set([...starts].filter((id) => !hidden.has(id)));
     starts.add(s2.focus);
-    if (s2.level === "domain" && owner[s2.focus]) starts.add(owner[s2.focus]);
+    if (level === "domain" && owner[s2.focus]) starts.add(owner[s2.focus]);
   }
   const visible = walk(g2, starts, s2.depth, s2.dir, hidden);
   const kidsOf = {};
   Object.entries(g2.childOf).forEach(
     ([c2, p2]) => (kidsOf[p2] = kidsOf[p2] || []).push(c2)
   );
-  const held = (d2) => (s2.level === "context" ? (d2.contexts || []).filter((c2) => c2 !== d2.id) : []).concat((d2.members || []).filter((m2) => m2 !== d2.id));
+  const held = (d2) => (level === "context" ? (d2.contexts || []).filter((c2) => c2 !== d2.id) : []).concat((d2.members || []).filter((m2) => m2 !== d2.id));
   const folded = {};
   const fold = (cid, into) => (kidsOf[cid] || []).forEach((child) => {
     if (starts.has(child)) return;
@@ -355,15 +369,36 @@ function mermaidSource(s2) {
     ([id, t2]) => lines.push(`  classDef ${id} ${t2.mermaid_style}`)
   );
   lines.push(`  classDef focus ${DIAGRAM.focus_style}`);
+  if (showAggregates) lines.push(`  classDef aggregate ${AGGREGATE_STYLE}`);
   const plainNodes = [];
   const drawn = /* @__PURE__ */ new Set();
+  const aggregateNodes = {};
   const box = (id, label, type, indent) => {
     plainNodes.push(id);
     drawn.add(id);
     return `${indent}${nodeId(id)}["${label}"]${type ? ":::" + type : ""}`;
   };
+  const drawAggregates = (item, indent) => {
+    const out = [`${indent}subgraph ${nodeId(item.id)}["${quote(item.name)}"]`];
+    contextById[item.id].aggregates.forEach((a2) => {
+      const node = aggregateNode(item.id, a2.name);
+      aggregateNodes[node] = item.id;
+      out.push(`${indent}  ${node}["${quote(a2.name)}"]:::aggregate`);
+    });
+    out.push(`${indent}end`);
+    drawn.add(item.id);
+    let style = mergeStyles(
+      MODEL.types[item.type]?.mermaid_style,
+      item.mermaid_style
+    );
+    if (item.id === s2.focus) style = mergeStyles(style, DIAGRAM.focus_style);
+    out.push(`${indent}style ${nodeId(item.id)} ${style}`);
+    return out;
+  };
   const drawChild = (c2, indent) => {
     if (contextById[c2] && !domainById[c2]) {
+      if (showAggregates && contextById[c2].aggregates)
+        return drawAggregates(contextById[c2], indent);
       const out = [
         box(c2, quote(contextById[c2].name), contextById[c2].type, indent)
       ];
@@ -406,6 +441,8 @@ function mermaidSource(s2) {
         return out2;
       }
     }
+    if (showAggregates && d2.single && contextById[d2.id].aggregates)
+      return drawAggregates(d2, indent);
     let label = quote(d2.name);
     if (DIAGRAM.child_labels && !d2.single) {
       const named = (d2.contexts || []).filter((c2) => c2 !== d2.id && !hidden.has(c2)).map(nameOf).concat((d2.members || []).filter((m2) => folded[m2] === d2.id).map(nameOf)).sort();
@@ -483,12 +520,35 @@ function mermaidSource(s2) {
     else loneLinks.push(entry);
   });
   const byStyle = {};
-  const tips = [...merged.values()].map(
-    (entry) => entry.via.filter((e2) => e2.comment || roleText(e2)).map(tipEntry).concat(entry.kernel ? entry.kernel.via.map(linkTipEntry) : [])
-  );
+  const tips = [];
+  const dependencyTips = (entry) => entry.via.filter((e2) => e2.comment || roleText(e2)).map(tipEntry).concat(entry.kernel ? entry.kernel.via.map(linkTipEntry) : []);
   const roleMarks = [];
   const kernelMarks = [];
-  [...merged.values()].forEach((entry, i2) => {
+  const references = [];
+  const carried = {};
+  if (showAggregates) {
+    MODEL.contexts.forEach(
+      (c2) => (c2.aggregates || []).forEach(
+        (a2) => a2.references.forEach((ref) => {
+          const from = aggregateNode(c2.id, a2.name), to = aggregateNode(ref.context, ref.name);
+          if (aggregateNodes[from] && aggregateNodes[to])
+            references.push({
+              from,
+              to,
+              fromContext: c2.id,
+              toContext: ref.context,
+              aggregate: a2,
+              ref
+            });
+        })
+      )
+    );
+    references.forEach((r2, position) => {
+      const key = r2.fromContext + "|" + r2.toContext;
+      if (merged.has(key) && !(key in carried)) carried[key] = position;
+    });
+  }
+  const drawDependency = (i2, from, to, entry) => {
     const style = entry.styles.has("solid") ? "solid" : [...entry.styles].sort()[0];
     let up = [], down = [];
     if (entry.roles.size === 1) {
@@ -504,10 +564,16 @@ function mermaidSource(s2) {
       roleMarks.push(`${i2}=${up.join(",")}>${down.join(",")}`);
     const label = labelLines.length ? `|"${quote(labelLines.join("<br/>"))}"|` : "";
     lines.push(
-      `  ${nodeId(entry.a)} ${style === "dotted" ? "-.->" : "-->"}${label} ${nodeId(entry.b)}`
+      `  ${nodeId(from)} ${style === "dotted" ? "-.->" : "-->"}${label} ${nodeId(to)}`
     );
     const key = entry.kernel ? `${style}+sharedKernel` : style;
     (byStyle[key] = byStyle[key] || []).push(i2);
+  };
+  [...merged].forEach(([key, entry]) => {
+    if (key in carried) return;
+    const i2 = tips.length;
+    tips.push(dependencyTips(entry));
+    drawDependency(i2, entry.a, entry.b, entry);
   });
   const violations = /* @__PURE__ */ new Map();
   g2.violations.forEach((r2) => {
@@ -535,6 +601,20 @@ function mermaidSource(s2) {
     (byStyle[entry.kind] = byStyle[entry.kind] || []).push(tips.length);
     tips.push(entry.via.map(linkTipEntry));
   });
+  references.forEach((r2, position) => {
+    const key = r2.fromContext + "|" + r2.toContext;
+    const own = referenceTipEntry(r2.fromContext, r2.aggregate, r2.ref);
+    if (carried[key] === position) {
+      const entry = merged.get(key);
+      const i2 = tips.length;
+      tips.push([own, ...dependencyTips(entry)]);
+      drawDependency(i2, r2.from, r2.to, entry);
+    } else {
+      lines.push(`  ${r2.from} --> ${r2.to}`);
+      (byStyle.solid = byStyle.solid || []).push(tips.length);
+      tips.push([own]);
+    }
+  });
   Object.entries(byStyle).forEach(
     ([style, indexes]) => lines.push(
       `  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${styleOf(style)}`.trimEnd()
@@ -544,7 +624,7 @@ function mermaidSource(s2) {
     lines.push(`  %% violations: ${byStyle.violation.join(",")}`);
   if (roleMarks.length) lines.push(`  %% roles: ${roleMarks.join(";")}`);
   if (kernelMarks.length) lines.push(`  %% kernels: ${kernelMarks.join(",")}`);
-  const highlight = s2.level === "domain" && owner[s2.focus] ? owner[s2.focus] : s2.focus;
+  const highlight = level === "domain" && owner[s2.focus] ? owner[s2.focus] : s2.focus;
   plainNodes.forEach((n2) => {
     if (n2 === highlight) lines.push(`  class ${nodeId(n2)} focus`);
   });
@@ -552,12 +632,23 @@ function mermaidSource(s2) {
     if (owner[n2] || clusterById[n2])
       lines.push(`  click ${nodeId(n2)} href "${hashFor({ ...s2, focus: n2 })}"`);
   });
+  Object.entries(aggregateNodes).forEach(
+    ([node, contextId]) => lines.push(`  click ${node} href "${hashFor({ ...s2, focus: contextId })}"`)
+  );
   return { source: lines.join("\n") + "\n", visible, tips };
 }
 var violationTipEntry = (dep) => ({
   title: `${nameOf(dep.from)} \u2192 ${nameOf(dep.to)} (violation)`,
   text: dep.comment || "Against the direction of the dependencies."
 });
+var referenceTipEntry = (contextId, aggregate, ref) => {
+  const entry = {
+    title: `${aggregate.name} \u2192 ${ref.name} (reference)`
+  };
+  if (ref.context !== contextId)
+    entry.text = `${ref.name} is in ${nameOf(ref.context)}.`;
+  return entry;
+};
 var linkTipEntry = (link2) => {
   const entry = {
     title: `${nameOf(link2.a)} \u2194 ${nameOf(link2.b)} (${MODEL.symmetric_kinds[link2.kind].name})`
@@ -580,8 +671,34 @@ var boxTipEntries = (item) => {
   if (!item) return [];
   const entries = item.description ? [{ kind: "desc", title: item.name, text: item.description }] : [];
   if (!DIAGRAM.attribute_tooltips) return entries;
+  const aggregates = contextById[item.id]?.aggregates || [];
   return entries.concat(
     attributeEntries(item).map(({ label, value }) => ({
+      kind: "attr",
+      title: label,
+      text: attributeText(value)
+    }))
+  ).concat(
+    aggregates.length ? [
+      {
+        kind: "attr",
+        title: "Aggregates",
+        text: aggregates.map((a2) => a2.name).join(", ")
+      }
+    ] : []
+  );
+};
+var aggregateTipEntries = (aggregate) => {
+  const entries = aggregate.description ? [{ kind: "desc", title: aggregate.name, text: aggregate.description }] : [];
+  if (!DIAGRAM.attribute_tooltips) return entries;
+  const names2 = (items) => items.map((m2) => m2.name).join(", ");
+  return entries.concat(
+    [
+      ["Root", aggregate.root],
+      ["Entities", names2(aggregate.entities)],
+      ["Value objects", names2(aggregate.valueObjects)]
+    ].filter(([, text]) => text).map(([title, text]) => ({ kind: "attr", title, text })),
+    attributeEntries(aggregate).map(({ label, value }) => ({
       kind: "attr",
       title: label,
       text: attributeText(value)
@@ -1011,10 +1128,41 @@ var attributeRows = (item) => fe`<ul>
   ({ label, value }) => fe`<li class="hint"><b>${label}:</b> ${attributeValue(value)}</li>`
 )}
   </ul>`;
-var attributeSection = (item) => {
-  const rows = attributeRows(item);
-  return rows ? fe`<h3>Attributes</h3>
-        ${rows}` : "";
+var attributeSection = (item) => attributeEntries(item).length ? fe`<h3>Attributes</h3>
+        ${attributeRows(item)}` : "";
+
+// src/context_mapper/template/components/aggregates.js
+var members = (items) => items.map((m2) => m2.description ? `${m2.name} (${m2.description})` : m2.name).join(", ");
+var reference = (contextId, ref) => {
+  if (ref.context === contextId) return ref.name;
+  const link2 = fe`<a data-go="${ref.context}">${nameOf(ref.context)}</a>`;
+  return nameOf(ref.context) === ref.name ? link2 : fe`${link2} / ${ref.name}`;
+};
+var referenceList = (contextId, refs) => refs.map(
+  (ref, i2) => i2 ? fe`, ${reference(contextId, ref)}` : reference(contextId, ref)
+);
+var aggregateBlock = (contextId, a2) => {
+  const rows = [["Root", a2.root]];
+  if (a2.entities.length) rows.push(["Entities", members(a2.entities)]);
+  if (a2.valueObjects.length)
+    rows.push(["Value objects", members(a2.valueObjects)]);
+  if (a2.references.length)
+    rows.push(["References", referenceList(contextId, a2.references)]);
+  attributeEntries(a2).forEach(
+    ({ label, value }) => rows.push([label, attributeValue(value)])
+  );
+  return fe`<h4>${a2.name}</h4>
+    ${a2.description ? fe`<p class="hint">${a2.description}</p>` : null}
+    <ul>
+      ${rows.map(
+    ([label, value]) => fe`<li class="hint"><b>${label}:</b> ${value}</li>`
+  )}
+    </ul>`;
+};
+var aggregateSection = (item) => {
+  const aggregates = contextById[item.id]?.aggregates;
+  return aggregates ? fe`<h3>Aggregates</h3>
+        ${aggregates.map((a2) => aggregateBlock(item.id, a2))}` : "";
 };
 
 // src/context_mapper/template/dom/query.js
@@ -1067,7 +1215,7 @@ var Panel = ({ s: s2, visible }) => {
   });
   return html`<h2>${item.name}</h2>${chip(item.type)} <span class="hint">${domainById[id] ? "Domain" : "Bounded context"}</span>
       <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>
-      ${item.description ? html`<p class="hint">${item.description}</p>` : null}${attributeSection(item)}
+      ${item.description ? html`<p class="hint">${item.description}</p>` : null}${attributeSection(item)}${aggregateSection(item)}
       ${isMulti(id) ? html`<h3>Bounded contexts</h3><ul>${domainById[id].contexts.map(itemWith)}</ul>` : null}
       ${!isMulti(id) && isMulti(parent) ? html`<h3>Domain</h3>${list([parent])}` : null}
       <h3>Depends on (${r2.ups.length})</h3>${dependencyList(r2.ups, "to")}
@@ -1202,7 +1350,7 @@ function bindEdgeHover(svg, tips) {
 }
 function bindBoxTips(svg) {
   const boxes = Object.entries(boxMapOf(svg)).filter(
-    ([, g2]) => !g2.classList.contains("cluster")
+    ([id, g2]) => !g2.classList.contains("cluster") || itemOfNode[id] && contextById[itemOfNode[id].id]
   );
   const innermost = (target) => {
     let best = null;
@@ -1213,7 +1361,8 @@ function bindBoxTips(svg) {
   };
   svg.addEventListener("mousemove", (ev) => {
     if (ev.target.closest(".edge-hit")) return;
-    const entries = boxTipEntries(itemOfNode[innermost(ev.target) || ""]);
+    const id = innermost(ev.target) || "";
+    const entries = aggregateOfNode[id] ? aggregateTipEntries(aggregateOfNode[id]) : boxTipEntries(itemOfNode[id]);
     if (entries.length) showTip(entries, ev);
     else hideTip();
   });
@@ -1660,7 +1809,7 @@ $2("download").addEventListener("click", () => {
   const svg = $2("graph").querySelector("svg");
   if (!svg) return;
   const s2 = state();
-  const name = ["context-map", s2.focus, s2.level === "domain" ? "domain" : null].filter(Boolean).join("-");
+  const name = ["context-map", s2.focus, s2.level === "context" ? null : s2.level].filter(Boolean).join("-");
   downloadDiagram(svg, $2("image").value, name);
 });
 readHash();

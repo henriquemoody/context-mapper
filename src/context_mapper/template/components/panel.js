@@ -10,6 +10,7 @@ import {
 import { GRAPHS, relationEdges, linkRelations } from "../core/graph.js";
 import { roleText } from "../core/roles.js";
 import { attributeSection } from "./attributes.js";
+import { aggregateSection } from "./aggregates.js";
 import { $ } from "../dom/query.js";
 // preact's runtime: the tagged-template html and the render that puts a tree
 // on the page. It comes in as a namespace so the bundled script keeps the
@@ -84,7 +85,7 @@ const Panel = ({ s, visible }) => {
   });
   return html`<h2>${item.name}</h2>${chip(item.type)} <span class="hint">${domainById[id] ? "Domain" : "Bounded context"}</span>
       <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>
-      ${item.description ? html`<p class="hint">${item.description}</p>` : null}${attributeSection(item)}
+      ${item.description ? html`<p class="hint">${item.description}</p>` : null}${attributeSection(item)}${aggregateSection(item)}
       ${isMulti(id) ? html`<h3>Bounded contexts</h3><ul>${domainById[id].contexts.map(itemWith)}</ul>` : null}
       ${!isMulti(id) && isMulti(parent) ? html`<h3>Domain</h3>${list([parent])}` : null}
       <h3>Depends on (${r.ups.length})</h3>${dependencyList(r.ups, "to")}

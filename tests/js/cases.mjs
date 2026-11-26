@@ -258,6 +258,11 @@ add("state", "hash-focused", (api) =>
 );
 add("state", "hash-domain", (api) => api.hashFor(st("domain", "orders")));
 add("state", "hash-depth", (api) => api.hashFor(st("context", "", 3)));
+// The aggregate level travels in the hash like the domain level does.
+add("state", "hash-aggregate", (api) => api.hashFor(st("aggregate", "")));
+add("state", "hash-aggregate-focused", (api) =>
+  api.hashFor(st("aggregate", "checkout", 2)),
+);
 // A display only travels when it deviates from the default: foundations
 // defaults to collapsed, so expanded goes in the URL.
 add("state", "hash-display-deviation", (api) =>
@@ -423,6 +428,61 @@ add("state", "clamp-depth", (api) =>
       st("context", "fulfillment", 1, "both", { foundations: "expanded" }),
     ),
   );
+  // The aggregate level walks the context graph and draws the contexts it
+  // reached around their aggregates: the arrows between contexts keep the
+  // indexes they have at the context level, and the references between
+  // aggregates come after all of them.
+  add("diagram", "aggregates-whole-system", (api) =>
+    d(api)(st("aggregate", "", 1, "both", { foundations: "expanded" })),
+  );
+  add("diagram", "aggregates-focus-checkout", (api) =>
+    d(api)(st("aggregate", "checkout", 1, "both", { foundations: "expanded" })),
+  );
+  add("diagram", "aggregates-focus-checkout-collapsed-foundations", (api) =>
+    d(api)(st("aggregate", "checkout")),
+  );
+  add("diagram", "aggregates-focus-fulfillment", (api) =>
+    d(api)(
+      st("aggregate", "fulfillment", 1, "both", { foundations: "expanded" }),
+    ),
+  );
+  add("diagram", "aggregates-focus-crm-d99", (api) =>
+    d(api)(st("aggregate", "crm", 99, "both", { foundations: "expanded" })),
+  );
+  // A collapsed domain is one box, with no aggregates drawn inside it.
+  add("diagram", "aggregates-collapsed-orders", (api) =>
+    d(api)(
+      st("aggregate", "", 1, "both", {
+        foundations: "expanded",
+        orders: "collapsed",
+      }),
+    ),
+  );
+  add("diagram", "aggregates-contents", (api) =>
+    d(api)(
+      st("aggregate", "", 1, "both", {
+        foundations: "contents",
+        catalog: "contents",
+      }),
+    ),
+  );
+  add("diagram", "aggregates-hide-checkout", (api) =>
+    d(api)(
+      st("aggregate", "payments", 99, "both", { foundations: "expanded" }, [
+        "checkout",
+      ]),
+    ),
+  );
+  add("diagram", "aggregates-labels-off", (api) => {
+    api.DIAGRAM.relationship_labels = false;
+    try {
+      return d(api)(
+        st("aggregate", "checkout", 1, "both", { foundations: "expanded" }),
+      );
+    } finally {
+      api.DIAGRAM.relationship_labels = true;
+    }
+  });
   add("diagram", "child-labels-off", (api) => {
     api.DIAGRAM.child_labels = false;
     try {
@@ -518,6 +578,45 @@ add("attributes", "link-tip-entry", (api) => ({
   }),
 }));
 
+// A bounded context's tooltip lists the names of its aggregates after its
+// attributes; an aggregate's own tooltip is its description and what it holds.
+add("attributes", "aggregate-tips", (api) => {
+  const context = (id) => api.boxTipEntries(api.contextById[id]);
+  const aggregate = (id, name) =>
+    api.aggregateTipEntries(
+      api.contextById[id].aggregates.find((a) => a.name === name),
+    );
+  const off = (fn) => {
+    api.DIAGRAM.attribute_tooltips = false;
+    try {
+      return fn();
+    } finally {
+      api.DIAGRAM.attribute_tooltips = true;
+    }
+  };
+  return {
+    checkout: context("checkout"), // a description, attributes and aggregates
+    payments: context("payments"), // a single domain: the aggregates are its context's
+    search: context("search"),
+    "domain-with-contexts": api.boxTipEntries(api.domainById.orders),
+    "tooltips-off": off(() => context("checkout")),
+    order: aggregate("checkout", "Order"),
+    cart: aggregate("checkout", "Cart"),
+    account: aggregate("identity", "Account"),
+    "aggregate-tooltips-off": off(() => aggregate("checkout", "Order")),
+    "reference-same-context": api.referenceTipEntry(
+      "checkout",
+      { name: "Cart" },
+      { context: "checkout", name: "Order" },
+    ),
+    "reference-other-context": api.referenceTipEntry(
+      "checkout",
+      { name: "Cart" },
+      { context: "browsing", name: "Session" },
+    ),
+  };
+});
+
 add("attributes", "tip-entry", (api) =>
   api.tipEntry({
     from: "catalog",
@@ -547,6 +646,17 @@ add("attributes", "tip-entry", (api) =>
     render(api, st("context", "checkout", 1, "both", {}, ["payments"])),
   );
   add("panel", "focus-search", (api) => render(api, st("context", "search")));
+  // The aggregates of a bounded context: a single domain has them too, and a
+  // reference to another context's aggregate is a link that focuses it.
+  add("panel", "focus-payments-aggregates", (api) =>
+    render(api, st("aggregate", "payments")),
+  );
+  add("panel", "focus-crm-aggregates", (api) =>
+    render(api, st("aggregate", "crm")),
+  );
+  add("panel", "focus-domain-without-aggregates", (api) =>
+    render(api, st("aggregate", "orders")),
+  );
   add("panel", "focus-catalog-domain", (api) =>
     render(api, st("context", "catalog")),
   );

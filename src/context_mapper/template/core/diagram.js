@@ -22,6 +22,23 @@ export const itemOfNode = {};
 [...MODEL.contexts, ...MODEL.domains, ...MODEL.clusters].forEach(
   (item) => (itemOfNode[nodeId(item.id)] = item),
 );
+// The node of an aggregate's box at the aggregate level, as mermaid.py spells it.
+export const aggregateNode = (contextId, name) =>
+  `${nodeId(contextId)}__${nodeId(name)}`;
+// The aggregate behind each of those nodes, with the context it is in.
+export const aggregateOfNode = {};
+MODEL.contexts.forEach((c) =>
+  (c.aggregates || []).forEach(
+    (a) =>
+      (aggregateOfNode[aggregateNode(c.id, a.name)] = {
+        ...a,
+        context: c.id,
+      }),
+  ),
+);
+// At the aggregate level an aggregate is a white box inside its context, which
+// keeps the colors of its type.
+const AGGREGATE_STYLE = "fill:#ffffff,stroke:#6b6b6b,color:#1a1a1a";
 
 // Mermaid style strings (`key:value,key:value`) laid over each other: a later
 // one wins a key it sets, and the keys keep the order they first appeared in.
@@ -43,8 +60,12 @@ const styleOf = (kind) =>
   mergeStyles(...kind.split("+").map((k) => DIAGRAM.edge_styles[k] || ""));
 
 export function mermaidSource(s) {
-  const g = GRAPHS[s.level];
-  let starts = focusSet(s.level, s.focus);
+  // The aggregate level walks the graph of the context level, and then draws
+  // the contexts that were reached with their aggregates inside.
+  const showAggregates = s.level === "aggregate";
+  const level = showAggregates ? "context" : s.level;
+  const g = GRAPHS[level];
+  let starts = focusSet(level, s.focus);
   const containers = [
     ...MODEL.domains.filter((d) => !d.single),
     ...MODEL.clusters,
@@ -65,7 +86,7 @@ export function mermaidSource(s) {
   if (s.focus) {
     starts = new Set([...starts].filter((id) => !hidden.has(id)));
     starts.add(s.focus);
-    if (s.level === "domain" && owner[s.focus]) starts.add(owner[s.focus]);
+    if (level === "domain" && owner[s.focus]) starts.add(owner[s.focus]);
   }
   const visible = walk(g, starts, s.depth, s.dir, hidden);
 
@@ -74,7 +95,7 @@ export function mermaidSource(s) {
     (kidsOf[p] = kidsOf[p] || []).push(c),
   );
   const held = (d) =>
-    (s.level === "context"
+    (level === "context"
       ? (d.contexts || []).filter((c) => c !== d.id)
       : []
     ).concat((d.members || []).filter((m) => m !== d.id));
@@ -107,17 +128,43 @@ export function mermaidSource(s) {
     lines.push(`  classDef ${id} ${t.mermaid_style}`),
   );
   lines.push(`  classDef focus ${DIAGRAM.focus_style}`);
+  if (showAggregates) lines.push(`  classDef aggregate ${AGGREGATE_STYLE}`);
 
   const plainNodes = [];
   const drawn = new Set();
+  const aggregateNodes = {}; // the node of each aggregate box -> the context it is in
   const box = (id, label, type, indent) => {
     plainNodes.push(id);
     drawn.add(id);
     return `${indent}${nodeId(id)}["${label}"]${type ? ":::" + type : ""}`;
   };
 
+  // A bounded context with aggregates, at the aggregate level: a wrapper in
+  // the colors of its type, with a white box inside for each aggregate. It
+  // keeps the context's id, so the arrows that end at the context end at the
+  // wrapper.
+  const drawAggregates = (item, indent) => {
+    const out = [`${indent}subgraph ${nodeId(item.id)}["${quote(item.name)}"]`];
+    contextById[item.id].aggregates.forEach((a) => {
+      const node = aggregateNode(item.id, a.name);
+      aggregateNodes[node] = item.id;
+      out.push(`${indent}  ${node}["${quote(a.name)}"]:::aggregate`);
+    });
+    out.push(`${indent}end`);
+    drawn.add(item.id);
+    let style = mergeStyles(
+      MODEL.types[item.type]?.mermaid_style,
+      item.mermaid_style,
+    );
+    if (item.id === s.focus) style = mergeStyles(style, DIAGRAM.focus_style);
+    out.push(`${indent}style ${nodeId(item.id)} ${style}`);
+    return out;
+  };
+
   const drawChild = (c, indent) => {
     if (contextById[c] && !domainById[c]) {
+      if (showAggregates && contextById[c].aggregates)
+        return drawAggregates(contextById[c], indent);
       const out = [
         box(c, quote(contextById[c].name), contextById[c].type, indent),
       ];
@@ -175,6 +222,8 @@ export function mermaidSource(s) {
         return out;
       }
     }
+    if (showAggregates && d.single && contextById[d.id].aggregates)
+      return drawAggregates(d, indent);
     let label = quote(d.name);
     if (DIAGRAM.child_labels && !d.single) {
       const named = (d.contexts || [])
@@ -287,15 +336,52 @@ export function mermaidSource(s) {
   const byStyle = {};
   // What the tooltip of each arrow says, in the order the arrows are drawn:
   // its dependencies, and the shared kernel it carries.
-  const tips = [...merged.values()].map((entry) =>
+  const tips = [];
+  const dependencyTips = (entry) =>
     entry.via
       .filter((e) => e.comment || roleText(e))
       .map(tipEntry)
-      .concat(entry.kernel ? entry.kernel.via.map(linkTipEntry) : []),
-  );
+      .concat(entry.kernel ? entry.kernel.via.map(linkTipEntry) : []);
   const roleMarks = []; // `index=upstream>downstream`, for the page's script
   const kernelMarks = []; // the index of each edge that shares a kernel
-  [...merged.values()].forEach((entry, i) => {
+
+  // At the aggregate level, a reference is an arrow from the aggregate that
+  // holds it to the one it points at, the one that is upstream, like a
+  // dependency. Where a drawn reference runs between two contexts that depend
+  // on each other that way, it says the same thing as the arrow between their
+  // containers, so the dependency is drawn on the reference instead, with its
+  // style, role codes, shared kernel and tooltip, and the container arrow
+  // goes. When several references cover one dependency, the first one carries
+  // it: the one of the context that is first in the model, then its first
+  // aggregate, then its first reference.
+  const references = []; // { from, to, fromContext, toContext, aggregate, ref }
+  const carried = {}; // the pair of contexts of a dependency -> the position of the reference that carries it
+  if (showAggregates) {
+    MODEL.contexts.forEach((c) =>
+      (c.aggregates || []).forEach((a) =>
+        a.references.forEach((ref) => {
+          const from = aggregateNode(c.id, a.name),
+            to = aggregateNode(ref.context, ref.name);
+          if (aggregateNodes[from] && aggregateNodes[to])
+            references.push({
+              from,
+              to,
+              fromContext: c.id,
+              toContext: ref.context,
+              aggregate: a,
+              ref,
+            });
+        }),
+      ),
+    );
+    references.forEach((r, position) => {
+      const key = r.fromContext + "|" + r.toContext;
+      if (merged.has(key) && !(key in carried)) carried[key] = position;
+    });
+  }
+
+  // One arrow for a dependency, the shared kernel it carries, and the roles.
+  const drawDependency = (i, from, to, entry) => {
     const style = entry.styles.has("solid")
       ? "solid"
       : [...entry.styles].sort()[0];
@@ -318,10 +404,16 @@ export function mermaidSource(s) {
       ? `|"${quote(labelLines.join("<br/>"))}"|`
       : "";
     lines.push(
-      `  ${nodeId(entry.a)} ${style === "dotted" ? "-.->" : "-->"}${label} ${nodeId(entry.b)}`,
+      `  ${nodeId(from)} ${style === "dotted" ? "-.->" : "-->"}${label} ${nodeId(to)}`,
     );
     const key = entry.kernel ? `${style}+sharedKernel` : style;
     (byStyle[key] = byStyle[key] || []).push(i);
+  };
+  [...merged].forEach(([key, entry]) => {
+    if (key in carried) return;
+    const i = tips.length;
+    tips.push(dependencyTips(entry));
+    drawDependency(i, entry.a, entry.b, entry);
   });
   // A violation is drawn after the real dependencies, when both ends are
   // drawn. Folded into a collapsed box it can land on a pair that depends
@@ -358,6 +450,23 @@ export function mermaidSource(s) {
     (byStyle[entry.kind] = byStyle[entry.kind] || []).push(tips.length);
     tips.push(entry.via.map(linkTipEntry));
   });
+  // The references come last, so the arrows above keep their indexes:
+  // everything the page's script counts is where it says, and what a
+  // reference carries is counted at the reference.
+  references.forEach((r, position) => {
+    const key = r.fromContext + "|" + r.toContext;
+    const own = referenceTipEntry(r.fromContext, r.aggregate, r.ref);
+    if (carried[key] === position) {
+      const entry = merged.get(key);
+      const i = tips.length;
+      tips.push([own, ...dependencyTips(entry)]);
+      drawDependency(i, r.from, r.to, entry);
+    } else {
+      lines.push(`  ${r.from} --> ${r.to}`);
+      (byStyle.solid = byStyle.solid || []).push(tips.length);
+      tips.push([own]);
+    }
+  });
   Object.entries(byStyle).forEach(([style, indexes]) =>
     lines.push(
       `  linkStyle ${indexes.join(",")} interpolate ${DIAGRAM.curve} ${styleOf(style)}`.trimEnd(),
@@ -374,7 +483,7 @@ export function mermaidSource(s) {
   if (kernelMarks.length) lines.push(`  %% kernels: ${kernelMarks.join(",")}`);
 
   const highlight =
-    s.level === "domain" && owner[s.focus] ? owner[s.focus] : s.focus;
+    level === "domain" && owner[s.focus] ? owner[s.focus] : s.focus;
   plainNodes.forEach((n) => {
     if (n === highlight) lines.push(`  class ${nodeId(n)} focus`);
   });
@@ -383,6 +492,10 @@ export function mermaidSource(s) {
     if (owner[n] || clusterById[n])
       lines.push(`  click ${nodeId(n)} href "${hashFor({ ...s, focus: n })}"`);
   });
+  // An aggregate's box focuses on its context.
+  Object.entries(aggregateNodes).forEach(([node, contextId]) =>
+    lines.push(`  click ${node} href "${hashFor({ ...s, focus: contextId })}"`),
+  );
   return { source: lines.join("\n") + "\n", visible, tips };
 }
 
@@ -393,6 +506,17 @@ export const violationTipEntry = (dep) => ({
   title: `${nameOf(dep.from)} → ${nameOf(dep.to)} (violation)`,
   text: dep.comment || "Against the direction of the dependencies.",
 });
+
+// A reference between aggregates: who points at whom, and where the other one
+// is when it is in another context.
+export const referenceTipEntry = (contextId, aggregate, ref) => {
+  const entry = {
+    title: `${aggregate.name} → ${ref.name} (reference)`,
+  };
+  if (ref.context !== contextId)
+    entry.text = `${ref.name} is in ${nameOf(ref.context)}.`;
+  return entry;
+};
 
 // The roles, when it has any, spelled out with their display names.
 // A partnership or a shared kernel always has a tooltip: its kind, and the

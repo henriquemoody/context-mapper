@@ -17,6 +17,11 @@ first renders comes from `defaultDisplay` in the style file: a domain or a
 cluster can be expanded, collapsed, contents or hidden; a bounded context — a
 domain no context points at is one too — is one box with nothing inside, so it
 can only be expanded or hidden. No type name is special.
+
+A bounded context can also list its `aggregates`: names only, with a root, the
+entities and value objects it holds, and the aggregates it references. They are
+checked here and carried on the context; a third level of the page, `aggregate`,
+draws them inside their contexts, over the walk of the context level.
 """
 import datetime
 
@@ -239,6 +244,185 @@ def check_attributes(where, values, definitions, errors):
     return attributes
 
 
+# The keys an aggregate takes. An aggregate is a name, a root, the entities and value objects it holds, and
+# the aggregates it points at: names only, nothing about fields or behavior.
+AGGREGATE_KEYS = ("description", "root", "entities", "valueObjects", "references", "attributes")
+
+
+def check_members(where, key, value, errors):
+    """The `entities` or the `valueObjects` of an aggregate: a list of names, or a map from name to description
+    (a string, or nothing). Returns [{name, description}], in the order written; a bad value is an error and
+    comes back empty."""
+    here = f"{where}.{key}"
+    if isinstance(value, list):
+        pairs = [(item, None) for item in value]
+    elif isinstance(value, dict):
+        pairs = list(value.items())
+    else:
+        errors.append(f"{here}: must be a list of names, or a map from name to description")
+        return []
+    if not pairs:
+        errors.append(f"{here}: needs at least one name")
+        return []
+    members, clean = [], True
+    for name, description in pairs:
+        if not isinstance(name, str) or not name.strip():
+            errors.append(f"{here}: a name is a non-empty string, not {name!r}")
+            clean = False
+        elif description is not None and not isinstance(description, str):
+            errors.append(f"{here}.{name}: the description must be a string, or nothing")
+            clean = False
+        else:
+            members.append({"name": name, "description": description})
+    return members if clean else []
+
+
+def check_aggregates(where, raw, definitions, errors):
+    """Check the `aggregates` of one bounded context and return them, in the order written. Each is {name,
+    description, root, entities, valueObjects, references, attributes?}: the root is named once, apart from the
+    entities, and `references` still holds the strings as written — check_references resolves them once the
+    model is known. A bad part is an error and is left out, so one typo doesn't hide the rest."""
+    if not isinstance(raw, dict):
+        errors.append(f"{where}.aggregates: must be a map from aggregate name to what it holds")
+        return []
+    if not raw:
+        errors.append(f"{where}.aggregates is empty")
+        return []
+    aggregates = []
+    for name, spec in raw.items():
+        here = f"{where}.aggregates.{name}"
+        if not isinstance(name, str) or not name.strip():
+            errors.append(f"{where}.aggregates: the name of an aggregate is a non-empty string, not {name!r}")
+            continue
+        if "/" in name:
+            errors.append(f"{here}: an aggregate's name can't hold a '/', which a reference uses to say "
+                          "which context it is in")
+            continue
+        if spec is not None and not isinstance(spec, dict):
+            errors.append(f"{here}: must be a map, or nothing at all for an aggregate with only a name")
+            continue
+        spec = spec or {}
+        for key in spec:
+            if key not in AGGREGATE_KEYS:
+                errors.append(f"{here}.{key}: unknown option. Known: {', '.join(sorted(AGGREGATE_KEYS))}")
+        description = spec.get("description")
+        if description is not None and not isinstance(description, str):
+            errors.append(f"{here}.description: must be a string")
+            description = None
+        root = spec.get("root", name)
+        if not isinstance(root, str) or not root.strip():
+            errors.append(f"{here}.root: must be the name of the root entity")
+            root = name
+        entities = check_members(here, "entities", spec["entities"], errors) if "entities" in spec else []
+        value_objects = check_members(here, "valueObjects", spec["valueObjects"], errors) if "valueObjects" in spec else []
+        # A name is used once in an aggregate, whatever it is: the root counts as an entity.
+        used = {root: "the root"}
+        for kind, members in (("an entity", entities), ("a value object", value_objects)):
+            for member in members:
+                if member["name"] in used:
+                    before = used[member["name"]]
+                    hint = ", and the root is an entity already, so it is not listed with them" if before == "the root" else ""
+                    errors.append(f"{here}: '{member['name']}' is named more than once, as {before} and as {kind}{hint}")
+                else:
+                    used[member["name"]] = kind
+        references = []
+        if "references" in spec:
+            value = spec["references"]
+            if not isinstance(value, list):
+                errors.append(f"{here}.references: must be a list of aggregates, `Name` in this context "
+                              "or `context-id/Name` in another")
+            elif not value:
+                errors.append(f"{here}.references: needs at least one aggregate")
+            else:
+                for reference in value:
+                    if isinstance(reference, str) and reference.strip():
+                        references.append(reference)
+                    else:
+                        errors.append(f"{here}.references: a reference is a string, `Name` or `context-id/Name`, "
+                                      f"not {reference!r}")
+        aggregate = {"name": name, "description": description, "root": root, "entities": entities,
+                     "valueObjects": value_objects, "references": references}
+        attributes = check_attributes(here, spec.get("attributes"), definitions, errors)
+        if attributes:
+            aggregate["attributes"] = attributes
+        aggregates.append(aggregate)
+    return aggregates
+
+
+def check_references(contexts, domains, edges, violations, symmetric, errors):
+    """Resolve what each aggregate references, in place: from the strings as written to {context, name}, the
+    context always spelled out. A bare name is in the aggregate's own context, and `context/Name` may say so too.
+    A reference to another context's aggregate is allowed when that context is upstream of this one: this
+    context depends on it, directly or through a dependency written against either one's domain as a whole, or
+    the two share a kernel or a partnership. A violation is a known mistake, not a permission. A bad reference
+    is an error and is left out."""
+    aggregate_names = {context["id"]: [aggregate["name"] for aggregate in context.get("aggregates", [])]
+                       for context in contexts}
+    owned_by = {context["id"]: context["domain"] for context in contexts}
+    whole = {domain["id"] for domain in domains if not domain["single"]}
+
+    def sides(context_id):
+        """The ids a dependency can name for a context: itself, and its domain when that holds several."""
+        domain_id = owned_by[context_id]
+        return {context_id, domain_id} if domain_id in whole else {context_id}
+
+    def between(one, other, rules, keys):
+        """Whether a rule runs from `one` to `other`, either side given as a whole domain. Two contexts of
+        one domain count only for a rule that names them."""
+        if owned_by[one] == owned_by[other]:
+            starts, ends = {one}, {other}
+        else:
+            starts, ends = sides(one), sides(other)
+        return next((rule for rule in rules if rule[keys[0]] in starts and rule[keys[1]] in ends), None)
+
+    for context in contexts:
+        for aggregate in context.get("aggregates", []):
+            here = f"context-map.{context['id']}.aggregates.{aggregate['name']}.references"
+            resolved = []
+            for reference in aggregate["references"]:
+                target, _, name = reference.rpartition("/") if "/" in reference else (context["id"], "", reference)
+                if not target.strip() or not name.strip():
+                    errors.append(f"{here}: '{reference}' is not `Name` or `context-id/Name`")
+                    continue
+                if target not in aggregate_names:
+                    kind = " It is a domain: name one of its bounded contexts." if target in owned_by.values() else ""
+                    errors.append(f"{here}: unknown bounded context '{target}' in '{reference}'.{kind}")
+                    continue
+                if name not in aggregate_names[target]:
+                    known = ", ".join(aggregate_names[target]) or "none"
+                    errors.append(f"{here}: unknown aggregate '{name}' in '{target}'. Known: {known}")
+                    continue
+                if target == context["id"] and name == aggregate["name"]:
+                    errors.append(f"{here}: '{aggregate['name']}' references itself")
+                    continue
+                if target != context["id"]:
+                    mine = context["id"]
+                    reaches = (between(mine, target, edges, ("from", "to"))
+                               or between(mine, target, symmetric, ("a", "b"))
+                               or between(target, mine, symmetric, ("a", "b")))
+                    if not reaches:
+                        against = between(mine, target, violations, ("from", "to"))
+                        reverse = between(target, mine, edges, ("from", "to"))
+                        if against:
+                            why = (f"'{mine}' has only a violation against '{target}' (in "
+                                   f"context-map.{against['from']}.violations.{against['to']}), a known mistake and not a permission")
+                        elif reverse:
+                            why = (f"'{target}' depends on '{mine}', not the other way round, so '{mine}' is "
+                                   f"upstream and can't know what is downstream of it")
+                        else:
+                            why = f"'{mine}' doesn't depend on '{target}'"
+                        errors.append(f"{here}: '{reference}' is not allowed, {why}. A context references the "
+                                      f"aggregates of what it depends on, so list '{mine}' under "
+                                      f"context-map.{target}.downstreams, share a kernel or a partnership with it, "
+                                      "or drop the reference")
+                        continue
+                if any(item == {"context": target, "name": name} for item in resolved):
+                    errors.append(f"{here}: '{reference}' is listed more than once")
+                    continue
+                resolved.append({"context": target, "name": name})
+            aggregate["references"] = resolved
+
+
 def box_style(section, item_id, style, defaults, required, errors, allowed=None,
               display_states=DISPLAY_STATES):
     """Check one box style map and return its classDef string, or None when there is nothing to draw."""
@@ -344,6 +528,9 @@ def normalize(model, styles=None):
             if key in {info["key"] for info in SYMMETRIC_KINDS.values()}:
                 errors.append(f"context-map.yml: clusters.{cluster_id}.{key}: a cluster can't be paired, "
                               "nothing can depend on a cluster, and nothing can be partnered with one either")
+            elif key == "aggregates":
+                errors.append(f"context-map.yml: clusters.{cluster_id}.aggregates: a cluster has no aggregates, "
+                              "only a bounded context does")
             elif key not in ("name", "attributes"):
                 errors.append(f"context-map.yml: clusters.{cluster_id}.{key}: unknown option. "
                               f"Known: {', '.join(sorted(('name', 'attributes')))}")
@@ -387,7 +574,8 @@ def normalize(model, styles=None):
             continue
         if "domain" in entry:
             check_keys(entry_id, entry, ("name", "domain", "type", "cluster", "downstreams", "violations",
-                                         "partnerships", "sharedKernels", "description", "attributes"))
+                                         "partnerships", "sharedKernels", "description", "attributes",
+                                         "aggregates"))
             if entry.get("cluster") is not None:
                 errors.append(f"context-map.{entry_id}: a bounded context is inside its domain "
                               "already, it can't also be in a cluster")
@@ -397,7 +585,7 @@ def normalize(model, styles=None):
             raw_contexts.append((entry_id, entry))
         else:
             check_keys(entry_id, entry, ("name", "type", "cluster", "downstreams", "violations", "partnerships",
-                                         "sharedKernels", "description", "attributes"))
+                                         "sharedKernels", "description", "attributes", "aggregates"))
             check_cluster(entry_id, entry.get("cluster"))
             if entry.get("cluster") is not None:
                 member_of[entry_id] = entry["cluster"]
@@ -436,6 +624,11 @@ def normalize(model, styles=None):
                                                  attributes, errors)
             if context_attributes:
                 context_entry["attributes"] = context_attributes
+            if "aggregates" in context:
+                context_aggregates = check_aggregates(f"context-map.{context_id}", context["aggregates"],
+                                                      attributes, errors)
+                if context_aggregates:
+                    context_entry["aggregates"] = context_aggregates
             contexts.append(context_entry)
             context_ids.append(context_id)
             if "downstreams" in context:
@@ -459,6 +652,9 @@ def normalize(model, styles=None):
         if domain_attributes:
             domain_entry["attributes"] = domain_attributes
         domains.append(domain_entry)
+        if context_ids and "aggregates" in domain:
+            errors.append(f"context-map.{domain_id}.aggregates: a domain that holds bounded contexts has no "
+                          "aggregates of its own, put them on the bounded context that has them")
         if not context_ids:
             # The domain is its own bounded context, and it takes the attributes
             # the domain sets, as it takes its description.
@@ -467,6 +663,11 @@ def normalize(model, styles=None):
                               "defaultDisplay": domain_style.get("defaultDisplay")}
             if domain_attributes:
                 single_context["attributes"] = domain_attributes
+            if "aggregates" in domain:
+                domain_aggregates = check_aggregates(f"context-map.{domain_id}", domain["aggregates"],
+                                                     attributes, errors)
+                if domain_aggregates:
+                    single_context["aggregates"] = domain_aggregates
             contexts.append(single_context)
 
     clusters = []
@@ -608,6 +809,8 @@ def normalize(model, styles=None):
                               "them, so keep one of the two")
                 continue
             symmetric.append({"kind": kind, "a": owner, "b": target, "comment": comment})
+
+    check_references(contexts, domains, edges, violations, symmetric, errors)
 
     data = {"types": types, "clusters": clusters, "domains": domains, "contexts": contexts, "edges": edges,
             "violations": violations, "symmetric": symmetric, "attributes": attributes, "roles": ROLES,

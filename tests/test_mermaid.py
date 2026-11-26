@@ -1312,3 +1312,367 @@ def test_render_lays_the_kernel_style_over_a_dotted_arrow(tiny_model, tiny_style
     assert not any("---" in line for line in statements)
     assert "interpolate basis stroke:#00f,stroke-dasharray:3 3" in "\n".join(
         line for line in source.splitlines() if re.search(rf"linkStyle [\d,]*\b{index}\b", line))
+
+
+# --- aggregates -------------------------------------------------------------
+
+
+def aggregate_view(cfg, **extra):
+    return {**cfg["defaults"], "id": "aggregates", "level": "aggregate", **extra}
+
+
+def arrow_lines(source):
+    return [line.strip() for line in source.splitlines() if re.match(r"^\s{2}\w+ (-->|-\.->|<-->|---)", line)]
+
+
+def test_settings_accepts_the_aggregate_level_in_the_defaults_and_in_a_view():
+    cfg, errors = mermaid.settings({"defaults": {"level": "aggregate"}, "views": [{"id": "a", "level": "aggregate"}]})
+    assert errors == []
+    assert cfg["defaults"]["level"] == "aggregate"
+
+
+def test_settings_lists_the_aggregate_level_among_the_levels_it_rejects_a_wrong_one_for():
+    _, errors = mermaid.settings({"views": [{"id": "a", "level": "aggregates"}]})
+    assert any("mermaid.views.a.level must be one of aggregate, context, domain" in err for err in errors), errors
+    _, errors = mermaid.settings({"defaults": {"level": "tactical"}})
+    assert any("mermaid.defaults.level must be one of aggregate, context, domain" in err for err in errors), errors
+
+
+def test_render_draws_a_context_with_aggregates_as_a_container_around_a_box_for_each(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg, aggregate_view(example_cfg, focus="checkout"))
+    assert '    subgraph checkout["Checkout"]' in source
+    assert '      checkout__Order["Order"]:::aggregate' in source
+    assert '      checkout__Cart["Cart"]:::aggregate' in source
+    assert "classDef aggregate fill:#ffffff,stroke:#6b6b6b,color:#1a1a1a" in source
+    # The container is in the colors of its type, with the focus style when it is the focus.
+    assert ("    style checkout fill:#dedaff,stroke:#6631d7,color:#1a1a1a,stroke-width:4px,font-weight:bold"
+            in source)
+    # A domain still wraps its contexts.
+    assert '  subgraph orders["Orders"]' in source
+
+
+def test_render_draws_a_domain_no_context_points_at_as_a_container_around_its_aggregates(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg,
+                            aggregate_view(example_cfg, focus="payments", display={"foundations": "expanded"}))
+    assert '    subgraph payments["Payments"]' in source
+    assert '      payments__Payment["Payment"]:::aggregate' in source
+    assert "payments__Payment" not in source.split("classDef focus")[0]
+
+
+def test_render_draws_a_context_with_no_aggregates_as_a_plain_box(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg, aggregate_view(example_cfg, focus="search"))
+    assert '    search["Search"]:::core' in source
+    assert "subgraph search" not in source
+
+
+def test_render_draws_no_aggregates_in_a_collapsed_domain(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg,
+                            aggregate_view(example_cfg, display={"foundations": "expanded", "orders": "collapsed"}))
+    assert 'orders["<b>Orders</b><br/>Checkout, Fulfillment"]' in source
+    assert "checkout__Order" not in source
+
+
+def test_render_draws_no_arrow_between_containers_that_a_reference_covers(example_data, example_cfg):
+    kwargs = {"focus": "orders", "depth": 99, "display": {"foundations": "expanded"}}
+    contexts = arrow_lines(mermaid.render(example_data, example_cfg, {**example_cfg["defaults"], "id": "c", **kwargs}))
+    aggregates = arrow_lines(mermaid.render(example_data, example_cfg, aggregate_view(example_cfg, **kwargs)))
+    between_containers = [line for line in aggregates if not re.fullmatch(r"\w+__\w+ -.?-> \w+__\w+", line)]
+    # Checkout, Fulfillment and CRM depend on Identity and Payments, and their aggregates reference
+    # theirs: those dependencies are drawn on the references.
+    covered = ["checkout --> identity", "crm --> identity", "checkout --> payments", "fulfillment --> payments"]
+    assert all(line in contexts for line in covered)
+    assert not any(line in aggregates for line in covered)
+    # What no reference explains keeps its arrow, in the order it had: a dependency on a whole domain, the
+    # violation, the partnership and the shared kernel.
+    assert between_containers == [line for line in contexts if line not in covered]
+    assert "crm --> orders" in between_containers
+    assert "payments --- crm" in between_containers
+
+
+def test_render_draws_a_dependency_on_the_reference_that_covers_it(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg, aggregate_view(
+        example_cfg, focus="orders", depth=99, display={"foundations": "expanded"}))
+    arrows = arrow_lines(source)
+    roles = dict(mark.split("=") for mark in re.search(r"%% roles: (.+)", source).group(1).split(";"))
+    # The roles of the dependencies are marked at the references that carry them.
+    assert arrows[int(next(i for i, role in roles.items() if role == "OHS,PL>ACL"))] == \
+        "checkout__Order --> identity__Account"
+    assert arrows[int(next(i for i, role in roles.items() if role == "S>C"))] == \
+        "checkout__Order --> payments__Payment"
+    # The one that stays between containers is marked there.
+    assert arrows[int(next(i for i, role in roles.items() if role == ">CF"))] == "crm --> orders"
+    # A shared kernel beside a dependency rides on the reference too. A kernel with no dependency stays a line.
+    kernels = [arrows[int(i)] for i in re.search(r"%% kernels: (.+)", source).group(1).split(",")]
+    assert kernels == ["payments --- crm", "fulfillment__Shipment --> payments__Payment"]
+    # Neither a partnership nor a kernel alone moves anything onto a reference.
+    assert "crm__Ticket --> payments__Payment" in arrows
+    assert "fulfillment__Return --> browsing__Session" in arrows
+
+
+def covering_model(references, **dependency):
+    """Alpha's aggregate `One` references what `references` says in Beta, which Alpha depends on."""
+    return {
+        "types": {"core": {"name": "Core"}},
+        "context-map": {
+            "alpha": {"name": "Alpha", "type": "core", "aggregates": {
+                "One": {"references": references[0]}, "Two": {"references": references[1]}}},
+            "beta": {"name": "Beta", "type": "core", "aggregates": {"Thing": None, "Other": None},
+                     "downstreams": {"alpha": dependency or None}},
+        },
+    }
+
+
+def render_aggregates(model, **view):
+    data, errors = graph.normalize(model, {"types": {"core": {"fill": "#dedaff", "stroke": "#6631d7"}}})
+    assert errors == []
+    cfg, _ = mermaid.settings({})
+    return mermaid.render(data, cfg, aggregate_view(cfg, **view))
+
+
+def test_render_draws_the_style_of_the_dependency_on_the_reference():
+    source = render_aggregates(covering_model([["beta/Thing"], ["beta/Other"]], style="dotted"))
+    arrows = arrow_lines(source)
+    assert arrows[0] == "alpha__One -.-> beta__Thing"
+    assert arrows[1] == "alpha__Two --> beta__Other"
+    assert "alpha -.-> beta" not in arrows
+    # Styled as a dotted dependency, apart from the plain reference.
+    assert "  linkStyle 0 interpolate basis" in source and "  linkStyle 1 interpolate basis" in source
+
+
+def test_render_lets_the_first_reference_carry_a_dependency_several_cover():
+    source = render_aggregates(covering_model([["beta/Other", "beta/Thing"], ["beta/Thing"]],
+                                              upstream=["Supplier"], downstream=["Customer"]))
+    arrows = arrow_lines(source)
+    assert arrows == ["alpha__One --> beta__Other", "alpha__One --> beta__Thing", "alpha__Two --> beta__Thing"]
+    assert "%% roles: 0=S>C" in source
+
+
+def test_render_keeps_the_arrow_between_containers_of_a_dependency_no_reference_explains():
+    # Nothing references Beta: Alpha's aggregates point at each other only.
+    uncovered = render_aggregates(covering_model([["Two"], ["One"]]))
+    assert arrow_lines(uncovered)[0] == "alpha --> beta"
+
+
+def test_render_keeps_the_arrow_of_a_dependency_whose_referenced_aggregate_is_not_drawn(example_data, example_cfg):
+    # Foundations is collapsed: Identity and Payments fold into it, and the aggregates in them aren't drawn.
+    arrows = arrow_lines(mermaid.render(example_data, example_cfg, aggregate_view(example_cfg, focus="checkout")))
+    assert 'checkout -->|"Identity, Payments"| foundations' in arrows
+    assert not any("identity__Account" in line for line in arrows)
+
+
+def test_render_puts_the_dependency_on_the_reference_in_the_markdown_too(example_data, example_cfg):
+    view = aggregate_view(example_cfg, focus="checkout", display={"foundations": "expanded"})
+    markdown = mermaid.render(example_data, example_cfg, view, markdown=True)
+    assert 'checkout__Order -->|"U: OHS, PL<br/>D: ACL"| identity__Account' in markdown
+    assert "checkout --> identity" not in markdown
+
+
+def test_render_draws_a_reference_from_the_aggregate_that_holds_it_to_the_one_it_points_at(example_data, example_cfg):
+    arrows = arrow_lines(mermaid.render(example_data, example_cfg, aggregate_view(
+        example_cfg, focus="orders", depth=99, display={"foundations": "expanded"})))
+    assert "checkout__Order --> identity__Account" in arrows
+    assert "checkout__Cart --> checkout__Order" in arrows
+    assert "checkout__Cart --> browsing__Session" in arrows  # a dependency on the Catalog domain as a whole
+    assert "fulfillment__Return --> browsing__Session" in arrows  # a partnership
+    assert "crm__Ticket --> payments__Payment" in arrows  # a shared kernel
+    assert "crm__Ticket --> checkout__Order" in arrows
+
+
+def test_render_draws_a_reference_only_when_both_aggregates_are_drawn(example_data, example_cfg):
+    # Foundations is collapsed by default, so the aggregates inside it aren't drawn.
+    arrows = arrow_lines(mermaid.render(example_data, example_cfg, aggregate_view(example_cfg, focus="checkout")))
+    assert not any("identity__Account" in line for line in arrows)
+    assert "checkout__Cart --> checkout__Order" in arrows
+
+
+def test_render_counts_every_arrow_once_in_the_link_styles(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg, aggregate_view(
+        example_cfg, focus="orders", depth=99, display={"foundations": "expanded"}))
+    styled = [int(i) for line in source.splitlines() if re.match(r"^\s*linkStyle ", line)
+              for i in line.split()[1].split(",")]
+    assert sorted(styled) == list(range(len(arrow_lines(source))))
+
+
+def test_render_links_an_aggregate_to_the_page_of_its_context(example_data, example_cfg):
+    view = aggregate_view(example_cfg, focus="checkout")
+    source = mermaid.render(example_data, example_cfg, view, links={"checkout": "checkout.html"})
+    assert '  click checkout__Order href "checkout.html"' in source
+    assert "click checkout__Order" not in mermaid.render(example_data, example_cfg, view)
+
+
+def test_render_keeps_the_roles_in_the_middle_of_the_arrow_in_the_markdown(example_data, example_cfg):
+    view = aggregate_view(example_cfg, focus="checkout", display={"foundations": "expanded"})
+    markdown = mermaid.render(example_data, example_cfg, view, markdown=True)
+    assert "U: OHS, PL<br/>D: ACL" in markdown
+    assert "%% roles" not in markdown
+    assert "%% kernels" not in markdown
+
+
+def test_render_without_the_aggregate_level_draws_no_aggregates(example_data, example_cfg):
+    source = mermaid.render(example_data, example_cfg, {**example_cfg["defaults"], "id": "c", "focus": "checkout"})
+    assert "checkout__Order" not in source
+    assert "classDef aggregate" not in source
+
+
+def test_describe_says_what_the_aggregate_level_shows(example_data, example_cfg):
+    description = mermaid.describe(example_data, aggregate_view(example_cfg, focus="checkout"))
+    assert "an arrow between two is a reference" in description
+
+
+def test_aggregate_diagram_is_a_class_diagram_with_a_namespace_for_each_aggregate(example_data, example_cfg):
+    source = mermaid.aggregate_diagram(example_data, example_cfg, "checkout")
+    lines = [line.strip() for line in source.splitlines()]
+    assert "classDiagram" in lines
+    assert "direction BT" in lines
+    assert "namespace Order {" in lines
+    assert "namespace Cart {" in lines
+    assert 'class checkout__Order_Order["Order"]:::inside {' in lines
+    assert 'class checkout__Order_OrderLine["OrderLine"]:::inside {' in lines
+    assert 'class checkout__Order_Money["Money"]:::inside {' in lines
+    for annotation in ("<<root>>", "<<entity>>", "<<value object>>"):
+        assert annotation in lines
+    # The configuration of the other diagrams, so the theme and the look carry over.
+    assert source.startswith("---\n")
+    assert '"look": "handDrawn"' in source
+
+
+def test_aggregate_diagram_draws_a_reference_between_the_root_classes(example_data, example_cfg):
+    lines = mermaid.aggregate_diagram(example_data, example_cfg, "checkout").splitlines()
+    assert "  checkout__Cart_Cart --> checkout__Order_Order" in lines
+    assert "  checkout__Order_Order --> ext_identity__Account" in lines
+
+
+def test_aggregate_diagram_draws_the_aggregates_of_other_contexts_outside_the_namespaces_and_muted(example_data, example_cfg):
+    source = mermaid.aggregate_diagram(example_data, example_cfg, "checkout")
+    lines = [line.strip() for line in source.splitlines()]
+    # Named for their context, and muted.
+    assert 'class ext_identity__Account["Account"]:::muted {' in lines
+    assert "<<Identity>>" in lines
+    assert 'class ext_browsing__Session["Session"]:::muted {' in lines
+    assert any(line.startswith("classDef muted fill:#f4f4f4") for line in lines)
+    namespaced = source[source.index("namespace Order"):source.index("class ext_identity__Account")]
+    assert "ext_" not in namespaced.replace("class ext_", "")
+
+
+def test_aggregate_diagram_takes_the_colors_of_the_type_of_the_context(example_data, example_cfg):
+    source = mermaid.aggregate_diagram(example_data, example_cfg, "checkout")
+    assert "classDef inside fill:#dedaff,stroke:#6631d7,color:#1a1a1a" in source
+    # A single domain's own entry carries the style of its box.
+    assert "classDef inside fill:#adf0c7,stroke:#067429,color:#1a1a1a" in mermaid.aggregate_diagram(
+        example_data, example_cfg, "payments")
+
+
+def test_aggregate_diagram_names_the_root_when_it_is_not_the_aggregate(example_data, example_cfg):
+    source = mermaid.aggregate_diagram(example_data, example_cfg, "browsing")
+    assert 'class browsing__Session_Visit["Visit"]:::inside {' in source
+    assert "browsing__Session_Visit --> " not in source  # no references
+
+
+def test_aggregate_diagram_has_nothing_for_a_context_without_aggregates(example_data, example_cfg):
+    assert mermaid.aggregate_diagram(example_data, example_cfg, "search") is None
+    assert mermaid.aggregate_diagram(example_data, example_cfg, "orders") is None
+    assert mermaid.aggregate_diagram(example_data, example_cfg, None) is None
+
+
+def test_aggregate_diagram_follows_the_direction_of_the_view(example_data, example_cfg):
+    assert "direction LR" in mermaid.aggregate_diagram(example_data, example_cfg, "checkout", direction="LR")
+
+
+def test_aggregate_diagram_uses_the_markdown_config_for_the_markdown(example_data, example_cfg):
+    source = mermaid.aggregate_diagram(example_data, example_cfg, "checkout", markdown=True)
+    assert '"layout": "dagre"' in source
+
+
+def test_build_writes_the_aggregates_and_their_class_diagram_into_the_page(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "checkout.html").read_text()
+    assert "<h2>Aggregates</h2>" in page
+    assert "<h3>Order</h3>" in page
+    assert '<p class="hint">A cart that was paid for.</p>' in page
+    assert "<li><b>Root:</b> Order</li>" in page
+    assert "<li><b>Entities:</b> OrderLine</li>" in page
+    assert "<li><b>Value objects:</b> Money, Address</li>" in page
+    assert "<li><b>Entities:</b> CartLine (One product, and how many of it.), Coupon</li>" in page
+    # A reference to another context's aggregate links to its page.
+    assert "<a href='identity.html'>Identity</a> / Account" in page
+    # A reference to an aggregate of the context itself is its bare name.
+    assert "<li><b>References:</b> Order, <a href='browsing.html'>Browsing</a> / Session</li>" in page
+    assert '<div id="aggregates-diagram">' in page
+    assert '<script type="text/plain" id="aggregates-source">---' in page
+    assert "classDiagram" in page
+    assert 'mermaid.render("aggregates-svg"' in page
+
+
+def test_build_writes_no_aggregates_into_a_page_of_something_without_them(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    for name in ("search", "orders", "overview"):
+        page = (tmp_path / "mermaid" / f"{name}.html").read_text()
+        assert 'id="aggregates-diagram"' not in page
+        assert "<h2>Aggregates</h2>" not in page
+        assert 'mermaid.render("aggregates-svg"' not in page
+        assert "## Aggregates" not in (tmp_path / "markdown" / f"{name}.md").read_text()
+
+
+def test_build_writes_the_aggregates_into_the_markdown(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    markdown = (tmp_path / "markdown" / "checkout.md").read_text()
+    assert "## Aggregates" in markdown
+    assert "### Order" in markdown
+    assert "A cart that was paid for." in markdown
+    assert "- **Root:** Order" in markdown
+    assert "- **Value objects:** Money, Address" in markdown
+    # A context that has the aggregate's own name says it once.
+    assert ("- **References:** [Identity](identity.md) / Account, [Identity](identity.md), "
+            "[Payments](payments.md) / Payment") in markdown
+    assert "```mermaid\n---\n" in markdown
+    assert "classDiagram" in markdown
+    assert markdown.count("```mermaid") == 2
+    assert '"layout": "dagre"' in markdown.split("classDiagram")[0].split("```mermaid")[-1]
+
+
+def test_build_writes_the_aggregate_attributes_into_the_page(tmp_path, example_model, example_style):
+    example_model["attributes"]["owner"] = {"name": "Owner", "type": "text"}
+    example_model["context-map"]["checkout"]["aggregates"]["Order"]["attributes"] = {"owner": "team-a"}
+    data, errors = graph.normalize(example_model, example_style)
+    assert errors == []
+    mermaid.build(data, example_style["mermaid"], tmp_path)
+    assert "<li><b>Owner:</b> team-a</li>" in (tmp_path / "mermaid" / "checkout.html").read_text()
+    assert "- **Owner:** team-a" in (tmp_path / "markdown" / "checkout.md").read_text()
+
+
+def test_build_links_the_interactive_view_at_the_level_of_the_view(tmp_path, example_data, example_style):
+    example_style["mermaid"]["views"] = [{"id": "agg", "level": "aggregate", "focus": "checkout"},
+                                         {"id": "agg-all", "level": "aggregate"}]
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    assert 'href="../index.html#focus=checkout&level=aggregate"' in (tmp_path / "mermaid" / "agg.html").read_text()
+    assert 'href="../index.html#level=aggregate"' in (tmp_path / "mermaid" / "agg-all.html").read_text()
+    assert "level=" not in (tmp_path / "mermaid" / "checkout.html").read_text().split("Interactive view")[0].split("href=")[-1]
+
+
+def test_build_writes_a_static_page_and_markdown_for_a_view_at_the_aggregate_level(tmp_path, example_data, example_style):
+    example_style["mermaid"]["views"] = [{"id": "agg", "level": "aggregate", "focus": "checkout", "depth": 99}]
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "agg.html").read_text()
+    assert "checkout__Order[" in page
+    assert 'click checkout__Order href "checkout.html"' in page
+    markdown = (tmp_path / "markdown" / "agg.md").read_text()
+    assert "checkout__Order[" in markdown
+    assert "click" not in markdown
+    assert "%% violations" in page and "%% violations" in markdown
+
+
+def test_build_says_a_name_once_when_the_context_and_the_aggregate_share_it(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "checkout.html").read_text()
+    assert "<a href='identity.html'>Identity</a> / Account, <a href='identity.html'>Identity</a>, " in page
+    assert "Identity</a> / Identity" not in page
+
+
+def test_aggregate_diagram_leaves_out_the_annotation_that_would_repeat_the_name(example_data, example_cfg):
+    lines = [line.strip() for line in mermaid.aggregate_diagram(example_data, example_cfg, "checkout").splitlines()]
+    # Muted, and named for its context only where the context's name is another one.
+    assert 'class ext_identity__Identity["Identity"]:::muted' in lines
+    assert 'class ext_identity__Account["Account"]:::muted {' in lines
+    index = lines.index('class ext_identity__Identity["Identity"]:::muted')
+    assert lines[index + 1] != "<<Identity>>"
+    assert "<<Identity>>" in lines  # still on Account

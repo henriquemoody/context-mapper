@@ -55,6 +55,12 @@ test("state: parseHash reads the level and the focus", () => {
   });
 });
 
+test("state: parseHash reads the aggregate level, and falls back to the context level for any other", () => {
+  assert.equal(parse("#level=aggregate").level, "aggregate");
+  assert.equal(parse("#level=aggregate&focus=checkout").focus, "checkout");
+  assert.equal(parse("#level=aggregates").level, "context");
+});
+
 test("state: parseHash falls back to the whole system for an unknown focus", () => {
   assert.equal(parse("#focus=nope").focus, "");
 });

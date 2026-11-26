@@ -100,7 +100,7 @@ $("download").addEventListener("click", () => {
   const svg = $("graph").querySelector("svg");
   if (!svg) return; // nothing rendered to download
   const s = state();
-  const name = ["context-map", s.focus, s.level === "domain" ? "domain" : null]
+  const name = ["context-map", s.focus, s.level === "context" ? null : s.level]
     .filter(Boolean)
     .join("-");
   downloadDiagram(svg, $("image").value, name);

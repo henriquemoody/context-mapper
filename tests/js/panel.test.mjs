@@ -27,3 +27,21 @@ const { CASES } = await import("./cases.mjs");
 for (const { name, fn } of CASES.panel)
   test(`panel: ${name}`, () =>
     assert.deepEqual(fn(api), expected[`panel/${name}`]));
+
+test("panel: an item with no attributes has no Attributes section", () => {
+  assert.ok(!expected["panel/focus-crm"].includes("Attributes"));
+  assert.ok(
+    expected["panel/focus-fulfillment"].includes("<h3>Attributes</h3>"),
+  );
+  assert.equal(
+    document.createElement("div").innerHTML,
+    api.attributeSection(api.domainById.crm),
+  );
+});
+
+test("panel: a context with the aggregate's own name says it once", () => {
+  const html = expected["panel/focus-checkout"];
+  assert.ok(html.includes('<a data-go="identity">Identity</a>, '));
+  assert.ok(!html.includes("Identity</a> / Identity"));
+  assert.ok(html.includes('<a data-go="identity">Identity</a> / Account, '));
+});

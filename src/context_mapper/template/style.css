@@ -182,6 +182,11 @@ aside ul {
   margin: 0;
   padding-left: 18px;
 }
+/* One aggregate in the panel: its name, then what it holds, a size under the section heading. */
+aside h4 {
+  font-size: 14px;
+  margin: 12px 0 2px;
+}
 /* A list attribute in the panel: its items under the label, a touch apart. */
 aside li ul {
   margin-top: 4px;

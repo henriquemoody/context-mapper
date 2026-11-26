@@ -1,5 +1,6 @@
-import { itemOfNode } from "../core/diagram.js";
-import { boxTipEntries } from "../core/attributes.js";
+import { itemOfNode, aggregateOfNode } from "../core/diagram.js";
+import { contextById } from "../core/model.js";
+import { boxTipEntries, aggregateTipEntries } from "../core/attributes.js";
 import { showTip, hideTip } from "./tips.js";
 
 // Boxes are g elements whose id holds our node id: "<svg>-flowchart-<id>-<n>", or "<svg>-<id>" for a domain.
@@ -86,10 +87,13 @@ export function bindEdgeHover(svg, tips) {
 // Hovering a box shows its description, when it has one, and the attributes
 // it sets. The domain box that wraps several bounded contexts is left out:
 // there it is only background, and its description has its own place on the
-// domain view.
+// domain view. A bounded context drawn around its aggregates is a box of its
+// own, though, and so is each aggregate.
 export function bindBoxTips(svg) {
   const boxes = Object.entries(boxMapOf(svg)).filter(
-    ([, g]) => !g.classList.contains("cluster"),
+    ([id, g]) =>
+      !g.classList.contains("cluster") ||
+      (itemOfNode[id] && contextById[itemOfNode[id].id]),
   );
   const innermost = (target) => {
     let best = null;
@@ -100,7 +104,10 @@ export function bindBoxTips(svg) {
   };
   svg.addEventListener("mousemove", (ev) => {
     if (ev.target.closest(".edge-hit")) return; // the arrow's own tooltip owns the pointer here
-    const entries = boxTipEntries(itemOfNode[innermost(ev.target) || ""]);
+    const id = innermost(ev.target) || "";
+    const entries = aggregateOfNode[id]
+      ? aggregateTipEntries(aggregateOfNode[id])
+      : boxTipEntries(itemOfNode[id]);
     if (entries.length) showTip(entries, ev);
     else hideTip();
   });

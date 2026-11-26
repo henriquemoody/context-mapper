@@ -1,7 +1,7 @@
 // The attribute data: the text of a value, the entries an item sets, and
 // the tooltip rows of a box — pure data, no DOM, shared by the panel's
 // rendering and the page's tooltips.
-import { MODEL, DIAGRAM } from "./model.js";
+import { MODEL, DIAGRAM, contextById } from "./model.js";
 
 // An attribute's value as the text to show: a list as its items, a map as
 // label-to-value pairs, anything else as it is.
@@ -32,8 +32,47 @@ export const boxTipEntries = (item) => {
     ? [{ kind: "desc", title: item.name, text: item.description }]
     : [];
   if (!DIAGRAM.attribute_tooltips) return entries;
+  const aggregates = contextById[item.id]?.aggregates || [];
+  return entries
+    .concat(
+      attributeEntries(item).map(({ label, value }) => ({
+        kind: "attr",
+        title: label,
+        text: attributeText(value),
+      })),
+    )
+    .concat(
+      aggregates.length
+        ? [
+            {
+              kind: "attr",
+              title: "Aggregates",
+              text: aggregates.map((a) => a.name).join(", "),
+            },
+          ]
+        : [],
+    );
+};
+
+// The tooltip entries of an aggregate's box: its description, then what it
+// holds by name — the root, the entities, the value objects — and the
+// attributes it sets, as data rows. Like a context's, the rows follow
+// `attribute_tooltips`, and the description stays.
+export const aggregateTipEntries = (aggregate) => {
+  const entries = aggregate.description
+    ? [{ kind: "desc", title: aggregate.name, text: aggregate.description }]
+    : [];
+  if (!DIAGRAM.attribute_tooltips) return entries;
+  const names = (items) => items.map((m) => m.name).join(", ");
   return entries.concat(
-    attributeEntries(item).map(({ label, value }) => ({
+    [
+      ["Root", aggregate.root],
+      ["Entities", names(aggregate.entities)],
+      ["Value objects", names(aggregate.valueObjects)],
+    ]
+      .filter(([, text]) => text)
+      .map(([title, text]) => ({ kind: "attr", title, text })),
+    attributeEntries(aggregate).map(({ label, value }) => ({
       kind: "attr",
       title: label,
       text: attributeText(value),

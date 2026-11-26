@@ -455,7 +455,7 @@ def attributes_model(attributes, values):
         },
         STYLE,
         "context-map.alpha.customFields: unknown option. "
-        "Known: attributes, cluster, description, downstreams, name, partnerships, sharedKernels, type, violations",
+        "Known: aggregates, attributes, cluster, description, downstreams, name, partnerships, sharedKernels, type, violations",
     ),
     (
         {
@@ -465,7 +465,7 @@ def attributes_model(attributes, values):
         },
         STYLE,
         "context-map.alpha.properties: unknown option. "
-        "Known: attributes, cluster, description, downstreams, name, partnerships, sharedKernels, type, violations",
+        "Known: aggregates, attributes, cluster, description, downstreams, name, partnerships, sharedKernels, type, violations",
     ),
     (
         {
@@ -478,7 +478,7 @@ def attributes_model(attributes, values):
         },
         STYLE,
         "context-map.ctx.customFields: unknown option. "
-        "Known: attributes, cluster, description, domain, downstreams, name, partnerships, sharedKernels, type, violations",
+        "Known: aggregates, attributes, cluster, description, domain, downstreams, name, partnerships, sharedKernels, type, violations",
     ),
     (
         {
@@ -1337,3 +1337,305 @@ def test_link_relations_list_the_other_ends_by_name(example_data):
 def test_relations_leave_the_links_out(example_data):
     ups, downs = graph.relations(example_data, "search")
     assert (ups, downs) == ([], [])
+
+
+# --- aggregates -------------------------------------------------------------
+
+
+def with_aggregates(aggregates, **extra):
+    """alpha, beta and gamma, with `aggregates` on alpha. Beta is upstream of alpha, and it has `Thing`."""
+    entries = {
+        "alpha": {"name": "Alpha", "type": "core", "aggregates": aggregates},
+        "beta": {"name": "Beta", "type": "core", "downstreams": {"alpha": None},
+                 "aggregates": {"Thing": None, "Other": None}},
+        "gamma": {"name": "Gamma", "type": "core", "aggregates": {"Stuff": None}},
+    }
+    for entry_id, entry in extra.items():
+        entries[entry_id] = {**entries[entry_id], **entry}
+    return model(**entries)
+
+
+def aggregates_of(data, context_id):
+    return {context["id"]: context for context in data["contexts"]}[context_id].get("aggregates")
+
+
+def test_normalize_reads_the_aggregates_of_a_context(example_data):
+    checkout = aggregates_of(example_data, "checkout")
+    assert [aggregate["name"] for aggregate in checkout] == ["Order", "Cart"]
+    order = checkout[0]
+    assert order["description"] == "A cart that was paid for."
+    assert order["root"] == "Order"  # the aggregate's name, unless it says otherwise
+    assert order["entities"] == [{"name": "OrderLine", "description": None}]
+    assert [item["name"] for item in order["valueObjects"]] == ["Money", "Address"]
+    assert order["references"] == [{"context": "identity", "name": "Account"},
+                                   {"context": "identity", "name": "Identity"},
+                                   {"context": "payments", "name": "Payment"}]
+
+
+def test_normalize_reads_a_root_that_is_not_the_name_of_the_aggregate(example_data):
+    session = aggregates_of(example_data, "browsing")[0]
+    assert session["name"] == "Session"
+    assert session["root"] == "Visit"
+    assert session["entities"] == [{"name": "Page", "description": None}]
+
+
+def test_normalize_reads_the_entities_as_a_map_of_descriptions(example_data):
+    cart = aggregates_of(example_data, "checkout")[1]
+    assert cart["entities"] == [{"name": "CartLine", "description": "One product, and how many of it."},
+                                {"name": "Coupon", "description": None}]
+
+
+def test_normalize_takes_an_aggregate_with_a_bare_key_as_a_name_alone(example_data):
+    account = aggregates_of(example_data, "identity")[0]
+    assert account["entities"] == [] and account["references"] == []
+    data, errors = graph.normalize(with_aggregates({"Bare": None, "Empty": {}}), STYLE)
+    assert errors == []
+    assert [aggregate["name"] for aggregate in aggregates_of(data, "alpha")] == ["Bare", "Empty"]
+    assert aggregates_of(data, "alpha")[0] == {"name": "Bare", "description": None, "root": "Bare", "entities": [],
+                                               "valueObjects": [], "references": []}
+
+
+def test_normalize_gives_a_domain_no_context_points_at_its_aggregates_as_a_context(example_data):
+    assert [aggregate["name"] for aggregate in aggregates_of(example_data, "payments")] == ["Payment"]
+    domains = {domain["id"]: domain for domain in example_data["domains"]}
+    assert "aggregates" not in domains["payments"]
+
+
+def test_normalize_leaves_the_aggregates_out_of_a_context_that_has_none(example_data):
+    assert aggregates_of(example_data, "search") is None
+    assert all("aggregates" not in domain for domain in example_data["domains"])
+
+
+def test_normalize_still_accepts_a_declared_attribute_named_aggregates(example_data):
+    """The fixture declares one, and sets it on contexts that have built-in aggregates too."""
+    assert example_data["attributes"]["aggregates"] == {"name": "Aggregates", "type": "list"}
+    contexts = {c["id"]: c for c in example_data["contexts"]}
+    assert contexts["checkout"]["attributes"]["aggregates"] == ["Order", "Cart"]
+    assert [aggregate["name"] for aggregate in contexts["checkout"]["aggregates"]] == ["Order", "Cart"]
+
+
+def test_normalize_validates_the_attributes_of_an_aggregate_like_any_entry_s():
+    definitions = {"owner": {"type": "text"}}
+    entries = {"alpha": {"name": "Alpha", "type": "core",
+                         "aggregates": {"Thing": {"attributes": {"owner": "team-a"}}}}}
+    data, errors = graph.normalize({**model(**entries), "attributes": definitions}, STYLE)
+    assert errors == []
+    assert aggregates_of(data, "alpha")[0]["attributes"] == {"owner": "team-a"}
+    entries["alpha"]["aggregates"]["Thing"]["attributes"] = {"missing": "x", "owner": ["a"]}
+    errors = errors_of({**model(**entries), "attributes": definitions})
+    assert any("context-map.alpha.aggregates.Thing.attributes.missing: unknown attribute" in e for e in errors), errors
+    assert any("Thing.attributes.owner: a text attribute takes a single value" in e for e in errors), errors
+
+
+@pytest.mark.parametrize("aggregates, expected", [
+    ([], "context-map.alpha.aggregates: must be a map from aggregate name to what it holds"),
+    ("Thing", "context-map.alpha.aggregates: must be a map from aggregate name to what it holds"),
+    ({}, "context-map.alpha.aggregates is empty"),
+    ({"Thing": "text"}, "context-map.alpha.aggregates.Thing: must be a map, or nothing at all"),
+    ({"Thing": {"fields": []}}, "context-map.alpha.aggregates.Thing.fields: unknown option. Known: attributes, "
+                                 "description, entities, references, root, valueObjects"),
+    ({"Thing": {"description": 3}}, "context-map.alpha.aggregates.Thing.description: must be a string"),
+    ({"Thing": {"root": ""}}, "context-map.alpha.aggregates.Thing.root: must be the name of the root entity"),
+    ({"Thing": {"root": ["A"]}}, "context-map.alpha.aggregates.Thing.root: must be the name of the root entity"),
+    ({"A/B": None}, "context-map.alpha.aggregates.A/B: an aggregate's name can't hold a '/'"),
+    ({"Thing": {"entities": "Leg"}}, "Thing.entities: must be a list of names, or a map from name to description"),
+    ({"Thing": {"entities": []}}, "Thing.entities: needs at least one name"),
+    ({"Thing": {"entities": {}}}, "Thing.entities: needs at least one name"),
+    ({"Thing": {"entities": None}}, "Thing.entities: must be a list of names"),
+    ({"Thing": {"entities": [1]}}, "Thing.entities: a name is a non-empty string, not 1"),
+    ({"Thing": {"valueObjects": [""]}}, "Thing.valueObjects: a name is a non-empty string"),
+    ({"Thing": {"entities": {"Leg": 3}}}, "Thing.entities.Leg: the description must be a string, or nothing"),
+    ({"Thing": {"valueObjects": {"Id": ["x"]}}}, "Thing.valueObjects.Id: the description must be a string"),
+    ({"Thing": {"entities": ["Leg", "Leg"]}}, "'Leg' is named more than once, as an entity and as an entity"),
+    ({"Thing": {"entities": ["Leg"], "valueObjects": ["Leg"]}},
+     "'Leg' is named more than once, as an entity and as a value object"),
+    ({"Thing": {"entities": ["Thing"]}}, "'Thing' is named more than once, as the root and as an entity, and the root "
+                                         "is an entity already"),
+    ({"Thing": {"root": "Leg", "valueObjects": ["Leg"]}},
+     "'Leg' is named more than once, as the root and as a value object"),
+    ({"Thing": {"references": "Other"}}, "Thing.references: must be a list of aggregates"),
+    ({"Thing": {"references": []}}, "Thing.references: needs at least one aggregate"),
+    ({"Thing": {"references": [3]}}, "Thing.references: a reference is a string"),
+])
+def test_normalize_rejects_a_broken_aggregate(aggregates, expected):
+    errors = errors_of(with_aggregates(aggregates))
+    assert any(expected in err for err in errors), errors
+
+
+def test_normalize_rejects_aggregates_on_a_domain_that_holds_bounded_contexts():
+    errors = errors_of(model(
+        alpha={"name": "Alpha", "type": "core", "aggregates": {"Thing": None}},
+        alpha_one={"name": "Alpha One", "domain": "alpha"},
+    ))
+    assert any("context-map.alpha.aggregates: a domain that holds bounded contexts has no aggregates of its own"
+               in err for err in errors), errors
+
+
+def test_normalize_rejects_aggregates_on_a_cluster():
+    errors = errors_of({
+        "types": {"core": {"name": "Core"}},
+        "clusters": {"base": {"name": "Base", "aggregates": {"Thing": None}}},
+        "context-map": {"alpha": {"name": "Alpha", "type": "core", "cluster": "base"}},
+    })
+    assert any("clusters.base.aggregates: a cluster has no aggregates, only a bounded context does" in err
+               for err in errors), errors
+
+
+def test_normalize_accepts_aggregates_on_a_bounded_context_of_a_domain():
+    data, errors = graph.normalize(model(
+        alpha={"name": "Alpha", "type": "core"},
+        alpha_one={"name": "Alpha One", "domain": "alpha", "aggregates": {"Thing": None}},
+    ), STYLE)
+    assert errors == []
+    assert aggregates_of(data, "alpha_one")[0]["name"] == "Thing"
+
+
+# A reference to another context's aggregate is allowed toward what the context depends on: directly, or
+# through a dependency written against either one's whole domain, or toward one it shares a kernel or a
+# partnership with.
+
+
+def test_normalize_resolves_a_bare_name_to_the_aggregate_s_own_context():
+    data, errors = graph.normalize(with_aggregates({"One": {"references": ["Two"]}, "Two": None}), STYLE)
+    assert errors == []
+    assert aggregates_of(data, "alpha")[0]["references"] == [{"context": "alpha", "name": "Two"}]
+
+
+def test_normalize_accepts_the_own_context_written_in_full():
+    data, errors = graph.normalize(with_aggregates({"One": {"references": ["alpha/Two"]}, "Two": None}), STYLE)
+    assert errors == []
+    assert aggregates_of(data, "alpha")[0]["references"] == [{"context": "alpha", "name": "Two"}]
+
+
+def test_normalize_accepts_aggregates_that_reference_each_other():
+    data, errors = graph.normalize(
+        with_aggregates({"One": {"references": ["Two"]}, "Two": {"references": ["One"]}}), STYLE)
+    assert errors == []
+
+
+def test_normalize_accepts_a_reference_to_what_the_context_depends_on():
+    data, errors = graph.normalize(with_aggregates({"One": {"references": ["beta/Thing", "beta/Other"]}}), STYLE)
+    assert errors == []
+    assert aggregates_of(data, "alpha")[0]["references"] == [{"context": "beta", "name": "Thing"},
+                                                            {"context": "beta", "name": "Other"}]
+
+
+def test_normalize_accepts_a_reference_through_a_dependency_on_the_other_s_whole_domain():
+    """Beta's domain holds `beta_one`, and Alpha depends on the domain as a whole."""
+    entries = {
+        "alpha": {"name": "Alpha", "type": "core", "aggregates": {"One": {"references": ["beta_one/Thing"]}}},
+        "beta": {"name": "Beta", "type": "core", "downstreams": {"alpha": None}},
+        "beta_one": {"name": "Beta One", "domain": "beta", "aggregates": {"Thing": None}},
+    }
+    data, errors = graph.normalize(model(**entries), STYLE)
+    assert errors == []
+
+
+def test_normalize_accepts_a_reference_through_a_dependency_of_the_own_whole_domain():
+    entries = {
+        "alpha": {"name": "Alpha", "type": "core"},
+        "alpha_one": {"name": "Alpha One", "domain": "alpha", "aggregates": {"One": {"references": ["beta/Thing"]}}},
+        "beta": {"name": "Beta", "type": "core", "downstreams": {"alpha": None}, "aggregates": {"Thing": None}},
+    }
+    data, errors = graph.normalize(model(**entries), STYLE)
+    assert errors == []
+
+
+def test_normalize_accepts_a_reference_between_whole_domains():
+    entries = {
+        "alpha": {"name": "Alpha", "type": "core"},
+        "alpha_one": {"name": "Alpha One", "domain": "alpha", "aggregates": {"One": {"references": ["beta_one/Thing"]}}},
+        "beta": {"name": "Beta", "type": "core", "downstreams": {"alpha": None}},
+        "beta_one": {"name": "Beta One", "domain": "beta", "aggregates": {"Thing": None}},
+    }
+    data, errors = graph.normalize(model(**entries), STYLE)
+    assert errors == []
+
+
+@pytest.mark.parametrize("kind", ["sharedKernels", "partnerships"])
+def test_normalize_accepts_a_reference_toward_a_kernel_or_a_partner_from_either_end(kind):
+    for owner, other in (("alpha", "gamma"), ("gamma", "alpha")):
+        entries = {"alpha": {"aggregates": {"One": {"references": ["gamma/Stuff"]}}},
+                   "gamma": {"aggregates": {"Stuff": {"references": ["alpha/One"]}}}}
+        entries = {entry_id: {"name": entry_id.title(), "type": "core", **entry} for entry_id, entry in entries.items()}
+        entries[owner][kind] = {other: None}
+        data, errors = graph.normalize(model(**entries), STYLE)
+        assert errors == [], (owner, errors)
+
+
+def test_normalize_does_not_take_a_violation_for_a_permission():
+    entries = with_aggregates({"One": {"references": ["gamma/Stuff"]}},
+                              alpha={"violations": {"gamma": "Calls Gamma anyway."}})
+    errors = errors_of(entries)
+    assert any("'gamma/Stuff' is not allowed, 'alpha' has only a violation against 'gamma' (in "
+               "context-map.alpha.violations.gamma), a known mistake and not a permission" in err
+               for err in errors), errors
+
+
+def test_normalize_does_not_let_an_upstream_reference_its_downstream():
+    """Alpha depends on Beta, so Beta is upstream: it can't reference Alpha's aggregates."""
+    entries = with_aggregates({"One": None}, beta={"aggregates": {"Thing": {"references": ["alpha/One"]}}})
+    errors = errors_of(entries)
+    assert any("context-map.beta.aggregates.Thing.references: 'alpha/One' is not allowed, 'alpha' depends on "
+               "'beta', not the other way round" in err for err in errors), errors
+
+
+def test_normalize_rejects_a_reference_to_a_context_it_does_not_depend_on():
+    errors = errors_of(with_aggregates({"One": {"references": ["gamma/Stuff"]}}))
+    assert any("'gamma/Stuff' is not allowed, 'alpha' doesn't depend on 'gamma'" in err
+               and "context-map.gamma.downstreams" in err for err in errors), errors
+
+
+def test_normalize_rejects_a_reference_between_contexts_of_a_domain_with_no_dependency_between_them():
+    entries = {
+        "alpha": {"name": "Alpha", "type": "core"},
+        "alpha_one": {"name": "Alpha One", "domain": "alpha", "aggregates": {"One": {"references": ["alpha_two/Two"]}}},
+        "alpha_two": {"name": "Alpha Two", "domain": "alpha", "aggregates": {"Two": None}},
+    }
+    errors = errors_of(model(**entries))
+    assert any("'alpha_two/Two' is not allowed, 'alpha_one' doesn't depend on 'alpha_two'" in err
+               for err in errors), errors
+
+
+def test_normalize_rejects_a_reference_to_itself():
+    errors = errors_of(with_aggregates({"One": {"references": ["One"]}}))
+    assert any("references: 'One' references itself" in err for err in errors), errors
+    errors = errors_of(with_aggregates({"One": {"references": ["alpha/One"]}}))
+    assert any("references: 'One' references itself" in err for err in errors), errors
+
+
+@pytest.mark.parametrize("reference, expected", [
+    ("nowhere/Thing", "unknown bounded context 'nowhere' in 'nowhere/Thing'"),
+    ("beta/Nothing", "unknown aggregate 'Nothing' in 'beta'. Known: Thing, Other"),
+    ("Nothing", "unknown aggregate 'Nothing' in 'alpha'. Known: One"),
+    ("/Thing", "'/Thing' is not `Name` or `context-id/Name`"),
+    ("beta/", "'beta/' is not `Name` or `context-id/Name`"),
+    ("gamma/Stuff", "'gamma/Stuff' is not allowed"),
+])
+def test_normalize_rejects_a_reference_that_goes_nowhere(reference, expected):
+    errors = errors_of(with_aggregates({"One": {"references": [reference]}}))
+    assert any(expected in err for err in errors), errors
+
+
+def test_normalize_says_when_a_reference_names_a_domain_instead_of_a_context():
+    entries = {
+        "alpha": {"name": "Alpha", "type": "core", "aggregates": {"One": {"references": ["beta/Thing"]}}},
+        "beta": {"name": "Beta", "type": "core", "downstreams": {"alpha": None}},
+        "beta_one": {"name": "Beta One", "domain": "beta", "aggregates": {"Thing": None}},
+    }
+    errors = errors_of(model(**entries))
+    assert any("unknown bounded context 'beta'" in err and "It is a domain" in err for err in errors), errors
+
+
+def test_normalize_rejects_a_reference_listed_twice():
+    errors = errors_of(with_aggregates({"One": {"references": ["Two", "alpha/Two"]}, "Two": None}))
+    assert any("references: 'alpha/Two' is listed more than once" in err for err in errors), errors
+    errors = errors_of(with_aggregates({"One": {"references": ["beta/Thing", "beta/Thing"]}}))
+    assert any("'beta/Thing' is listed more than once" in err for err in errors), errors
+
+
+def test_normalize_says_when_the_context_a_reference_names_has_no_aggregates():
+    entries = with_aggregates({"One": {"references": ["beta/Thing"]}})
+    del entries["context-map"]["beta"]["aggregates"]
+    errors = errors_of(entries)
+    assert any("unknown aggregate 'Thing' in 'beta'. Known: none" in err for err in errors), errors

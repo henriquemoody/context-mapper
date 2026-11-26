@@ -9,6 +9,10 @@ import {
 
 // The depth field takes any whole number of hops; anything else — empty,
 // fractional, negative — falls back to the nearest whole hop, at least 1.
+// What the "Show" select offers: bounded contexts, domains, or the aggregates
+// inside the bounded contexts. Anything else in a hash is the default.
+export const LEVELS = ["context", "domain", "aggregate"];
+
 export const clampDepth = (raw) => Math.max(1, Math.trunc(Number(raw) || 1));
 
 export function hashFor(s) {
@@ -57,7 +61,7 @@ export function parseHash(hash) {
     if (hide.has(id)) display[id] = "hidden";
   });
   return {
-    level: p.get("level") === "domain" ? "domain" : "context",
+    level: LEVELS.includes(p.get("level")) ? p.get("level") : "context",
     focus:
       p.has("focus") && (owner[p.get("focus")] || clusterById[p.get("focus")])
         ? p.get("focus")

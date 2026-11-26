@@ -59,7 +59,7 @@ mermaid:
 
   # Defaults for every view. Each view below can override any of these.
   defaults:
-    level: context         # context (bounded contexts inside domain boxes) or domain (one box per domain)
+    level: context         # context (bounded contexts inside domain boxes), domain (one box per domain) or aggregate (each context around its aggregates)
     depth: 1               # Hops out from the focus. 99 means everything.
     dir: both              # both, up (depends on), down (used by)
     display: {}            # How containers first render: expanded, collapsed, contents, hidden — or a map by id
@@ -117,3 +117,8 @@ mermaid:
       focus: handling
       depth: 99
       hide: [incident-logging] # a domain view can hide one of its bounded contexts
+    - id: handling-aggregates
+      title: Handling History's aggregates
+      level: aggregate         # each bounded context around its aggregates, and the references between them
+      focus: handling-history
+      depth: 1

@@ -227,7 +227,8 @@ def test_box_tooltips_map_node_ids_back_to_items(tmp_path):
     build.main(["--model", str(model), "--diagrams", str(style), "--out", str(out)])
     text = (out / "index.html").read_text()
     assert 'itemOfNode[nodeId(item.id)] = item' in text        # the node id -> item map
-    assert 'itemOfNode[innermost(ev.target) || ""]' in text    # box tooltips go through it
+    assert 'const id = innermost(ev.target) || ""' in text  # box tooltips go through it
+    assert "boxTipEntries(itemOfNode[id])" in text
     assert "descriptionOf" not in text                         # no lookup by SVG id left
 
 
@@ -236,6 +237,30 @@ def test_the_published_example_builds(tmp_path, capsys):
     build.main(["--model", str(SHOWCASE_MODEL), "--diagrams", str(SHOWCASE_STYLE), "--out", str(out)])
     assert (out / "index.html").exists()
     assert "warning" not in capsys.readouterr().err.lower()   # the example stays clean
+
+
+def test_the_published_example_has_aggregates_and_a_view_of_them(tmp_path):
+    out = tmp_path / "public"
+    build.main(["--model", str(SHOWCASE_MODEL), "--diagrams", str(SHOWCASE_STYLE), "--out", str(out)])
+    page = (out / "mermaid" / "booking.html").read_text()
+    assert "<h3>Cargo</h3>" in page and "classDiagram" in page
+    view = (out / "mermaid" / "handling-aggregates.html").read_text()
+    assert 'handling_history__HandlingEvent["HandlingEvent"]' in view
+    # The aggregates are built in: the example no longer declares an attribute for them.
+    assert "aggregates" not in yaml.safe_load(SHOWCASE_MODEL.read_text())["attributes"]
+
+
+def test_the_published_example_keeps_a_reference_the_build_refuses_commented_out(tmp_path, capsys):
+    """HandlingEvent holds a Cargo in Evans's book, but Handling History is upstream of Booking here, and the
+    violation is not a permission. Taking the comment off the line breaks the build."""
+    text = SHOWCASE_MODEL.read_text()
+    line = "# - booking/Cargo"
+    assert line in text
+    model = tmp_path / "model.yml"
+    model.write_text(text.replace(line, "- booking/Cargo", 1))
+    with pytest.raises(SystemExit):
+        build.main(["--model", str(model), "--diagrams", str(SHOWCASE_STYLE), "--out", str(tmp_path / "public")])
+    assert "'booking/Cargo' is not allowed" in capsys.readouterr().err
 
 
 def test_the_interactive_page_can_download_the_diagram(tmp_path):

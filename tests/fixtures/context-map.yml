@@ -36,6 +36,13 @@
 # shape: one named `metadata` is the free-form way, there when a model
 # wants it and not built in.
 #
+# A bounded context can list its `aggregates`: names only, with a root, the
+# entities and value objects it holds, and the aggregates it references. A
+# reference to another context's aggregate is `context-id/Name`, and the build
+# allows it only toward a context that is upstream: one this context depends
+# on, directly or through a dependency on its domain as a whole, or one it
+# shares a kernel or a partnership with. A violation does not count.
+#
 # A dependency can point at a domain when we don't know yet which of its
 # contexts is involved. Move it to the right context once we know.
 #
@@ -69,6 +76,12 @@ context-map:
     description: Accounts and logins. Everyone signs in here.
     attributes:
       service: identity-service
+    aggregates:
+      Account:                                      # an aggregate: a map, or a bare key for a name alone
+        description: Who can sign in, and how.
+        valueObjects: [Email, PasswordHash]
+      Identity:                                     # named like its context, which a page then says once
+        description: Who someone is, whoever signs in.
     downstreams:
       checkout:                                     # roles: what each side of the dependency is
         comment: Creates an account for guests who check out.
@@ -82,6 +95,9 @@ context-map:
     attributes:
       service: payments-service
       metadata: { owned by: Payments platform, on-call: "#payments-support" }
+    aggregates:                                     # a domain no context points at is one itself
+      Payment:
+        valueObjects: [Amount]
     downstreams:
       checkout:
         comment: Charges the payment method and signals whether it went through.
@@ -104,7 +120,11 @@ context-map:
   browsing:
     name: Browsing
     domain: catalog
-    attributes: { aggregates: [Session Cart] }
+    attributes: { aggregates: [Session Cart] }      # an attribute named aggregates is still the model's own
+    aggregates:
+      Session:
+        root: Visit                                 # the root is named, not the aggregate
+        entities: [Page]
     partnerships:                                   # no direction: a line with no heads, declared once
       fulfillment: Browsing and Fulfillment ship the delivery promise together.
   search:
@@ -127,6 +147,23 @@ context-map:
     attributes:
       service: checkout-service
       aggregates: [Order, Cart]
+    aggregates:
+      Order:
+        description: A cart that was paid for.
+        entities: [OrderLine]
+        valueObjects: [Money, Address]
+        references:
+          - identity/Account                        # Checkout depends on Identity
+          - identity/Identity
+          - payments/Payment
+      Cart:
+        entities:                                   # a map gives each name a description
+          CartLine: One product, and how many of it.
+          Coupon:
+        valueObjects: [Quantity]
+        references:
+          - checkout/Order                          # this context's own, written in full: a bare `Order` says the same
+          - browsing/Session                        # Checkout depends on the Catalog domain as a whole
   fulfillment:
     name: Fulfillment
     domain: orders
@@ -134,11 +171,24 @@ context-map:
     attributes:
       service: fulfillment-service
       aggregates: [Shipment, Return]
+    aggregates:
+      Shipment:
+        entities: [Package]
+        references: [payments/Payment]              # Fulfillment depends on Payments, and shares a kernel with it
+      Return:
+        references: [Shipment, browsing/Session]    # Browsing is Fulfillment's partner, with no direction between them
     sharedKernels:                                  # beside a dependency: Fulfillment still depends on Payments
       payments: Both use the same payment and refund types.
 
   crm:
     name: CRM
     type: supporting
+    aggregates:
+      Ticket:
+        entities: [Note]
+        references:
+          - identity/Account
+          - checkout/Order                          # CRM depends on the Orders domain as a whole
+          - payments/Payment                        # a shared kernel
     sharedKernels:                                  # the two share part of the model itself
       payments: Both use the same payer and invoice types.

@@ -53,6 +53,23 @@
 #     partnerships:
 #       routing: Change the schedules and the route planning together.
 #
+# A bounded context can list its `aggregates`: names only, with a root, the
+# entities and value objects it holds, and the aggregates it references. A
+# reference to another context's aggregate is `context-id/Name`. The build
+# allows it only toward a context that is upstream: one this context depends
+# on (directly, or through a dependency on its domain as a whole) or shares a
+# kernel or a partnership with. A violation is a known mistake, not a
+# permission, so it doesn't count.
+#
+#   booking:
+#     aggregates:
+#       Cargo:
+#         description: A shipment, from booking to claim.
+#         root: Cargo                             # the aggregate's name, unless it says otherwise
+#         entities: [Leg]                         # or a map from name to description
+#         valueObjects: [TrackingId, Itinerary]
+#         references: [location/Location]
+#
 # Every entry can also carry a `description`: the interactive page shows it as
 # a tooltip when you hover over its box, and the item's page shows it in text.
 #
@@ -80,10 +97,10 @@ clusters:
 # Attributes, declared once: any entry in `context-map` or `clusters` can
 # set them with `attributes:`. `text` takes a single value, `list` a list
 # of them, `map` label-to-value pairs, `any` whatever shape. The item's page
-# and the interactive panel show them under the description.
+# and the interactive panel show them under the description. The aggregates
+# of a context are not one: they are built in, under `aggregates:`.
 attributes:
   service:    { name: Application service, type: text }
-  aggregates: { name: Aggregates, type: list }
   metadata:   { type: any }
 
 # A context takes its domain's `type` unless it sets its own.
@@ -116,8 +133,10 @@ context-map:
     name: Location
     type: generic
     description: Ports and places, by UN/LOCODE.
-    attributes:
-      aggregates: [Location]
+    aggregates:
+      Location:
+        description: A port or any other place cargo can be.
+        valueObjects: [UnLocode]
     downstreams:
       booking:
         comment: Names where the cargo starts and where it ends.
@@ -133,8 +152,9 @@ context-map:
     name: Customer
     type: supporting
     description: Shippers, consignees and payers, and their agreements.
-    attributes:
-      aggregates: [Customer]
+    aggregates:
+      Customer:                                     # a bare key would do: an aggregate with only a name
+        description: Someone who ships, receives or pays for cargo.
     downstreams:
       booking: Says who ships, who receives and who pays for each cargo.
 
@@ -147,8 +167,12 @@ context-map:
     domain: transport-network
     type: supporting                                # a context can override its domain's type
     description: Plans the voyages. A voyage is a list of carrier movements, port to port.
-    attributes:
-      aggregates: [Voyage]
+    aggregates:
+      Voyage:
+        description: A ship's run through a list of ports, as scheduled.
+        entities: [CarrierMovement]
+        valueObjects: [Schedule, VoyageNumber]
+        references: [location/Location]             # each carrier movement goes from one port to another
     partnerships:                                   # no direction: both teams plan and ship together
       routing: Routes are only as good as the schedules, so the two teams change them together.
     downstreams:
@@ -184,7 +208,15 @@ context-map:
     description: Every handling event of every cargo. The delivery status comes from here.
     attributes:
       service: HandlingEventService
-      aggregates: [HandlingEvent]
+    aggregates:
+      HandlingEvent:
+        description: One thing that happened to a cargo in a port, such as loaded, unloaded, received, claimed or cleared.
+        references:
+          - voyage-scheduling/Voyage                # Handling History depends on Voyage Scheduling
+          - location/Location
+          # - booking/Cargo                         # Evans's HandlingEvent holds a Cargo too, but Handling History
+          #                                         # is upstream of Booking here, and the violation below is a known
+          #                                         # mistake, not a permission: the build refuses this line.
     downstreams:
       booking: Gives the events that say where a cargo is and whether it's on track.
       tracking: Shows the customer where the cargo has been.
@@ -201,7 +233,13 @@ context-map:
     description: Books a cargo, gives it a route and checks it's on track.
     attributes:
       service: BookingService
-      aggregates: [Cargo]
+    aggregates:
+      Cargo:
+        description: A shipment, from booking to claim.
+        root: Cargo                                 # the aggregate's name, unless it says otherwise
+        entities: [Leg]
+        valueObjects: [TrackingId, RouteSpecification, Itinerary, Delivery]
+        references: [location/Location, customer/Customer]   # where it starts and ends, and who ships it
     downstreams:
       tracking: Gives the itinerary and the expected arrival.
     sharedKernels:                                  # the two share part of the model, and Tracking still depends on Booking

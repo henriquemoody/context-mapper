@@ -24,10 +24,8 @@ export const attributeRows = (item) =>
 
 // The attributes of the item, under a heading like the panel's other sections.
 // An item that sets none shows neither the heading nor the rows.
-export const attributeSection = (item) => {
-  const rows = attributeRows(item);
-  return rows
+export const attributeSection = (item) =>
+  attributeEntries(item).length
     ? html`<h3>Attributes</h3>
-        ${rows}`
+        ${attributeRows(item)}`
     : "";
-};

@@ -163,14 +163,73 @@ A partnership is a line with no heads, and the line says it. A shared kernel alo
 
 The entry that declares a line is drawn where an upstream goes: on top with the default direction. Move the line to the other entry and the pair flips. A kernel on a dependency's arrow follows the dependency instead, whichever entry declares it. Hovering a line or an arrow on the interactive page shows the kind and the comments, with the dependency's own. The panel and every item's page list the item's partners and what it shares a kernel with, each list only when it has someone in it, and a dependency's other end appears in both its lists.
 
+## Aggregates
+
+A bounded context can list its aggregates. Names only: no fields, no operations, no repositories, services, commands or events. It is a map of what the context holds, not a design of it.
+
+```yaml
+booking:
+  aggregates:
+    Cargo:
+      description: A shipment, from booking to claim.
+      root: Cargo                                   # the root entity; the aggregate's name unless you say
+      entities: [Leg]                               # a list of names, or a map from name to description
+      valueObjects: [TrackingId, RouteSpecification, Itinerary]
+      references: [voyage-scheduling/Voyage]        # other aggregates
+    Customer:                                       # a bare key is an aggregate with only a name
+```
+
+An aggregate is a map, or a bare key with nothing under it. Its keys:
+
+| Key | What it says |
+| --- | --- |
+| `description` | A sentence, shown with the aggregate. |
+| `root` | The name of the root entity. It is the aggregate's own name when you leave it out. The root counts as an entity, so don't list it again under `entities`. |
+| `entities` | The other entities. A list of names, or a map from name to a description (or nothing). |
+| `valueObjects` | The value objects, shaped like `entities`. |
+| `references` | The aggregates this one holds a reference to. A bare `Voyage` is one in the same context. Another context's is `voyage-scheduling/Voyage`. Writing the context's own id there is fine too. Pages and the panel write `Booking / Cargo`, and only `Booking` when the aggregate has the context's name. |
+| `attributes` | The model's declared attributes, checked like on any other entry. |
+
+Keys are lowerCamelCase. Aggregates go on a bounded context, or on a domain no context points at, which is a single bounded context. A domain that holds contexts has none of its own, and neither has a cluster: put them on the bounded context.
+
+A reference to another context's aggregate has to go upstream. The build allows it when the context depends on the other one, or shares a kernel or a partnership with it:
+
+- a dependency written between the two contexts, with the other one as the upstream;
+- a dependency written against a whole domain, on either side: this context depends on the other's domain, or this context's domain depends on the other context or on its domain. A dependency on a domain is where nobody knows yet which of its contexts is involved, so it covers all of them;
+- a shared kernel or a partnership between the two, declared on either one.
+
+A violation is a known mistake, not a permission, so it doesn't count. Two contexts of one domain need a dependency between them. Aggregates in a context can reference each other, and in circles.
+
+The build fails on:
+
+- a shape that is wrong: aggregates that are not a map, an aggregate that is not a map, a list that is empty, a name that is not text, an unknown key;
+- a name used twice inside an aggregate, across the root, the entities and the value objects;
+- a reference to itself, to an unknown context or to an unknown aggregate, listed twice, or not allowed by the rules above. The message says which rule it broke;
+- aggregates on a domain that holds contexts, or on a cluster.
+
+The aggregates of a context show up in four places:
+
+- The interactive panel lists them under an Aggregates heading when you focus the context: each one with its description, root, entities, value objects and references. A reference to another context's aggregate is a link that focuses that context.
+- The context's page, static and Markdown, lists the same, and draws a Mermaid class diagram under it. Each aggregate is a namespace, and its members are classes marked `<<root>>`, `<<entity>>` or `<<value object>>`. A reference is an arrow between root classes. The aggregates of other contexts it references are drawn outside the namespaces, muted and marked with the context's name. It takes its theme and look from the `mermaid` section, and has no style options of its own. It needs `namespace` in Mermaid's class diagrams, which the vendored Mermaid has.
+- Hovering a context's box on the interactive page lists its aggregate names, as it lists attributes, so `mermaid.attribute_tooltips: false` turns it off. Hovering an aggregate's box (see below) shows its description, and with tooltips on, what it holds.
+- The Aggregates level of the Show control.
+
+### The Aggregates level
+
+Show has a third choice besides bounded contexts and domains: Aggregates (`level=aggregate` in the URL hash, `level: aggregate` in a view). It walks the map as the context level does, with the same focus, depth, direction, display and hide. Then it draws the contexts it reached, each as a box that holds its aggregates. A domain still wraps its contexts, and a collapsed one is a single box, as before. A context with no aggregates is a plain box.
+
+An arrow between two aggregates is a reference, from the one that holds it to the one it points at, so the referenced one is upstream. Dependencies, violations, partnerships and shared kernels are still drawn between the context boxes, with their codes and badges, with one exception: when a drawn reference already says what a dependency says, the dependency isn't drawn twice. A reference from an aggregate of Booking to one of Location covers Booking's dependency on Location, so the arrow between the two boxes goes, and the reference carries what it had: its style (dotted, say), its role codes, an `SK` badge if the two share a kernel, and its tooltip, after the reference's own line. When several references cover one dependency, the first carries it: the first aggregate of the context that comes first in the model, then its first reference. The rest stay plain. A dependency keeps its arrow between the boxes when no drawn reference explains it: a dependency on a whole domain, or one whose referenced aggregate isn't drawn because its box is collapsed or hidden. A reference that a partnership or a shared kernel allows, with no dependency, is drawn plain, and the line between the boxes stays: it has no direction to move. A violation is not touched. The references are drawn last, so nothing the page's script counts moves. Click an aggregate to focus its context. Aggregates are not focus targets of their own, so the Focus select doesn't list them.
+
+ELK handles arrows to a box that holds others well. Dagre draws them too, but less tidily: the containers stretch, and the arrows end at their edges. Pick ELK where you can. The Markdown files use whatever `markdown_config` says, dagre in the example, and run no script, so there a violation has a head at both ends and the roles ride on the middle of the arrow, as at the other levels. The pages of single items keep the level they have, so there are no aggregate-level pages of their own. A view in the style file can be one.
+
 ## Attributes
 
-An optional `attributes` section declares what extra data the model carries: which service a context is, the aggregates inside it, anything. Nothing is built in — a model declares its own attributes, one type each, and any entry in `context-map` or `clusters` carries its values under `attributes:` too. The build fails on an attribute that was never declared or a value of the wrong shape, so a typo in the data breaks the build instead of hiding. A declared attribute no entry sets is fine, like a type nobody uses.
+An optional `attributes` section declares what extra data the model carries: which service a context is, who owns it, anything. Nothing is built in — a model declares its own attributes, one type each, and any entry in `context-map` or `clusters` carries its values under `attributes:` too. The build fails on an attribute that was never declared or a value of the wrong shape, so a typo in the data breaks the build instead of hiding. A declared attribute no entry sets is fine, like a type nobody uses.
 
 ```yaml
 attributes:
   service:    { name: Service, type: text }
-  aggregates: { name: Aggregates, type: list }
+  tags:       { name: Tags, type: list }
   metadata:   { type: any }            # the free-form way, for a model that wants one
 
 context-map:
@@ -179,7 +238,7 @@ context-map:
     domain: orders
     attributes:
       service: checkout-service
-      aggregates: [Order, Cart]
+      tags: [orders, carts]
 ```
 
 | Type | A value |
@@ -195,7 +254,7 @@ The label is the declared `name`, or the attribute id with its first letter uppe
 
 | Output | What it is |
 | --- | --- |
-| `<out>/index.html` | Interactive view. Switch between bounded contexts and domains, click anything to focus on it, hide anything from the side panel, hover a box or an arrow for the details, download the view as a PNG or SVG image. |
+| `<out>/index.html` | Interactive view. Switch between bounded contexts, domains and aggregates, click anything to focus on it, hide anything from the side panel, hover a box or an arrow for the details, download the view as a PNG or SVG image. |
 | `<out>/mermaid.js` | The Mermaid renderer, vendored and pinned from npm — the one script the pages share. |
 | `<out>/mermaid/*.html` | One static Mermaid page per domain, per bounded context, and per named view. Click a box to jump to its page, download the diagram as a PNG or SVG image. |
 | `<out>/markdown/*.md` | The same diagrams as Markdown. GitLab renders them natively, and they can go to Confluence. |
@@ -252,7 +311,7 @@ The rest lives in the `mermaid` section. Every style in it is a map of the same 
 | `theme_variables` | map | Passed to Mermaid as-is (fonts, colors). |
 | `config` | map | Any other [Mermaid config](https://mermaid.js.org/config/schema-docs/config.html), merged over the above. For example `elk.nodePlacementStrategy`. |
 | `markdown_config` | map | Merged over everything for `<out>/markdown/*.md` only. GitLab's built-in Mermaid has no ELK, so the example sets `layout: dagre` here. |
-| `attribute_tooltips` | `true`, `false` | Whether hovering a box shows its attributes too. The interactive page only; `true` by default. |
+| `attribute_tooltips` | `true`, `false` | Whether hovering a box shows its attributes too, and the names of the aggregates of a context, and what an aggregate holds. The interactive page only; `true` by default. |
 | `relationship_labels` | `true`, `false` | Whether the roles of a dependency are drawn on the diagrams, as codes at the ends of the arrow or, in the Markdown, on its middle, and whether a shared kernel gets its `SK` badge, or its words in the Markdown. Tooltips and lists show them either way; `true` by default. |
 | `focus_style` | map of Mermaid attributes | How the focused item is highlighted. |
 | `domain_style` | map of Mermaid attributes | Style of the box around a domain's bounded contexts. A domain with its own style under `context-map` overrides it — and its type colors, when drawn as one box. |
@@ -263,7 +322,7 @@ These can be set under `defaults` and overridden per view:
 
 | Option | Values | What it does |
 | --- | --- | --- |
-| `level` | `context`, `domain` | Bounded contexts inside domain boxes, or one box per domain. |
+| `level` | `context`, `domain`, `aggregate` | Bounded contexts inside domain boxes, one box per domain, or each bounded context around its aggregates. |
 | `depth` | whole number, `99` for all | Hops out from the focus. |
 | `dir` | `both`, `up`, `down` | Depends on, used by, or both. |
 | `display` | `expanded`, `collapsed`, `contents`, `hidden`, or a map from container id to one of those | How containers first render. A single value applies to every container; a map leaves the rest to their own `defaultDisplay` in the style file. |
@@ -304,6 +363,7 @@ pages:
 - `index.html#focus=checkout`: interactive, Checkout and its direct neighbors
 - `index.html#focus=foundations`: interactive, the foundations cluster, opened, and what its members touch
 - `index.html#level=domain&focus=orders`: interactive, the Orders domain and its neighbors
+- `index.html#level=aggregate&focus=booking`: interactive, Booking and its neighbors, each around its aggregates
 - `index.html#focus=orders&hide.fulfillment=1`: interactive, the Orders domain without the Fulfillment context
 - Other hash options: `depth=<n>`, `dir=both|up|down`, `display.<domain id>=expanded|collapsed|contents|hidden`, `hide.<id>=1|0`
 - `mermaid/checkout.html`: static diagram for Checkout
