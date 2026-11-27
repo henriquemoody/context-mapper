@@ -4,6 +4,7 @@
 import { contextById, nameOf } from "../core/model.js";
 import { attributeEntries } from "../core/attributes.js";
 import { attributeValue } from "./attributes.js";
+import { eventRows } from "./events.js";
 import { html } from "htm/preact/standalone";
 
 // A member by name, and its description in parentheses when it has one.
@@ -37,6 +38,7 @@ const aggregateBlock = (contextId, a) => {
   attributeEntries(a).forEach(({ label, value }) =>
     rows.push([label, attributeValue(value)]),
   );
+  rows.push(...eventRows(a));
   return html`<h4>${a.name}</h4>
     ${a.description ? html`<p class="hint">${a.description}</p>` : null}
     <ul>

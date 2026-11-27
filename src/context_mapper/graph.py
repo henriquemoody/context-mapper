@@ -246,7 +246,12 @@ def check_attributes(where, values, definitions, errors):
 
 # The keys an aggregate takes. An aggregate is a name, a root, the entities and value objects it holds, and
 # the aggregates it points at: names only, nothing about fields or behavior.
-AGGREGATE_KEYS = ("description", "root", "entities", "valueObjects", "references", "attributes")
+AGGREGATE_KEYS = ("description", "root", "entities", "valueObjects", "references", "publishes", "consumes",
+                  "attributes")
+
+# The keys an entry takes for events. `publishes` names the events it publishes, `consumes` the addresses of the
+# events it consumes. An aggregate, a bounded context and a domain take both; a cluster takes neither.
+EVENT_KEYS = ("publishes", "consumes")
 
 
 def check_members(where, key, value, errors):
@@ -275,6 +280,30 @@ def check_members(where, key, value, errors):
         else:
             members.append({"name": name, "description": description})
     return members if clean else []
+
+
+def parse_events(where, spec, errors):
+    """The `publishes` and the `consumes` of one entry, as (publishes, consumes). `publishes` is [{name,
+    description}], names with no `/` and none twice; `consumes` is [{address, description}] as written, which
+    check_events resolves once the whole model is known. Each key is a list of names or a map from name to
+    description. A bad value is an error and comes back empty. The description of a consume is why the consumer
+    reacts to the event: its `reason`."""
+    publishes, consumes = [], []
+    if "publishes" in spec:
+        seen = set()
+        for member in check_members(where, "publishes", spec["publishes"], errors):
+            if "/" in member["name"]:
+                errors.append(f"{where}.publishes: '{member['name']}' can't hold a '/', which an event's address "
+                              "uses to say where it is published")
+            elif member["name"] in seen:
+                errors.append(f"{where}.publishes: '{member['name']}' is published twice here")
+            else:
+                seen.add(member["name"])
+                publishes.append(member)
+    if "consumes" in spec:
+        consumes = [{"address": member["name"], "reason": member["description"]}
+                    for member in check_members(where, "consumes", spec["consumes"], errors)]
+    return publishes, consumes
 
 
 def check_aggregates(where, raw, definitions, errors):
@@ -340,13 +369,197 @@ def check_aggregates(where, raw, definitions, errors):
                     else:
                         errors.append(f"{here}.references: a reference is a string, `Name` or `context-id/Name`, "
                                       f"not {reference!r}")
+        publishes, consumes = parse_events(here, spec, errors)
         aggregate = {"name": name, "description": description, "root": root, "entities": entities,
-                     "valueObjects": value_objects, "references": references}
+                     "valueObjects": value_objects, "references": references, "publishes": publishes,
+                     "consumes": consumes}
         attributes = check_attributes(here, spec.get("attributes"), definitions, errors)
         if attributes:
             aggregate["attributes"] = attributes
         aggregates.append(aggregate)
     return aggregates
+
+
+def event_entries(where, spec, errors):
+    """The `publishes` and `consumes` of a bounded context or a domain, as the keys its entry carries: only the
+    ones it sets, and not empty."""
+    publishes, consumes = parse_events(where, spec, errors)
+    return {key: value for key, value in (("publishes", publishes), ("consumes", consumes)) if value}
+
+
+def event_where(info):
+    """Where an event is published, in words: the aggregate, the bounded context or the domain."""
+    if info["level"] == "aggregate":
+        return f"the aggregate '{info['aggregate']}' of '{info['owner']}'"
+    return f"the {'domain' if info['level'] == 'domain' else 'bounded context'} '{info['owner']}'"
+
+
+def check_events(data, errors):
+    """Resolve what each aggregate, bounded context and domain consumes, in place, and tie the model's events
+    together. An event has one address, which mirrors where it is published: `context-id/Aggregate/Event` on an
+    aggregate, `context-id/Event` on a bounded context (a domain with no contexts is one), `domain-id/Event` on
+    a domain that holds contexts. The address of what is consumed is that, in full, always.
+
+    A consumer is the context an entry belongs to, an aggregate's too, or the domain for a key of a domain that
+    holds contexts. Consuming across them takes a dependency from the consumer to the publisher, the way an
+    aggregate reference does (written between them, or against either one's whole domain), or a partnership
+    between them. A violation and a shared kernel don't count. Inside one domain, a context and the domain
+    itself are the same side. Each publish gets its `address` and its `consumers`, each consume is resolved to
+    {address, reason, publisher, level, aggregate, name}, and the dependencies and partnerships an event
+    crosses carry it in `events`, which is where the interactive page gets the tooltip of an arrow. A bad
+    consume is an error and is left out."""
+    contexts = {context["id"]: context for context in data["contexts"]}
+    domains = {domain["id"]: domain for domain in data["domains"]}
+    multi = {domain_id for domain_id, domain in domains.items() if not domain["single"]}
+    owner = {context_id: context["domain"] for context_id, context in contexts.items()}
+    owner.update({domain_id: domain_id for domain_id in multi})
+
+    # Everything that publishes or consumes: (owner id, aggregate name or None, the entry, where it is written).
+    holders = []
+    for context_id, context in contexts.items():
+        holders.append((context_id, None, context, f"context-map.{context_id}"))
+        holders += [(context_id, aggregate["name"], aggregate,
+                     f"context-map.{context_id}.aggregates.{aggregate['name']}")
+                    for aggregate in context.get("aggregates", [])]
+    holders += [(domain_id, None, domains[domain_id], f"context-map.{domain_id}") for domain_id in multi]
+
+    published = {}
+    for holder_id, aggregate, holder, _ in holders:
+        for event in holder.get("publishes", []):
+            address = "/".join(part for part in (holder_id, aggregate, event["name"]) if part)
+            level = "aggregate" if aggregate else "domain" if holder_id in multi else "context"
+            event["address"], event["consumers"] = address, []
+            published[address] = {"event": event, "owner": holder_id, "aggregate": aggregate, "level": level,
+                                  "name": event["name"]}
+
+    def elsewhere(name, owners):
+        return [(address, info) for address, info in published.items() if info["owner"] in owners and info["name"] == name]
+
+    def lookup(address, here):
+        parts = address.split("/")
+        if len(parts) not in (2, 3) or not all(part.strip() for part in parts):
+            errors.append(f"{here}: '{address}' is not an event address: `context-id/Aggregate/Event` for an event "
+                          "of an aggregate, `context-id/Event` for one of a bounded context, `domain-id/Event` "
+                          "for one of a domain")
+            return None
+        place, name = parts[0], parts[-1]
+        if place not in contexts and not (len(parts) == 2 and place in multi):
+            known = " It is a domain, and a domain has no aggregates." if place in multi else ""
+            what = "bounded context" if len(parts) == 3 else "bounded context or domain"
+            errors.append(f"{here}: unknown {what} '{place}' in '{address}'.{known}")
+            return None
+        if len(parts) == 3:
+            names = [aggregate["name"] for aggregate in contexts[place].get("aggregates", [])]
+            if parts[1] not in names:
+                errors.append(f"{here}: unknown aggregate '{parts[1]}' in '{place}', in '{address}'. "
+                              f"Known: {', '.join(names) or 'none'}")
+                return None
+        if address in published:
+            return published[address]
+        # Which part is unknown, and where the event is published, when it is somewhere else in the same place.
+        if len(parts) == 3:
+            holder = next(aggregate for aggregate in contexts[place]["aggregates"] if aggregate["name"] == parts[1])
+            in_place, where = [e["name"] for e in holder.get("publishes", [])], f"on the aggregate '{parts[1]}'"
+        else:
+            holder = contexts.get(place) or domains[place]
+            in_place, where = [e["name"] for e in holder.get("publishes", [])], f"on '{place}'"
+        scope = ({place, *domains[place]["contexts"]} if place in multi
+                 else {place, *({owner[place]} & multi)})
+        found = elsewhere(name, scope)
+        hint = ""
+        if found:
+            hint = " " + " and ".join(f"It is published on {event_where(info)}, its address is '{found_address}'."
+                                       for found_address, info in found)
+        errors.append(f"{here}: unknown event '{name}' {where} in '{address}'. "
+                      f"Known: {', '.join(in_place) or 'none'}.{hint}")
+        return None
+
+    def crossing(consumer, publisher):
+        """(allowed, the dependencies or partnerships the events go through, why not)."""
+        target = publisher["owner"]
+        if consumer == target or (owner[consumer] == owner[target] and (consumer in multi or target in multi)):
+            return True, [], ""
+        if consumer in multi:
+            starts = {member: 0 for member in (consumer, *domains[consumer]["contexts"])}
+            domain_id = owner[target]
+            ends = {member: 0 for member in ((domain_id, *domains[domain_id]["contexts"]) if domain_id in multi
+                                             else (domain_id,))}
+        elif owner[consumer] == owner[target]:
+            starts, ends = {consumer: 0}, {target: 0}
+        else:
+            starts = {consumer: 0, **({owner[consumer]: 1} if owner[consumer] in multi else {})}
+            ends = ({target: 0, **{member: 1 for member in domains[target]["contexts"]}} if target in multi
+                    else {target: 0, **({owner[target]: 1} if owner[target] in multi else {})})
+
+        def hits(rules, one, other, flip=False):
+            found = []
+            for rule in rules:
+                if (rule[one] in starts and rule[other] in ends):
+                    found.append((starts[rule[one]] + ends[rule[other]], rule))
+                elif flip and rule[other] in starts and rule[one] in ends:
+                    found.append((starts[rule[other]] + ends[rule[one]], rule))
+            if consumer in multi or not found:
+                return [rule for _, rule in found]
+            best = min(rank for rank, _ in found)
+            return [rule for rank, rule in found if rank == best]
+
+        rules = hits(data["edges"], "from", "to")
+        if rules:
+            return True, rules, ""
+        rules = hits([rule for rule in data["symmetric"] if rule["kind"] == "partnership"], "a", "b", flip=True)
+        if rules:
+            return True, rules, ""
+        side = f"'{consumer}'" if consumer not in multi else f"the '{consumer}' domain"
+        against = hits(data["violations"], "from", "to")
+        kernel = hits([rule for rule in data["symmetric"] if rule["kind"] == "sharedKernel"], "a", "b", flip=True)
+        reverse = [rule for rule in data["edges"] if rule["from"] in ends and rule["to"] in starts]
+        if against:
+            why = (f"{side} has only a violation against '{target}' (in context-map.{against[0]['from']}"
+                   f".violations.{against[0]['to']}), a known mistake and not a permission")
+        elif kernel:
+            why = (f"{side} shares a kernel with '{target}', and a kernel shares types, it gives no direction")
+        elif reverse:
+            why = f"'{target}' depends on {side}, not the other way round, so {side} is upstream"
+        else:
+            why = f"{side} doesn't depend on '{target}'" + (", and neither do its bounded contexts"
+                                                          if consumer in multi else "")
+        return False, [], why
+
+    seen = {}  # consumer id -> {address: where it was written first}
+    for holder_id, aggregate, holder, where in holders:
+        resolved = []
+        for item in holder.get("consumes", []):
+            address, here = item["address"], f"{where}.consumes"
+            publisher = lookup(address, here)
+            if not publisher:
+                continue
+            first = seen.setdefault(holder_id, {})
+            if address in first:
+                errors.append(f"{here}: '{address}' is consumed twice by '{holder_id}' (also in {first[address]}). "
+                              "A context and its aggregates count together")
+                continue
+            first[address] = here
+            allowed, rules, why = crossing(holder_id, publisher)
+            if not allowed:
+                errors.append(f"{here}: '{address}' is not allowed, {why}. A consumer is downstream of what it "
+                              f"consumes from, so list '{holder_id}' under context-map.{publisher['owner']}"
+                              ".downstreams, declare a partnership between them, or drop the event")
+                continue
+            # Each consumer's own reason goes with the event, where it crosses: that arrow is its.
+            for rule in rules:
+                marked = rule.setdefault("events", [])
+                marked.append({"address": address, "name": publisher["name"], "aggregate": publisher["aggregate"],
+                               "description": publisher["event"]["description"], "consumer": holder_id,
+                               "reason": item["reason"]})
+            publisher["event"]["consumers"].append({"id": holder_id, "aggregate": aggregate, "reason": item["reason"]})
+            resolved.append({"address": address, "reason": item["reason"], "publisher": publisher["owner"],
+                             "level": publisher["level"], "aggregate": publisher["aggregate"],
+                             "name": publisher["name"]})
+        if "consumes" in holder:
+            if resolved or aggregate:
+                holder["consumes"] = resolved
+            else:
+                del holder["consumes"]
 
 
 def check_references(contexts, domains, edges, violations, symmetric, errors):
@@ -531,6 +744,9 @@ def normalize(model, styles=None):
             elif key == "aggregates":
                 errors.append(f"context-map.yml: clusters.{cluster_id}.aggregates: a cluster has no aggregates, "
                               "only a bounded context does")
+            elif key in EVENT_KEYS:
+                errors.append(f"context-map.yml: clusters.{cluster_id}.{key}: a cluster has no events, "
+                              "an aggregate, a bounded context or a domain does")
             elif key not in ("name", "attributes"):
                 errors.append(f"context-map.yml: clusters.{cluster_id}.{key}: unknown option. "
                               f"Known: {', '.join(sorted(('name', 'attributes')))}")
@@ -575,7 +791,7 @@ def normalize(model, styles=None):
         if "domain" in entry:
             check_keys(entry_id, entry, ("name", "domain", "type", "cluster", "downstreams", "violations",
                                          "partnerships", "sharedKernels", "description", "attributes",
-                                         "aggregates"))
+                                         "aggregates", *EVENT_KEYS))
             if entry.get("cluster") is not None:
                 errors.append(f"context-map.{entry_id}: a bounded context is inside its domain "
                               "already, it can't also be in a cluster")
@@ -585,7 +801,8 @@ def normalize(model, styles=None):
             raw_contexts.append((entry_id, entry))
         else:
             check_keys(entry_id, entry, ("name", "type", "cluster", "downstreams", "violations", "partnerships",
-                                         "sharedKernels", "description", "attributes", "aggregates"))
+                                         "sharedKernels", "description", "attributes", "aggregates",
+                                         *EVENT_KEYS))
             check_cluster(entry_id, entry.get("cluster"))
             if entry.get("cluster") is not None:
                 member_of[entry_id] = entry["cluster"]
@@ -629,6 +846,7 @@ def normalize(model, styles=None):
                                                       attributes, errors)
                 if context_aggregates:
                     context_entry["aggregates"] = context_aggregates
+            context_entry.update(event_entries(f"context-map.{context_id}", context, errors))
             contexts.append(context_entry)
             context_ids.append(context_id)
             if "downstreams" in context:
@@ -651,6 +869,9 @@ def normalize(model, styles=None):
                                              attributes, errors)
         if domain_attributes:
             domain_entry["attributes"] = domain_attributes
+        if context_ids:
+            # A domain with no contexts is a single bounded context: its events are the context's.
+            domain_entry.update(event_entries(f"context-map.{domain_id}", domain, errors))
         domains.append(domain_entry)
         if context_ids and "aggregates" in domain:
             errors.append(f"context-map.{domain_id}.aggregates: a domain that holds bounded contexts has no "
@@ -668,6 +889,7 @@ def normalize(model, styles=None):
                                                      attributes, errors)
                 if domain_aggregates:
                     single_context["aggregates"] = domain_aggregates
+            single_context.update(event_entries(f"context-map.{domain_id}", domain, errors))
             contexts.append(single_context)
 
     clusters = []
@@ -815,6 +1037,7 @@ def normalize(model, styles=None):
     data = {"types": types, "clusters": clusters, "domains": domains, "contexts": contexts, "edges": edges,
             "violations": violations, "symmetric": symmetric, "attributes": attributes, "roles": ROLES,
             "symmetric_kinds": SYMMETRIC_KINDS}
+    check_events(data, errors)
     if not errors:
         cycle = find_cycle(level_graph(data, "context"))
         if cycle:

@@ -455,7 +455,7 @@ def attributes_model(attributes, values):
         },
         STYLE,
         "context-map.alpha.customFields: unknown option. "
-        "Known: aggregates, attributes, cluster, description, downstreams, name, partnerships, sharedKernels, type, violations",
+        "Known: aggregates, attributes, cluster, consumes, description, downstreams, name, partnerships, publishes, sharedKernels, type, violations",
     ),
     (
         {
@@ -465,7 +465,7 @@ def attributes_model(attributes, values):
         },
         STYLE,
         "context-map.alpha.properties: unknown option. "
-        "Known: aggregates, attributes, cluster, description, downstreams, name, partnerships, sharedKernels, type, violations",
+        "Known: aggregates, attributes, cluster, consumes, description, downstreams, name, partnerships, publishes, sharedKernels, type, violations",
     ),
     (
         {
@@ -478,7 +478,7 @@ def attributes_model(attributes, values):
         },
         STYLE,
         "context-map.ctx.customFields: unknown option. "
-        "Known: aggregates, attributes, cluster, description, domain, downstreams, name, partnerships, sharedKernels, type, violations",
+        "Known: aggregates, attributes, cluster, consumes, description, domain, downstreams, name, partnerships, publishes, sharedKernels, type, violations",
     ),
     (
         {
@@ -1392,7 +1392,8 @@ def test_normalize_takes_an_aggregate_with_a_bare_key_as_a_name_alone(example_da
     assert errors == []
     assert [aggregate["name"] for aggregate in aggregates_of(data, "alpha")] == ["Bare", "Empty"]
     assert aggregates_of(data, "alpha")[0] == {"name": "Bare", "description": None, "root": "Bare", "entities": [],
-                                               "valueObjects": [], "references": []}
+                                               "valueObjects": [], "references": [], "publishes": [],
+                                               "consumes": []}
 
 
 def test_normalize_gives_a_domain_no_context_points_at_its_aggregates_as_a_context(example_data):
@@ -1433,7 +1434,7 @@ def test_normalize_validates_the_attributes_of_an_aggregate_like_any_entry_s():
     ({}, "context-map.alpha.aggregates is empty"),
     ({"Thing": "text"}, "context-map.alpha.aggregates.Thing: must be a map, or nothing at all"),
     ({"Thing": {"fields": []}}, "context-map.alpha.aggregates.Thing.fields: unknown option. Known: attributes, "
-                                 "description, entities, references, root, valueObjects"),
+                                 "consumes, description, entities, publishes, references, root, valueObjects"),
     ({"Thing": {"description": 3}}, "context-map.alpha.aggregates.Thing.description: must be a string"),
     ({"Thing": {"root": ""}}, "context-map.alpha.aggregates.Thing.root: must be the name of the root entity"),
     ({"Thing": {"root": ["A"]}}, "context-map.alpha.aggregates.Thing.root: must be the name of the root entity"),
@@ -1639,3 +1640,270 @@ def test_normalize_says_when_the_context_a_reference_names_has_no_aggregates():
     del entries["context-map"]["beta"]["aggregates"]
     errors = errors_of(entries)
     assert any("unknown aggregate 'Thing' in 'beta'. Known: none" in err for err in errors), errors
+
+
+# --- events -----------------------------------------------------------------
+
+
+def ev_model(**changes):
+    """`up` is upstream of `down`, and `lone` has no relationship. `dom` is a domain that holds `dom_a` and
+    `dom_b`, and `dom_a` depends on `up`. Every entry of `changes` is laid over the entry of that id."""
+    entries = {
+        "up": {"name": "Up", "type": "core", "publishes": ["Ping"], "downstreams": {"down": None, "dom_a": None},
+               "aggregates": {"Agg": {"publishes": {"Deep": "A deep one.", "Other": None}}, "Plain": None}},
+        "down": {"name": "Down", "type": "core"},
+        "lone": {"name": "Lone", "type": "core", "publishes": ["Alone"]},
+        "dom": {"name": "Dom", "type": "core", "publishes": ["Wide"]},
+        "dom_a": {"name": "Dom A", "domain": "dom", "publishes": ["Ctx"],
+                  "aggregates": {"Thing": {"publishes": ["Inner"]}}},
+        "dom_b": {"name": "Dom B", "domain": "dom"},
+    }
+    for entry_id, entry in changes.items():
+        entries[entry_id] = {**entries[entry_id], **entry}
+    return model(**entries)
+
+
+def event_data(**changes):
+    data, errors = graph.normalize(ev_model(**changes), STYLE)
+    assert errors == []
+    return data
+
+
+def context_of(data, context_id):
+    return {context["id"]: context for context in data["contexts"]}[context_id]
+
+
+def test_events_read_what_an_aggregate_a_context_and_a_domain_publish():
+    data = event_data()
+    agg = context_of(data, "up")["aggregates"][0]
+    assert [(e["name"], e["description"], e["address"]) for e in agg["publishes"]] == [
+        ("Deep", "A deep one.", "up/Agg/Deep"), ("Other", None, "up/Agg/Other")]
+    assert [e["address"] for e in context_of(data, "up")["publishes"]] == ["up/Ping"]
+    domains = {domain["id"]: domain for domain in data["domains"]}
+    assert [e["address"] for e in domains["dom"]["publishes"]] == ["dom/Wide"]
+    # A domain with no contexts is a single bounded context: its events are the context's.
+    assert "publishes" not in domains["up"]
+    assert [e["address"] for e in context_of(data, "dom_a")["aggregates"][0]["publishes"]] == ["dom_a/Thing/Inner"]
+
+
+def test_events_leave_the_keys_out_of_an_entry_that_has_none():
+    data = event_data()
+    assert "publishes" not in context_of(data, "down") and "consumes" not in context_of(data, "down")
+    assert context_of(data, "up")["aggregates"][1]["publishes"] == []
+    assert context_of(data, "up")["aggregates"][1]["consumes"] == []
+
+
+def test_events_read_the_example(example_data):
+    cargo = context_of(example_data, "checkout")["aggregates"][0]
+    assert cargo["publishes"] == [{"name": "OrderPlaced", "description": "Checkout turned a cart into an order.",
+                                   "address": "checkout/Order/OrderPlaced",
+                                   "consumers": [{"id": "search", "aggregate": None,
+                                                  "reason": "Opens the search history of the cart."},
+                                                 {"id": "crm", "aggregate": None, "reason": None}]}]
+    assert cargo["consumes"][0] == {
+        "address": "identity/Account/AccountOpened", "reason": "Links the order to the account a guest just got.",
+        "publisher": "identity", "level": "aggregate", "aggregate": "Account", "name": "AccountOpened"}
+    assert cargo["consumes"][1]["reason"] is None
+
+
+def test_events_say_who_consumes_an_event_and_how_deep():
+    data = event_data(
+        down={"consumes": ["up/Ping"], "aggregates": {"Reader": {"consumes": ["up/Agg/Deep", "up/Agg/Other"]}}},
+        dom_a={"consumes": ["up/Ping"]})
+    deep, other = context_of(data, "up")["aggregates"][0]["publishes"]
+    assert deep["consumers"] == [{"id": "down", "aggregate": "Reader", "reason": None}]
+    ping = context_of(data, "up")["publishes"][0]
+    assert ping["consumers"] == [{"id": "down", "aggregate": None, "reason": None},
+                                 {"id": "dom_a", "aggregate": None, "reason": None}]
+    assert context_of(data, "down")["consumes"] == [{
+        "address": "up/Ping", "reason": None, "publisher": "up", "level": "context", "aggregate": None,
+        "name": "Ping"}]
+
+
+def test_events_take_why_a_consumer_reacts_as_the_value_of_a_map():
+    """The value of an address is the consumer's reason: a string, or nothing."""
+    data = event_data(down={"consumes": {"up/Ping": "Wakes the cache.", "up/Agg/Deep": None}})
+    consumes = context_of(data, "down")["consumes"]
+    assert [item["reason"] for item in consumes] == ["Wakes the cache.", None]
+    # The reason travels with the event wherever it is listed: on the publisher, and on the dependency it crosses.
+    ping = context_of(data, "up")["publishes"][0]
+    assert ping["consumers"] == [{"id": "down", "aggregate": None, "reason": "Wakes the cache."}]
+    edge = next(edge for edge in data["edges"] if (edge["from"], edge["to"]) == ("down", "up"))
+    assert {(e["address"], e["consumer"], e["reason"], e["description"]) for e in edge["events"]} == {
+        ("up/Ping", "down", "Wakes the cache.", None), ("up/Agg/Deep", "down", None, "A deep one.")}
+
+
+def test_events_reject_a_reason_that_is_not_text():
+    errors = errors_of(ev_model(down={"consumes": {"up/Ping": 3}}))
+    assert any("context-map.down.consumes.up/Ping: the description must be a string, or nothing" in e
+               for e in errors), errors
+
+
+@pytest.mark.parametrize("entry, expected", [
+    ({"publishes": "Ping"}, "context-map.lone.publishes: must be a list of names, or a map from name to description"),
+    ({"publishes": []}, "context-map.lone.publishes: needs at least one name"),
+    ({"publishes": {}}, "context-map.lone.publishes: needs at least one name"),
+    ({"publishes": [3]}, "context-map.lone.publishes: a name is a non-empty string, not 3"),
+    ({"publishes": {"Ping": 3}}, "context-map.lone.publishes.Ping: the description must be a string"),
+    ({"publishes": ["a/b"]}, "context-map.lone.publishes: 'a/b' can't hold a '/'"),
+    ({"publishes": ["Ping", "Ping"]}, "context-map.lone.publishes: 'Ping' is published twice here"),
+    ({"consumes": "up/Ping"}, "context-map.lone.consumes: must be a list of names, or a map from name to description"),
+    ({"consumes": []}, "context-map.lone.consumes: needs at least one name"),
+    ({"consumes": [None]}, "context-map.lone.consumes: a name is a non-empty string"),
+])
+def test_events_reject_a_broken_shape(entry, expected):
+    errors = errors_of(ev_model(lone=entry))
+    assert any(expected in err for err in errors), errors
+
+
+def test_events_reject_an_event_published_twice_by_the_same_publisher():
+    errors = errors_of(ev_model(up={"aggregates": {"Agg": {"publishes": ["Deep", "Deep"]}}}))
+    assert any("context-map.up.aggregates.Agg.publishes: 'Deep' is published twice here" in e for e in errors), errors
+    errors = errors_of(ev_model(dom={"publishes": ["Wide", "Wide"]}))
+    assert any("context-map.dom.publishes: 'Wide' is published twice here" in e for e in errors), errors
+
+
+def test_events_let_two_publishers_publish_an_event_of_the_same_name():
+    """The address tells them apart."""
+    data = event_data(lone={"publishes": ["Ping"]})
+    assert context_of(data, "lone")["publishes"][0]["address"] == "lone/Ping"
+
+
+def test_events_reject_them_on_a_cluster():
+    errors = errors_of({
+        "types": {"core": {"name": "Core"}},
+        "clusters": {"base": {"name": "Base", "publishes": ["X"], "consumes": ["up/Ping"]}},
+        "context-map": {"alpha": {"name": "Alpha", "type": "core", "cluster": "base"}},
+    })
+    assert any("clusters.base.publishes: a cluster has no events" in err for err in errors), errors
+    assert any("clusters.base.consumes: a cluster has no events" in err for err in errors), errors
+
+
+def test_events_are_taken_on_a_bounded_context_of_a_domain_and_on_an_aggregate_with_attributes():
+    data = event_data(dom_b={"consumes": ["dom/Wide"]})
+    assert context_of(data, "dom_b")["consumes"][0]["level"] == "domain"
+
+
+@pytest.mark.parametrize("address, expected", [
+    ("Ping", "'Ping' is not an event address: `context-id/Aggregate/Event`"),
+    ("up/Agg/Deep/More", "'up/Agg/Deep/More' is not an event address"),
+    ("up//Ping", "'up//Ping' is not an event address"),
+    ("nowhere/Ping", "unknown bounded context or domain 'nowhere' in 'nowhere/Ping'"),
+    ("nowhere/Agg/Deep", "unknown bounded context 'nowhere' in 'nowhere/Agg/Deep'"),
+    ("dom/Thing/Inner", "unknown bounded context 'dom' in 'dom/Thing/Inner'. It is a domain, and a domain has no "
+                        "aggregates."),
+    ("up/Nothing/Deep", "unknown aggregate 'Nothing' in 'up', in 'up/Nothing/Deep'. Known: Agg, Plain"),
+    ("up/Agg/Nothing", "unknown event 'Nothing' on the aggregate 'Agg' in 'up/Agg/Nothing'. Known: Deep, Other."),
+    ("up/Plain/Deep", "unknown event 'Deep' on the aggregate 'Plain' in 'up/Plain/Deep'. Known: none. It is "
+                      "published on the aggregate 'Agg' of 'up', its address is 'up/Agg/Deep'."),
+    ("up/Nothing", "unknown event 'Nothing' on 'up' in 'up/Nothing'. Known: Ping."),
+    ("up/Deep", "It is published on the aggregate 'Agg' of 'up', its address is 'up/Agg/Deep'."),
+    ("up/Wide", "unknown event 'Wide' on 'up' in 'up/Wide'"),
+    ("dom_a/Wide", "It is published on the domain 'dom', its address is 'dom/Wide'."),
+    ("dom_a/Thing/Wide", "its address is 'dom/Wide'."),
+    ("dom/Ctx", "It is published on the bounded context 'dom_a', its address is 'dom_a/Ctx'."),
+    ("dom/Inner", "It is published on the aggregate 'Thing' of 'dom_a', its address is 'dom_a/Thing/Inner'."),
+])
+def test_events_reject_an_address_that_does_not_resolve_and_say_where_the_event_is(address, expected):
+    errors = errors_of(ev_model(down={"consumes": [address]}))
+    assert any(expected in err for err in errors), errors
+
+
+def test_events_reject_the_same_address_consumed_twice_by_one_consumer():
+    errors = errors_of(ev_model(down={"consumes": ["up/Ping", "up/Ping"]}))
+    assert any("context-map.down.consumes: 'up/Ping' is consumed twice by 'down'" in e for e in errors), errors
+
+
+def test_events_count_an_aggregate_and_its_own_context_together():
+    errors = errors_of(ev_model(down={"consumes": ["up/Ping"], "aggregates": {"Reader": {"consumes": ["up/Ping"]}}}))
+    assert any("context-map.down.aggregates.Reader.consumes: 'up/Ping' is consumed twice by 'down' "
+               "(also in context-map.down.consumes). A context and its aggregates count together" in e
+               for e in errors), errors
+
+
+def test_events_count_the_aggregates_of_a_context_together_too():
+    """The consumer is the context, so two of its aggregates can't consume the same address either."""
+    errors = errors_of(ev_model(down={"aggregates": {"A": {"consumes": ["up/Ping"]}, "B": {"consumes": ["up/Ping"]}}}))
+    assert any("consumed twice" in e for e in errors), errors
+
+
+@pytest.mark.parametrize("consumer, address, expected", [
+    ("lone", "up/Ping", "'lone' doesn't depend on 'up'. A consumer is downstream of what it consumes from, so "
+                        "list 'lone' under context-map.up.downstreams, declare a partnership between them"),
+    ("up", "down/Echo", "'down' depends on 'up', not the other way round, so 'up' is upstream"),
+])
+def test_events_reject_consuming_from_what_the_consumer_does_not_depend_on(consumer, address, expected):
+    errors = errors_of(ev_model(down={"publishes": ["Echo"]}, **{consumer: {"consumes": [address]}}))
+    assert any(expected in err for err in errors), errors
+
+
+def test_events_do_not_take_a_violation_for_a_permission():
+    errors = errors_of(ev_model(lone={"violations": {"up": "Calls Up anyway."}, "consumes": ["up/Ping"]}))
+    assert any("'lone' has only a violation against 'up' (in context-map.lone.violations.up), a known mistake and "
+               "not a permission" in e for e in errors), errors
+
+
+def test_events_do_not_take_a_shared_kernel_for_a_permission():
+    errors = errors_of(ev_model(lone={"sharedKernels": {"up": None}, "consumes": ["up/Ping"]}))
+    assert any("'lone' shares a kernel with 'up', and a kernel shares types, it gives no direction" in e
+               and "context-map.up.downstreams" in e for e in errors), errors
+
+
+def test_events_take_a_partnership_either_way():
+    data = event_data(lone={"partnerships": {"up": None}, "consumes": ["up/Ping"]})
+    assert data["symmetric"][0]["events"][0]["address"] == "up/Ping"
+    # Declared on the other end, and consumed the other way.
+    data = event_data(up={"partnerships": {"lone": None}, "consumes": ["lone/Alone"]})
+    assert data["symmetric"][0]["events"][0]["address"] == "lone/Alone"
+
+
+def test_events_take_a_dependency_written_against_either_whole_domain():
+    # The whole `dom` depends on `up`, which covers each context of it.
+    data = event_data(up={"downstreams": {"down": None, "dom": None}}, dom_b={"consumes": ["up/Ping"]})
+    assert context_of(data, "dom_b")["consumes"][0]["publisher"] == "up"
+    # Without that, a sibling of the context that depends on `up` doesn't inherit the dependency.
+    errors = errors_of(ev_model(dom_b={"consumes": ["up/Ping"]}))
+    assert any("'dom_b' doesn't depend on 'up'" in e for e in errors), errors
+    # A context consumes from a domain that holds contexts when it depends on one of them.
+    data = event_data(dom_a={"downstreams": {"lone": None}}, lone={"consumes": ["dom/Wide"]})
+    assert data["edges"][-1]["events"][0]["address"] == "dom/Wide"
+
+
+def test_events_take_consuming_within_the_same_context_and_the_same_domain():
+    data = event_data(
+        up={"aggregates": {"Agg": {"publishes": ["Deep"], "consumes": ["up/Ping"]}, "Plain": {"consumes": ["up/Agg/Deep"]}}},
+        dom={"consumes": ["dom_a/Ctx", "dom_a/Thing/Inner"]},
+        dom_a={"consumes": ["dom/Wide"]},
+        dom_b={"consumes": ["dom/Wide"]})
+    assert all("events" not in edge for edge in data["edges"])
+    assert [item["address"] for item in context_of(data, "up")["aggregates"][1]["consumes"]] == ["up/Agg/Deep"]
+    # A context consumes from another context of its domain only along a dependency between them.
+    errors = errors_of(ev_model(dom_b={"consumes": ["dom_a/Ctx"]}))
+    assert any("'dom_b' doesn't depend on 'dom_a'" in e for e in errors), errors
+
+
+def test_events_let_a_domain_consume_when_one_of_its_contexts_depends_on_the_publisher():
+    data = event_data(dom={"consumes": ["up/Agg/Deep"]})
+    edge = next(edge for edge in data["edges"] if edge["from"] == "dom_a" and edge["to"] == "up")
+    assert edge["events"] == [{"address": "up/Agg/Deep", "name": "Deep", "aggregate": "Agg", "description": "A deep one.",
+                               "consumer": "dom", "reason": None}]
+    errors = errors_of(ev_model(dom={"consumes": ["lone/Alone"]}))
+    assert any("the 'dom' domain doesn't depend on 'lone', and neither do its bounded contexts" in e
+               for e in errors), errors
+
+
+def test_events_mark_the_dependency_an_event_goes_through_once():
+    data = event_data(
+        down={"consumes": ["up/Ping"], "aggregates": {"Reader": {"consumes": ["up/Agg/Deep"]}}},
+        dom_a={"consumes": ["up/Ping", "up/Agg/Deep"]})
+    by_pair = {(edge["from"], edge["to"]): edge.get("events") for edge in data["edges"]}
+    assert [e["address"] for e in by_pair[("down", "up")]] == ["up/Ping", "up/Agg/Deep"]
+    assert [e["address"] for e in by_pair[("dom_a", "up")]] == ["up/Ping", "up/Agg/Deep"]
+
+
+def test_events_prefer_the_dependency_that_names_the_pair_to_one_on_a_whole_domain():
+    data = event_data(
+        up={"downstreams": {"down": None, "dom_a": None, "dom": None}},
+        dom_a={"consumes": ["up/Ping"]})
+    by_pair = {(edge["from"], edge["to"]): edge.get("events") for edge in data["edges"]}
+    assert by_pair[("dom_a", "up")] and not by_pair[("dom", "up")]

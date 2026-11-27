@@ -2,6 +2,7 @@
 // the tooltip rows of a box — pure data, no DOM, shared by the panel's
 // rendering and the page's tooltips.
 import { MODEL, DIAGRAM, contextById } from "./model.js";
+import { holderOf } from "./events.js";
 
 // An attribute's value as the text to show: a list as its items, a map as
 // label-to-value pairs, anything else as it is.
@@ -33,6 +34,7 @@ export const boxTipEntries = (item) => {
     : [];
   if (!DIAGRAM.attribute_tooltips) return entries;
   const aggregates = contextById[item.id]?.aggregates || [];
+  const holder = holderOf(item);
   return entries
     .concat(
       attributeEntries(item).map(({ label, value }) => ({
@@ -51,8 +53,27 @@ export const boxTipEntries = (item) => {
             },
           ]
         : [],
-    );
+    )
+    .concat(eventTipRows(holder));
 };
+
+// The events an item publishes and consumes, as two data rows when it has
+// any, one line per event: the name, then ` — ` and what is said about it,
+// the description of a published one and the reason of a consumed one.
+const eventTipRows = (holder) =>
+  [
+    ["Publishes", (holder.publishes || []).map((e) => [e.name, e.description])],
+    ["Consumes", (holder.consumes || []).map((e) => [e.name, e.reason])],
+  ]
+    .filter(([, events]) => events.length)
+    .map(([title, events]) => ({
+      kind: "attr",
+      title,
+      multiline: true,
+      text: events
+        .map(([name, text]) => (text ? `${name} — ${text}` : name))
+        .join("\n"),
+    }));
 
 // The tooltip entries of an aggregate's box: its description, then what it
 // holds by name — the root, the entities, the value objects — and the
@@ -77,5 +98,6 @@ export const aggregateTipEntries = (aggregate) => {
       title: label,
       text: attributeText(value),
     })),
+    eventTipRows(aggregate),
   );
 };

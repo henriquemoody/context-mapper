@@ -222,6 +222,74 @@ An arrow between two aggregates is a reference, from the one that holds it to th
 
 ELK handles arrows to a box that holds others well. Dagre draws them too, but less tidily: the containers stretch, and the arrows end at their edges. Pick ELK where you can. The Markdown files use whatever `markdown_config` says, dagre in the example, and run no script, so there a violation has a head at both ends and the roles ride on the middle of the arrow, as at the other levels. The pages of single items keep the level they have, so there are no aggregate-level pages of their own. A view in the style file can be one.
 
+## Events
+
+An aggregate, a bounded context or a domain can name the events it publishes, and the events it consumes. Names only, as everywhere else: no payloads, no handlers, no topics. A cluster has neither key.
+
+```yaml
+booking:
+  aggregates:
+    Cargo:
+      publishes: [CargoBooked, CargoRerouted]
+  consumes: [handling-history/HandlingEvent/HandlingEventRegistered]
+tracking:
+  consumes: [booking/Cargo/CargoBooked]
+handling:                                    # a domain: we don't know yet which context
+  publishes: [CargoMisdirected]
+```
+
+`publishes` is a list of names, or a map from name to a description of the event. An event name can't hold a `/`, and an entry can't publish the same name twice.
+
+`consumes` is a list of addresses, or a map from each address to why the consumer reacts to it. The value is the reason, not a description of the event: what the consumer does when it hears it. A bare key, or nothing after the colon, says no reason.
+
+```yaml
+booking:
+  aggregates:
+    Cargo:
+      consumes:
+        handling/CargoMisdirected: Marks the cargo misdirected and asks for a new route.
+tracking:
+  consumes:
+    booking/Cargo/CargoBooked: Starts tracking the cargo.
+    handling-history/HandlingEvent/HandlingEventRegistered:   # no reason yet
+```
+
+ A domain no context points at is a single bounded context, so its events are the context's.
+
+An event has one address, and it mirrors where it is published:
+
+| Published on | Address |
+| --- | --- |
+| an aggregate | `context-id/Aggregate/Event` |
+| a bounded context | `context-id/Event` |
+| a domain that holds contexts | `domain-id/Event` |
+
+What you consume is always written in full. No short form, not even for an event of the same context. The address says how deep the consumer reaches: into an aggregate, into a context, or into a whole domain. That is the reason for one address per event. Move an event to another level, and its address changes, and every consumer of it fails the build, loudly, with the new address in the message.
+
+A consumer is the context an entry belongs to. That goes for an aggregate's `consumes` too, so an aggregate and its own context, or two aggregates of one context, can't consume the same address: they count together. The key of a domain that holds contexts makes the domain the consumer.
+
+A consumer has to be downstream of the publisher, as an aggregate has to be for a reference:
+
+- a dependency from the consumer to the publisher, written between them or against either one's whole domain. For a domain consuming, the dependencies of its contexts count, lifted as at domain level;
+- or a partnership between them, from either end.
+
+A violation is a known mistake, not a permission, and a shared kernel shares types, it gives no direction: neither counts, and the message says which dependency to declare. Inside one context it is always fine. A context of a domain consuming an event of that domain, or the domain consuming one of its contexts, is fine too. Two contexts of the same domain need a dependency between them.
+
+The build fails on:
+
+- a shape that is wrong, an event name with a `/`, an event published twice by the same publisher, or events on a cluster;
+- an address that isn't one of the three forms, or that doesn't resolve. The message says which part is unknown (context or domain, aggregate, event). If the event is published somewhere else in the same context or domain, it says where, and what the address is;
+- the same address consumed twice by one consumer;
+- consuming from a publisher the consumer isn't downstream of.
+
+### What shows
+
+- **Arrows.** On the interactive page, the tooltip of a dependency lists the events that cross it, after its own lines, one line for each event and never inline, since an event can carry a description or a reason. A line is the event, the aggregate first when it has one, then a dash and what is said about it: the consumer's reason, since the arrow is the one between that consumer and the publisher, else the event's own description, else nothing. `Cargo · CargoBooked — Starts tracking the cargo`. Two consumers on one arrow that give different reasons for one event get a line each. When any consumer gives a reason, the description is left out. An event crosses a dependency when its consumer and its publisher are the two ends, or the dependency is the one written against a whole domain that covers them, so a merged arrow, lifted to domains or folded in a collapsed container, lists all of its dependencies' events once each. A domain consuming marks every dependency between its contexts and the publisher. A partnership line lists the events that cross it in either direction. A shared kernel lists none. When a dependency could be several, the most specific one wins: the one between the two contexts, before the ones written against a domain.
+- **The panel and the item pages**, static and Markdown. An aggregate has `Publishes` and `Consumes` rows in its block. A bounded context or a domain has an Events section, with a list of each when it has something in it. A published event shows its description and its consumers, linked, with their aggregate after a slash: `Consumed by Search, CRM`. When any consumer gives a reason, each consumer gets a line of its own, `Search — Opens the search history of the cart`, and the ones with none show only their name. A consumed one shows its address as written, with its first part, the publisher, linked, and its reason after a dash: `handling/CargoMisdirected — Marks the cargo misdirected and asks for a new route`.
+- **The class diagram** on a context's page. What an aggregate publishes is a class marked `<<event>>` inside its namespace, with a dashed arrow from its root. What the bounded context publishes sits outside the namespaces. What the context consumes from elsewhere is drawn muted, like the other contexts' aggregates, marked `<<event from Booking / Cargo>>` with the publisher's name, and the root of the aggregate that consumes it has a dashed arrow to it. What the context itself consumes has no arrow, since it belongs to the context. A context with events and no aggregates still gets the diagram. The page of a domain has the lists, and no diagram.
+- **The Aggregates level** draws no arrow for an event. An aggregate's tooltip lists the names it publishes and consumes, and the arrows carry the events as above, a reference that carries a dependency carrying its events too.
+- **Tooltips of a box** have a Publishes and a Consumes row, one line for each event: a published one is its name and its description, a consumed one its name and its reason, with nothing after the name when there is none. They wrap inside the tooltip, which keeps its width, and `mermaid.attribute_tooltips: false` takes them off with the attributes and the aggregates.
+
 ## Attributes
 
 An optional `attributes` section declares what extra data the model carries: which service a context is, who owns it, anything. Nothing is built in — a model declares its own attributes, one type each, and any entry in `context-map` or `clusters` carries its values under `attributes:` too. The build fails on an attribute that was never declared or a value of the wrong shape, so a typo in the data breaks the build instead of hiding. A declared attribute no entry sets is fine, like a type nobody uses.
@@ -311,7 +379,7 @@ The rest lives in the `mermaid` section. Every style in it is a map of the same 
 | `theme_variables` | map | Passed to Mermaid as-is (fonts, colors). |
 | `config` | map | Any other [Mermaid config](https://mermaid.js.org/config/schema-docs/config.html), merged over the above. For example `elk.nodePlacementStrategy`. |
 | `markdown_config` | map | Merged over everything for `<out>/markdown/*.md` only. GitLab's built-in Mermaid has no ELK, so the example sets `layout: dagre` here. |
-| `attribute_tooltips` | `true`, `false` | Whether hovering a box shows its attributes too, and the names of the aggregates of a context, and what an aggregate holds. The interactive page only; `true` by default. |
+| `attribute_tooltips` | `true`, `false` | Whether hovering a box shows its attributes too, and the names of the aggregates of a context, what an aggregate holds, and the events a box publishes and consumes. The interactive page only; `true` by default. |
 | `relationship_labels` | `true`, `false` | Whether the roles of a dependency are drawn on the diagrams, as codes at the ends of the arrow or, in the Markdown, on its middle, and whether a shared kernel gets its `SK` badge, or its words in the Markdown. Tooltips and lists show them either way; `true` by default. |
 | `focus_style` | map of Mermaid attributes | How the focused item is highlighted. |
 | `domain_style` | map of Mermaid attributes | Style of the box around a domain's bounded contexts. A domain with its own style under `context-map` overrides it — and its type colors, when drawn as one box. |

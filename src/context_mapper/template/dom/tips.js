@@ -10,11 +10,12 @@ export function showTip(note, ev) {
       if (n.kind === "attr") {
         // An attribute reads as a data row: a small field label, its value after
         // it — not a second name. The hairline above the first one is CSS.
-        p.className = "attr";
+        p.className = n.multiline ? "attr multi" : "attr";
         const label = document.createElement("span");
         label.className = "k";
         label.textContent = n.title;
-        p.append(label, " ", n.text);
+        // A multiline row puts its lines under the label.
+        p.append(label, n.multiline ? "\n" : " ", n.text);
         return p;
       }
       if (n.kind) p.className = n.kind;

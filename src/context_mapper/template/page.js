@@ -287,6 +287,40 @@ function linkRelations(id) {
   return found;
 }
 
+// src/context_mapper/template/core/events.js
+var holderOf = (item) => contextById[item.id] || item;
+var eventLabel = (event) => event.aggregate ? `${event.aggregate} \xB7 ${event.name}` : event.name;
+function crossing(rules) {
+  const byAddress = /* @__PURE__ */ new Map();
+  rules.forEach(
+    (rule) => (rule.events || []).forEach((event) => {
+      if (!byAddress.has(event.address)) {
+        const { consumer: consumer2, reason, description, ...own } = event;
+        byAddress.set(event.address, {
+          ...own,
+          description,
+          reasons: []
+        });
+      }
+      const seen = byAddress.get(event.address);
+      if (event.reason && !seen.reasons.includes(event.reason))
+        seen.reasons.push(event.reason);
+    })
+  );
+  return [...byAddress.values()].map(({ description, reasons, ...event }) => ({
+    ...event,
+    texts: reasons.length ? reasons : description ? [description] : []
+  }));
+}
+function eventsTipEntries(rules) {
+  const events = crossing(rules);
+  if (!events.length) return [];
+  const lines = events.flatMap(
+    (event) => event.texts.length ? event.texts.map((text) => `${eventLabel(event)} \u2014 ${text}`) : [eventLabel(event)]
+  );
+  return [{ kind: "events", title: "Events", text: lines.join("\n") }];
+}
+
 // src/context_mapper/template/core/diagram.js
 var nodeId = (id) => id.replace(/\W/g, "_");
 var quote = (value) => value.replaceAll('"', "#quot;");
@@ -521,7 +555,7 @@ function mermaidSource(s2) {
   });
   const byStyle = {};
   const tips = [];
-  const dependencyTips = (entry) => entry.via.filter((e2) => e2.comment || roleText(e2)).map(tipEntry).concat(entry.kernel ? entry.kernel.via.map(linkTipEntry) : []);
+  const dependencyTips = (entry) => entry.via.filter((e2) => e2.comment || roleText(e2)).map(tipEntry).concat(entry.kernel ? entry.kernel.via.map(linkTipEntry) : []).concat(eventsTipEntries(entry.via));
   const roleMarks = [];
   const kernelMarks = [];
   const references = [];
@@ -599,7 +633,7 @@ function mermaidSource(s2) {
     const label = labelLines.length ? `|"${quote(labelLines.join("<br/>"))}"|` : "";
     lines.push(`  ${nodeId(entry.b)} ${info.link}${label} ${nodeId(entry.a)}`);
     (byStyle[entry.kind] = byStyle[entry.kind] || []).push(tips.length);
-    tips.push(entry.via.map(linkTipEntry));
+    tips.push(entry.via.map(linkTipEntry).concat(eventsTipEntries(entry.via)));
   });
   references.forEach((r2, position) => {
     const key = r2.fromContext + "|" + r2.toContext;
@@ -672,6 +706,7 @@ var boxTipEntries = (item) => {
   const entries = item.description ? [{ kind: "desc", title: item.name, text: item.description }] : [];
   if (!DIAGRAM.attribute_tooltips) return entries;
   const aggregates = contextById[item.id]?.aggregates || [];
+  const holder = holderOf(item);
   return entries.concat(
     attributeEntries(item).map(({ label, value }) => ({
       kind: "attr",
@@ -686,8 +721,17 @@ var boxTipEntries = (item) => {
         text: aggregates.map((a2) => a2.name).join(", ")
       }
     ] : []
-  );
+  ).concat(eventTipRows(holder));
 };
+var eventTipRows = (holder) => [
+  ["Publishes", (holder.publishes || []).map((e2) => [e2.name, e2.description])],
+  ["Consumes", (holder.consumes || []).map((e2) => [e2.name, e2.reason])]
+].filter(([, events]) => events.length).map(([title, events]) => ({
+  kind: "attr",
+  title,
+  multiline: true,
+  text: events.map(([name, text]) => text ? `${name} \u2014 ${text}` : name).join("\n")
+}));
 var aggregateTipEntries = (aggregate) => {
   const entries = aggregate.description ? [{ kind: "desc", title: aggregate.name, text: aggregate.description }] : [];
   if (!DIAGRAM.attribute_tooltips) return entries;
@@ -702,7 +746,8 @@ var aggregateTipEntries = (aggregate) => {
       kind: "attr",
       title: label,
       text: attributeText(value)
-    }))
+    })),
+    eventTipRows(aggregate)
   );
 };
 
@@ -1131,6 +1176,40 @@ var attributeRows = (item) => fe`<ul>
 var attributeSection = (item) => attributeEntries(item).length ? fe`<h3>Attributes</h3>
         ${attributeRows(item)}` : "";
 
+// src/context_mapper/template/components/events.js
+var commaList = (items) => items.map((item, i2) => i2 ? fe`, ${item}` : item);
+var consumer = (c2) => fe`<a data-go="${c2.id}">${nameOf(c2.id)}</a>${c2.aggregate ? ` / ${c2.aggregate}` : ""}${c2.reason ? ` \u2014 ${c2.reason}` : ""}`;
+var published = (event) => {
+  const line = event.name + (event.description ? ` \u2014 ${event.description}` : "");
+  if (!event.consumers.length) return line;
+  const glue = /[.!?]$/.test(line) ? " " : ". ";
+  return event.consumers.some((c2) => c2.reason) ? fe`${line}${glue}Consumed by:
+        <ul>
+          ${event.consumers.map((c2) => fe`<li>${consumer(c2)}</li>`)}
+        </ul>` : fe`${line}${glue}Consumed by${" "}${commaList(event.consumers.map(consumer))}`;
+};
+var consumed = (item) => fe`<a data-go="${item.publisher}">${item.publisher}</a>/${item.address.split("/").slice(1).join("/")}${item.reason ? ` \u2014 ${item.reason}` : ""}`;
+var eventRows = (entry) => [
+  ["Publishes", (entry.publishes || []).map(published)],
+  ["Consumes", (entry.consumes || []).map(consumed)]
+].filter(([, items]) => items.length).map(([label, items]) => [
+  label,
+  fe`<ul>
+        ${items.map((item) => fe`<li>${item}</li>`)}
+      </ul>`
+]);
+var eventSections = (item) => {
+  const holder = holderOf(item);
+  const section = (label, items) => items.length ? fe`<h3>${label} (${items.length})</h3>
+          <ul>
+            ${items.map((i2) => fe`<li>${i2}</li>`)}
+          </ul>` : null;
+  return [
+    section("Publishes", (holder.publishes || []).map(published)),
+    section("Consumes", (holder.consumes || []).map(consumed))
+  ];
+};
+
 // src/context_mapper/template/components/aggregates.js
 var members = (items) => items.map((m2) => m2.description ? `${m2.name} (${m2.description})` : m2.name).join(", ");
 var reference = (contextId, ref) => {
@@ -1151,6 +1230,7 @@ var aggregateBlock = (contextId, a2) => {
   attributeEntries(a2).forEach(
     ({ label, value }) => rows.push([label, attributeValue(value)])
   );
+  rows.push(...eventRows(a2));
   return fe`<h4>${a2.name}</h4>
     ${a2.description ? fe`<p class="hint">${a2.description}</p>` : null}
     <ul>
@@ -1215,7 +1295,7 @@ var Panel = ({ s: s2, visible }) => {
   });
   return html`<h2>${item.name}</h2>${chip(item.type)} <span class="hint">${domainById[id] ? "Domain" : "Bounded context"}</span>
       <p><a href="mermaid/${id}.html">Static diagram</a> · <a href="mermaid/index.html">All diagrams</a></p>
-      ${item.description ? html`<p class="hint">${item.description}</p>` : null}${attributeSection(item)}${aggregateSection(item)}
+      ${item.description ? html`<p class="hint">${item.description}</p>` : null}${attributeSection(item)}${aggregateSection(item)}${eventSections(item)}
       ${isMulti(id) ? html`<h3>Bounded contexts</h3><ul>${domainById[id].contexts.map(itemWith)}</ul>` : null}
       ${!isMulti(id) && isMulti(parent) ? html`<h3>Domain</h3>${list([parent])}` : null}
       <h3>Depends on (${r2.ups.length})</h3>${dependencyList(r2.ups, "to")}
@@ -1243,11 +1323,11 @@ function showTip(note, ev) {
     ...note.map((n2) => {
       const p2 = document.createElement("p");
       if (n2.kind === "attr") {
-        p2.className = "attr";
+        p2.className = n2.multiline ? "attr multi" : "attr";
         const label = document.createElement("span");
         label.className = "k";
         label.textContent = n2.title;
-        p2.append(label, " ", n2.text);
+        p2.append(label, n2.multiline ? "\n" : " ", n2.text);
         return p2;
       }
       if (n2.kind) p2.className = n2.kind;

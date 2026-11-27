@@ -1,4 +1,5 @@
 """The Mermaid layer: settings, checks, rendering and the static pages."""
+import copy
 import re
 
 import pytest
@@ -1568,8 +1569,13 @@ def test_aggregate_diagram_names_the_root_when_it_is_not_the_aggregate(example_d
     assert "browsing__Session_Visit --> " not in source  # no references
 
 
-def test_aggregate_diagram_has_nothing_for_a_context_without_aggregates(example_data, example_cfg):
-    assert mermaid.aggregate_diagram(example_data, example_cfg, "search") is None
+def test_aggregate_diagram_has_nothing_for_a_context_without_aggregates_or_events(example_data, example_cfg):
+    bare = copy.deepcopy(example_data)
+    for context in bare["contexts"]:
+        if context["id"] == "search":
+            context.pop("publishes"), context.pop("consumes")
+    assert mermaid.aggregate_diagram(bare, example_cfg, "search") is None
+    # A domain that holds contexts has no diagram of its own, whatever it publishes.
     assert mermaid.aggregate_diagram(example_data, example_cfg, "orders") is None
     assert mermaid.aggregate_diagram(example_data, example_cfg, None) is None
 
@@ -1607,10 +1613,12 @@ def test_build_writes_no_aggregates_into_a_page_of_something_without_them(tmp_pa
     mermaid.build(example_data, example_style["mermaid"], tmp_path)
     for name in ("search", "orders", "overview"):
         page = (tmp_path / "mermaid" / f"{name}.html").read_text()
-        assert 'id="aggregates-diagram"' not in page
         assert "<h2>Aggregates</h2>" not in page
-        assert 'mermaid.render("aggregates-svg"' not in page
         assert "## Aggregates" not in (tmp_path / "markdown" / f"{name}.md").read_text()
+    for name in ("orders", "overview"):
+        page = (tmp_path / "mermaid" / f"{name}.html").read_text()
+        assert 'id="aggregates-diagram"' not in page
+        assert 'mermaid.render("aggregates-svg"' not in page
 
 
 def test_build_writes_the_aggregates_into_the_markdown(tmp_path, example_data, example_style):
@@ -1676,3 +1684,139 @@ def test_aggregate_diagram_leaves_out_the_annotation_that_would_repeat_the_name(
     index = lines.index('class ext_identity__Identity["Identity"]:::muted')
     assert lines[index + 1] != "<<Identity>>"
     assert "<<Identity>>" in lines  # still on Account
+
+
+# --- events -----------------------------------------------------------------
+
+
+def test_build_writes_what_an_aggregate_publishes_and_consumes_into_its_block(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "checkout.html").read_text()
+    # Each event with its description and its consumers, linked and with their aggregate after a slash.
+    # Each consumer gets a line of its own when one of them says why it consumes the event.
+    assert ("<li><b>Publishes:</b><ul><li>OrderPlaced — Checkout turned a cart into an order. Consumed by:"
+            "<ul><li><a href='search.html'>Search</a> — Opens the search history of the cart.</li>"
+            "<li><a href='crm.html'>CRM</a></li></ul></li></ul></li>") in page
+    # Each address as written, with its first part a link to the publisher, and why after a dash.
+    assert ("<li><b>Consumes:</b><ul><li><a href='identity.html'>identity</a>/Account/AccountOpened — "
+            "Links the order to the account a guest just got.</li>"
+            "<li><a href='payments.html'>payments</a>/Payment/PaymentCaptured</li></ul></li>") in page
+
+
+def test_build_writes_what_a_context_publishes_and_consumes_as_a_section_of_its_own(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "checkout.html").read_text()
+    assert "<h2>Events</h2>" in page
+    assert "<h3>Publishes (1)</h3><ul><li>CartAbandoned</li></ul>" in page
+    assert ("<h3>Consumes (2)</h3><ul><li><a href='identity.html'>identity</a>/KeysRotated</li>"
+            "<li><a href='search.html'>search</a>/QueryRun</li></ul>") in page
+    # A domain's page has them too, and no class diagram.
+    orders = (tmp_path / "mermaid" / "orders.html").read_text()
+    assert "<h3>Publishes (1)</h3><ul><li>OrderSettled — An order was paid and shipped. Consumed by:<ul>" in orders
+    assert ("<li><a href='checkout.html'>Checkout</a> / Cart</li>"
+            "<li><a href='crm.html'>CRM</a> — Syncs the order into the ticket system.</li>") in orders
+    assert 'id="aggregates-diagram"' not in orders
+
+
+def test_build_writes_only_the_event_sections_that_have_something(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    search = (tmp_path / "mermaid" / "search.html").read_text()
+    assert "<h3>Publishes (1)</h3>" in search and "<h3>Consumes (1)</h3>" in search
+    assert "<h2>Aggregates</h2>" not in search  # events but no aggregates: no aggregates section
+    assert "classDiagram" in search  # and still a diagram of the events
+    payments = (tmp_path / "mermaid" / "payments.html").read_text()
+    assert "<h2>Events</h2>" not in payments  # its events are on the aggregate
+
+
+def test_build_writes_the_events_into_the_markdown(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    markdown = (tmp_path / "markdown" / "checkout.md").read_text()
+    assert ("- **Publishes:**\n  - OrderPlaced — Checkout turned a cart into an order. Consumed by:\n"
+            "    - [Search](search.md) — Opens the search history of the cart.\n    - [CRM](crm.md)\n") in markdown
+    assert ("- **Consumes:**\n  - [identity](identity.md)/Account/AccountOpened — "
+            "Links the order to the account a guest just got.\n") in markdown
+    assert "## Events\n\n**Publishes (1):**\n\n- CartAbandoned\n" in markdown
+    assert "**Consumes (2):**\n\n- [identity](identity.md)/KeysRotated\n- [search](search.md)/QueryRun" in markdown
+    assert markdown.index("## Events") < markdown.index("classDiagram")
+
+
+def test_build_leaves_the_events_out_of_a_page_without_them(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    for name in ("overview", "billing") if (tmp_path / "mermaid" / "billing.html").exists() else ("overview",):
+        assert "<h2>Events</h2>" not in (tmp_path / "mermaid" / f"{name}.html").read_text()
+        assert "## Events" not in (tmp_path / "markdown" / f"{name}.md").read_text()
+
+
+def test_aggregate_diagram_draws_what_an_aggregate_publishes_inside_its_namespace(example_data, example_cfg):
+    lines = [line.strip() for line in mermaid.aggregate_diagram(example_data, example_cfg, "checkout").splitlines()]
+    namespace = lines[lines.index("namespace Order {"):lines.index("namespace Cart {")]
+    assert 'class checkout__ev_Order_OrderPlaced["OrderPlaced"]:::inside {' in namespace
+    assert "<<event>>" in namespace
+    # Linked from the root with a dashed dependency.
+    assert "checkout__Order_Order ..> checkout__ev_Order_OrderPlaced" in lines
+
+
+def test_aggregate_diagram_draws_what_the_context_publishes_outside_the_namespaces(example_data, example_cfg):
+    source = mermaid.aggregate_diagram(example_data, example_cfg, "checkout")
+    lines = [line.strip() for line in source.splitlines()]
+    assert 'class checkout__ev_CartAbandoned["CartAbandoned"]:::inside {' in lines
+    assert lines.index('class checkout__ev_CartAbandoned["CartAbandoned"]:::inside {') > lines.index("}")
+    namespaced = source[source.index("namespace Order"):source.index("class checkout__ev_CartAbandoned")]
+    assert "CartAbandoned" not in namespaced
+    # Nothing links it: it belongs to the context.
+    assert not any(line.endswith("checkout__ev_CartAbandoned") for line in lines if "..>" in line)
+
+
+def test_aggregate_diagram_draws_what_is_consumed_muted_and_named_for_its_publisher(example_data, example_cfg):
+    lines = [line.strip() for line in mermaid.aggregate_diagram(example_data, example_cfg, "checkout").splitlines()]
+    assert 'class ext_identity__ev_Account_AccountOpened["AccountOpened"]:::muted {' in lines
+    assert "<<event from Identity / Account>>" in lines
+    # By an aggregate: linked from its root. By the context: left alone.
+    assert "checkout__Order_Order ..> ext_identity__ev_Account_AccountOpened" in lines
+    assert 'class ext_identity__ev_KeysRotated["KeysRotated"]:::muted {' in lines
+    assert "<<event from Identity>>" in lines
+    assert not any(line.endswith("ext_identity__ev_KeysRotated") for line in lines if "..>" in line)
+    # A domain's event is muted too, and named for the domain, even the one this context is in.
+    assert 'class ext_orders__ev_OrderSettled["OrderSettled"]:::muted {' in lines
+    assert "<<event from Orders>>" in lines
+    assert "checkout__Cart_Cart ..> ext_orders__ev_OrderSettled" in lines
+
+
+def test_aggregate_diagram_links_an_event_consumed_from_its_own_context_to_the_class_that_is_there(example_data, example_cfg):
+    data = copy.deepcopy(example_data)
+    context = next(c for c in data["contexts"] if c["id"] == "checkout")
+    context["aggregates"][1]["consumes"] = [{"address": "checkout/Order/OrderPlaced", "description": None,
+                                             "publisher": "checkout", "level": "aggregate", "aggregate": "Order",
+                                             "name": "OrderPlaced"}]
+    lines = [line.strip() for line in mermaid.aggregate_diagram(data, example_cfg, "checkout").splitlines()]
+    assert "checkout__Cart_Cart ..> checkout__ev_Order_OrderPlaced" in lines
+    assert not any("ext_checkout" in line for line in lines)
+
+
+def test_aggregate_diagram_keeps_one_muted_class_for_an_event_several_consume(example_data, example_cfg):
+    source = mermaid.aggregate_diagram(example_data, example_cfg, "fulfillment")
+    assert source.count('class ext_payments__ev_Payment_PaymentCaptured["PaymentCaptured"]') == 1
+    assert "fulfillment__Shipment_Shipment ..> ext_payments__ev_Payment_PaymentCaptured" in source
+
+
+def test_aggregate_diagram_is_made_for_a_context_with_only_events(example_data, example_cfg):
+    source = mermaid.aggregate_diagram(example_data, example_cfg, "search")
+    assert "namespace" not in source
+    assert 'class search__ev_QueryRun["QueryRun"]:::inside {' in source
+    assert "<<event from Checkout / Order>>" in source
+
+
+def test_render_puts_the_events_nowhere_in_the_flowchart_of_the_aggregate_level(example_data, example_cfg):
+    view = aggregate_view(example_cfg, focus="checkout", display={"foundations": "expanded"})
+    source = mermaid.render(example_data, example_cfg, view)
+    assert "OrderPlaced" not in source and "AccountOpened" not in source
+
+
+def test_build_reads_the_consumers_of_an_event_inline_when_none_says_why(tmp_path, example_data, example_style):
+    mermaid.build(example_data, example_style["mermaid"], tmp_path)
+    page = (tmp_path / "mermaid" / "browsing.html").read_text()
+    assert "SessionEnded — A visitor left, with or without a cart. Consumed by:<ul>" in page  # Fulfillment says why
+    fulfillment = (tmp_path / "markdown" / "fulfillment.md").read_text()
+    assert "  - ShipmentDispatched. Consumed by [Browsing](browsing.md)\n" in fulfillment
+    assert "- [payments](payments.md)/Payment/PaymentCaptured — Releases the shipment once it is paid.\n" in \
+        fulfillment.replace("  - ", "- ")

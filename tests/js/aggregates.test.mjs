@@ -200,7 +200,7 @@ test("aggregates: every arrow, references included, has a tooltip in the order i
   const carrier = statements.indexOf("checkout__Order --> identity__Account");
   assert.deepEqual(
     aggregate.tips[carrier].map((t) => t.title),
-    ["Order → Account (reference)", "Checkout → Identity"],
+    ["Order → Account (reference)", "Checkout → Identity", "Events"],
   );
   assert.ok(aggregate.tips[carrier][1].roles);
 });

@@ -831,6 +831,68 @@ def aggregate_rows(data, aggregate, cell, reference):
     return rows + [(label, cell(value)) for label, value in values_rows(data, aggregate.get("attributes"))]
 
 
+def publish_lines(names, publishes, anchor, cell):
+    """What an entry publishes, one (line, sub-lines) pair per event for a page: the name, its description, and
+    who consumes it, each consumer a link to its page, with its aggregate after a slash. When any consumer says
+    why it consumes the event, each gets a line of its own, with its reason after a dash; otherwise they read
+    inline. `anchor(id, label)` writes a link, `cell` makes text safe for the page."""
+    lines = []
+    for event in publishes:
+        line = cell(event["name"])
+        if event["description"]:
+            line += f" — {cell(event['description'])}"
+        consumers = [(anchor(consumer["id"], names[consumer["id"]])
+                      + (f" / {cell(consumer['aggregate'])}" if consumer["aggregate"] else ""), consumer["reason"])
+                     for consumer in event["consumers"]]
+        subs = []
+        if consumers:
+            glue = " " if line.endswith((".", "!", "?")) else ". "
+            if any(reason for _, reason in consumers):
+                line += f"{glue}Consumed by:"
+                subs = [who + (f" — {cell(reason)}" if reason else "") for who, reason in consumers]
+            else:
+                line += f"{glue}Consumed by {', '.join(who for who, _ in consumers)}"
+        lines.append((line, subs))
+    return lines
+
+
+def consume_lines(consumes, anchor, cell):
+    """What an entry consumes, one (line, sub-lines) pair per event for a page: the address as written, with its
+    first part a link to the page of the publisher, and after a dash why it is consumed, when it says."""
+    lines = []
+    for item in consumes:
+        _, _, rest = item["address"].partition("/")
+        line = f"{anchor(item['publisher'], item['publisher'])}/{cell(rest)}"
+        lines.append((line + (f" — {cell(item['reason'])}" if item["reason"] else ""), []))
+    return lines
+
+
+def html_items(items):
+    """The `<li>` of each (line, sub-lines) pair, the sub-lines in a list inside it."""
+    return "".join(f"<li>{line}" + (f"<ul>{html_items([(sub, []) for sub in subs])}</ul>" if subs else "") + "</li>"
+                   for line, subs in items)
+
+
+def md_items(items, indent=""):
+    """The bullets of each (line, sub-lines) pair, the sub-lines indented under it."""
+    out = []
+    for line, subs in items:
+        out.append(f"{indent}- {line}")
+        out += [f"{indent}  - {sub}" for sub in subs]
+    return out
+
+
+def event_rows(publishes, consumes):
+    """The lists of events a page shows, as (label, lines) for each one that has something in it."""
+    return [(label, items) for label, items in (("Publishes", publishes), ("Consumes", consumes)) if items]
+
+
+def event_holder(data, focus):
+    """The focused bounded context or domain, whichever carries the events of the page."""
+    domains, contexts, _, _ = graph.index(data)
+    return contexts.get(focus) or domains.get(focus) or {}
+
+
 def reference_text(focus, names, link, cell, ref):
     """A reference to an aggregate for a page: the name alone in the focused context, else the other context,
     as `link` writes it, and the name after a slash — the way the model writes it. When the context has the
@@ -847,21 +909,40 @@ def class_id(context_id, name):
 
 
 def aggregate_diagram(data, cfg, focus, direction=None, markdown=False):
-    """Mermaid source of a classDiagram of a bounded context's aggregates, or None when it has none. Each
-    aggregate is a namespace, and its members are classes annotated as the root, an entity or a value object.
-    A reference is an arrow between root classes. The aggregates of other contexts that these reference are
-    classes outside the namespaces, muted, and named for their context."""
+    """Mermaid source of a classDiagram of a bounded context's aggregates and events, or None when it has
+    neither. Each aggregate is a namespace, and its members are classes annotated as the root, an entity or a
+    value object. A reference is an arrow between root classes. The aggregates of other contexts that these
+    reference are classes outside the namespaces, muted, and named for their context.
+
+    Events are classes annotated `<<event>>`: what an aggregate publishes sits inside its namespace, with a
+    dashed arrow from the root; what the bounded context itself publishes sits outside the namespaces; what is
+    consumed from another context (or from a domain) is muted outside them, annotated with the publisher, and
+    the consuming aggregate's root has a dashed arrow to it. What the context itself consumes is left unlinked.
+    An event consumed from this very context is the class that is already there."""
     aggregates = aggregates_of(data, focus)
-    if not aggregates:
+    _, contexts, _, names = graph.index(data)
+    domains, _, _, _ = graph.index(data)
+    context = contexts.get(focus)
+    if context is None:
         return None
-    domains, contexts, _, names = graph.index(data)
-    item = domains.get(focus) or contexts[focus]  # a single domain's own entry carries the box style
+    context_publishes, context_consumes = context.get("publishes", []), context.get("consumes", [])
+    if not (aggregates or context_publishes or context_consumes):
+        return None
+    item = domains.get(focus) or context  # a single domain's own entry carries the box style
     box_style = merge_styles(data["types"].get(item.get("type"), {}).get("mermaid_style"), item.get("mermaid_style"))
     lines = ["---", json.dumps({"config": mermaid_config(cfg, markdown)}), "---", "classDiagram",
              f"  direction {direction or cfg['direction']}"]
     # The aggregates inside have the colors of the context's type, as its box has in the other diagrams. The
     # class is named on each class itself: a `cssClass` line leaves them as they were.
     inside = ":::inside" if box_style else ""
+
+    def root_id(aggregate):
+        return class_id(focus, aggregate["name"] + "_" + aggregate["root"])
+
+    def event_id(owner, aggregate, name):
+        return class_id(owner, "ev_" + (aggregate + "_" if aggregate else "") + name)
+
+    arrows = []
     for aggregate in aggregates:
         lines.append(f"  namespace {node_id(aggregate['name'])} {{")
         members = [(aggregate["root"], "root")]
@@ -870,9 +951,15 @@ def aggregate_diagram(data, cfg, focus, direction=None, markdown=False):
         for member, annotation in members:
             member_id = class_id(focus, aggregate["name"] + "_" + member)
             lines += [f'    class {member_id}["{text(member)}"]{inside} {{', f"      <<{annotation}>>", "    }"]
+        for event in aggregate["publishes"]:
+            published = event_id(focus, aggregate["name"], event["name"])
+            lines += [f'    class {published}["{text(event["name"])}"]{inside} {{', "      <<event>>", "    }"]
+            arrows.append(f"  {root_id(aggregate)} ..> {published}")
         lines.append("  }")
+    for event in context_publishes:
+        lines += [f'  class {event_id(focus, None, event["name"])}["{text(event["name"])}"]{inside} {{',
+                  "    <<event>>", "  }"]
     outside = {}
-    arrows = []
     for aggregate in aggregates:
         for ref in aggregate["references"]:
             if ref["context"] == focus:
@@ -881,7 +968,7 @@ def aggregate_diagram(data, cfg, focus, direction=None, markdown=False):
             else:
                 target = "ext_" + class_id(ref["context"], ref["name"])
                 outside[target] = ref
-            arrows.append(f"  {class_id(focus, aggregate['name'] + '_' + aggregate['root'])} --> {target}")
+            arrows.append(f"  {root_id(aggregate)} --> {target}")
     for target, ref in outside.items():
         # The context's name goes over the aggregate's, unless it is the same name, which once is enough.
         label = f'  class {target}["{text(ref["name"])}"]:::muted'
@@ -889,10 +976,29 @@ def aggregate_diagram(data, cfg, focus, direction=None, markdown=False):
             lines.append(label)
         else:
             lines += [f"{label} {{", f"    <<{text(names[ref['context']])}>>", "  }"]
+    consumed = {}  # a muted class for each event consumed from outside this context
+
+    def consume(consumer_root, item):
+        if item["publisher"] == focus:
+            target = event_id(focus, item["aggregate"], item["name"])
+        else:
+            target = "ext_" + event_id(item["publisher"], item["aggregate"], item["name"])
+            consumed[target] = item
+        if consumer_root:
+            arrows.append(f"  {consumer_root} ..> {target}")
+
+    for aggregate in aggregates:
+        for item in aggregate["consumes"]:
+            consume(root_id(aggregate), item)
+    for item in context_consumes:
+        consume(None, item)
+    for target, item in consumed.items():
+        where = names[item["publisher"]] + (f" / {item['aggregate']}" if item["aggregate"] else "")
+        lines += [f'  class {target}["{text(item["name"])}"]:::muted {{', f"    <<event from {text(where)}>>", "  }"]
     lines += arrows
     if box_style:
         lines.append(f"  classDef inside {box_style}")
-    if outside:
+    if outside or consumed:
         lines.append(f"  classDef muted {graph.classdef(MUTED_STYLE, {})}")
     return "\n".join(lines) + "\n"
 
@@ -988,6 +1094,9 @@ def build(data, config, out):
             return (f"<a href='{item_id}.html'>{html.escape(names[item_id])}</a>" if item_id in pages
                     else html.escape(names[item_id]))
 
+        def html_anchor(item_id, label):
+            return f"<a href='{item_id}.html'>{html.escape(label)}</a>" if item_id in pages else html.escape(label)
+
         def html_item(item_id, notes):
             note = f" <span class='hint'>· {html.escape(notes[item_id])}</span>" if item_id in notes else ""
             return f"<li>{html_link(item_id)}{note}</li>"
@@ -1000,6 +1109,10 @@ def build(data, config, out):
         aggregates = aggregates_of(data, view.get("focus"))
         class_source = aggregate_diagram(data, cfg, view.get("focus"), view.get("direction"))
 
+        holder = event_holder(data, view.get("focus"))
+        context_publishes = publish_lines(names, holder.get("publishes", []), html_anchor, html.escape)
+        context_consumes = consume_lines(holder.get("consumes", []), html_anchor, html.escape)
+
         aggregates_html = ""
         if aggregates:
             blocks = ""
@@ -1009,12 +1122,22 @@ def build(data, config, out):
                 rows_html = "".join(f"<li><b>{label}:</b> {value}</li>" for label, value in
                                     aggregate_rows(data, aggregate, html.escape,
                                                  partial(reference_text, view.get("focus"), names, html_link, html.escape)))
+                for label, items in event_rows(
+                        publish_lines(names, aggregate["publishes"], html_anchor, html.escape),
+                        consume_lines(aggregate["consumes"], html_anchor, html.escape)):
+                    rows_html += f"<li><b>{label}:</b><ul>{html_items(items)}</ul></li>"
                 blocks += f"<div><h3>{html.escape(aggregate['name'])}</h3>{about_aggregate}<ul>{rows_html}</ul></div>"
-            aggregates_html = (f"<h2>Aggregates</h2><div class='cols'>{blocks}</div>"
-                               '<div id="aggregates-diagram">Loading diagram...</div>'
-                               f"<details><summary>Aggregates class diagram source</summary>"
-                               f"<pre>{html.escape(class_source)}</pre></details>"
-                               f'<script type="text/plain" id="aggregates-source">{class_source}</script>')
+            aggregates_html = f"<h2>Aggregates</h2><div class='cols'>{blocks}</div>"
+        if context_publishes or context_consumes:
+            event_cols = "".join(
+                f"<div><h3>{label} ({len(items)})</h3><ul>{html_items(items)}</ul></div>"
+                for label, items in event_rows(context_publishes, context_consumes))
+            aggregates_html += f"<h2>Events</h2><div class='cols'>{event_cols}</div>"
+        if class_source:
+            aggregates_html += ('<div id="aggregates-diagram">Loading diagram...</div>'
+                                f"<details><summary>Aggregates class diagram source</summary>"
+                                f"<pre>{html.escape(class_source)}</pre></details>"
+                                f'<script type="text/plain" id="aggregates-source">{class_source}</script>')
         body = DIAGRAM.format(
             relations=f"<div class='cols'>{cols}</div>" if cols else "",
             aggregates=aggregates_html,
@@ -1026,7 +1149,7 @@ def build(data, config, out):
         body = body.replace("__DOWNLOAD__", textwrap.indent(DOWNLOAD_JS, "  "))
         body = body.replace("__ARROWHEADS__", textwrap.indent(ARROWHEADS_JS, "  "))
         body = body.replace("__ROLES__", textwrap.indent(ROLES_JS, "  "))
-        body = body.replace("__CLASSES__", CLASSES if aggregates else "")
+        body = body.replace("__CLASSES__", CLASSES if class_source else "")
         rows = attribute_rows(data, view.get("focus"))
         about_html = f'<p class="hint">{html.escape(about)}</p>' if about else ""
         about_html += "".join(f'<p class="hint"><b>{html.escape(label)}:</b> {html.escape(text)}</p>'
@@ -1048,6 +1171,10 @@ def build(data, config, out):
         md += [desc, "", "```mermaid", render(data, cfg, view, markdown=True).rstrip(), "```", ""]
         for heading, item_ids, notes in fact_sections(data, view):
             md += [f"**{heading}:** " + (", ".join(md_link(item_id, notes) for item_id in item_ids) or "None"), ""]
+
+        def md_anchor(item_id, label):
+            return f"[{label}]({item_id}.md)" if item_id in pages else label
+
         if aggregates:
             md += ["## Aggregates", ""]
             for aggregate in aggregates:
@@ -1057,7 +1184,18 @@ def build(data, config, out):
                 md += [f"- **{label}:** {value}" for label, value in
                        aggregate_rows(data, aggregate, str,
                                                  partial(reference_text, view.get("focus"), names,
-                                                         partial(md_link, notes={}), str))] + [""]
+                                                         partial(md_link, notes={}), str))]
+                for label, items in event_rows(publish_lines(names, aggregate["publishes"], md_anchor, str),
+                                                consume_lines(aggregate["consumes"], md_anchor, str)):
+                    md += [f"- **{label}:**"] + md_items(items, "  ")
+                md.append("")
+        md_publishes = publish_lines(names, holder.get("publishes", []), md_anchor, str)
+        md_consumes = consume_lines(holder.get("consumes", []), md_anchor, str)
+        if md_publishes or md_consumes:
+            md += ["## Events", ""]
+            for label, items in event_rows(md_publishes, md_consumes):
+                md += [f"**{label} ({len(items)}):**", ""] + md_items(items) + [""]
+        if class_source:
             md += ["```mermaid", aggregate_diagram(data, cfg, view["focus"], view.get("direction"),
                                                     markdown=True).rstrip(), "```", ""]
         (md_dir / f"{view['id']}.md").write_text("\n".join(md))

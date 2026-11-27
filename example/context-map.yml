@@ -70,6 +70,28 @@
 #         valueObjects: [TrackingId, Itinerary]
 #         references: [location/Location]
 #
+# An aggregate, a bounded context or a domain can `publishes` events, and
+# `consumes` the ones others publish: names only, and for `consumes` the value
+# of each address is why the consumer reacts to it. An event has one address,
+# and it mirrors where the event is published. What is consumed is always
+# written in full, so the address says how deep the consumer reaches:
+#
+#   booking/Cargo/CargoBooked      published on an aggregate: context-id/Aggregate/Event
+#   booking/CargoRebooked          published on a bounded context (for instance): context-id/Event
+#   handling/CargoMisdirected      published on a domain that holds contexts: domain-id/Event
+#
+# Moving an event to another level changes its address, and breaks every
+# consumer of it loudly. Say why an event is consumed, and the reason shows
+# next to the address, on the publisher's page, and on the arrow it crosses:
+#
+#   tracking:
+#     consumes:
+#       booking/Cargo/CargoBooked: Starts tracking the cargo.
+#
+# Consuming across contexts takes a dependency from the
+# consumer to the publisher, as for the references of an aggregate, or a
+# partnership between them. A violation and a shared kernel don't count.
+#
 # Every entry can also carry a `description`: the interactive page shows it as
 # a tooltip when you hover over its box, and the item's page shows it in text.
 #
@@ -193,6 +215,8 @@ context-map:
     name: Handling
     type: core
     description: What really happened to each cargo in the ports.
+    publishes:                                      # a domain's event: we don't know yet which of its contexts
+      CargoMisdirected: A cargo went where its itinerary doesn't say.
   incident-logging:
     name: Incident Logging
     domain: handling
@@ -211,6 +235,8 @@ context-map:
     aggregates:
       HandlingEvent:
         description: One thing that happened to a cargo in a port, such as loaded, unloaded, received, claimed or cleared.
+        publishes:
+          HandlingEventRegistered: A handling event was registered, so the delivery of its cargo can be worked out again.
         references:
           - voyage-scheduling/Voyage                # Handling History depends on Voyage Scheduling
           - location/Location
@@ -233,9 +259,16 @@ context-map:
     description: Books a cargo, gives it a route and checks it's on track.
     attributes:
       service: BookingService
+    consumes:                                       # the whole context, not an aggregate of it
+      handling-history/HandlingEvent/HandlingEventRegistered: Works out the delivery status of the cargo again.
     aggregates:
       Cargo:
         description: A shipment, from booking to claim.
+        publishes:
+          CargoBooked: A cargo has an itinerary and is on its way to being shipped.
+          CargoRerouted: A cargo got a new itinerary, after a customer change or a misdirection.
+        consumes:
+          handling/CargoMisdirected: Marks the cargo misdirected and asks Routing for a new route.   # Booking depends on Handling History, which is in the Handling domain
         root: Cargo                                 # the aggregate's name, unless it says otherwise
         entities: [Leg]
         valueObjects: [TrackingId, RouteSpecification, Itinerary, Delivery]
@@ -249,6 +282,9 @@ context-map:
     domain: cargo
     type: supporting
     description: Lets the customer follow a cargo by its tracking id.
+    consumes:
+      booking/Cargo/CargoBooked: Starts tracking the cargo.   # Tracking depends on Booking
+      handling-history/HandlingEvent/HandlingEventRegistered: Adds it to the history the customer sees.   # and on Handling History
 
   billing:
     name: Billing

@@ -137,7 +137,11 @@ test("links: a kernel on an arrow is one edge, and the other indexes hold", () =
   // The arrow's tooltip holds the dependency and the kernel.
   assert.deepEqual(
     focusedTips[0].map((t) => t.title),
-    ["Fulfillment → Payments", "Fulfillment ↔ Payments (Shared Kernel)"],
+    [
+      "Fulfillment → Payments",
+      "Fulfillment ↔ Payments (Shared Kernel)",
+      "Events",
+    ],
   );
   // No separate line for the pair, and no middle label spelled out for it.
   assert.ok(!lines.some((l) => l.endsWith(" payments") && l.includes("---")));

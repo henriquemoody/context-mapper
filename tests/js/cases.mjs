@@ -242,6 +242,34 @@ add("graph", "link-relations", (api) =>
   ),
 );
 
+// The events of the model as data: a label, and what goes through a set of
+// dependencies, each once.
+add("graph", "events", (api) => {
+  const edge = (from, to) =>
+    api.MODEL.edges.find((e) => e.from === from && e.to === to);
+  return {
+    labels: [
+      api.eventLabel({ name: "OrderPlaced", aggregate: "Order" }),
+      api.eventLabel({ name: "KeysRotated", aggregate: null }),
+    ],
+    "checkout-identity": api.crossing([edge("checkout", "identity")]),
+    // Several dependencies, an event that goes through two of them once.
+    "orders-payments": api.crossing([
+      edge("checkout", "payments"),
+      edge("fulfillment", "payments"),
+    ]),
+    none: api.crossing([edge("crm", "identity"), { from: "x", to: "y" }]),
+    tip: api.eventsTipEntries([
+      edge("checkout", "payments"),
+      edge("fulfillment", "payments"),
+    ]),
+    "no-tip": api.eventsTipEntries([{ from: "x", to: "y" }]),
+    "partnership-both-ways": api.crossing(
+      api.MODEL.symmetric.filter((r) => r.kind === "partnership"),
+    ),
+  };
+});
+
 add("graph", "node-items", (api) =>
   Object.fromEntries(
     Object.entries(api.itemOfNode).map(([node, item]) => [node, item.name]),
@@ -483,6 +511,30 @@ add("state", "clamp-depth", (api) =>
       api.DIAGRAM.relationship_labels = true;
     }
   });
+  // The events that cross an arrow are in its tooltip, the dependency's own
+  // entries first. At domain level and in a collapsed container they are
+  // gathered from every dependency the arrow stands for; a partnership line
+  // lists the ones that cross it in either direction.
+  add("diagram", "events-focus-checkout", (api) =>
+    d(api)(st("context", "checkout", 1, "both", { foundations: "expanded" })),
+  );
+  add("diagram", "events-domain-level", (api) => d(api)(st("domain", "")));
+  add("diagram", "events-collapsed-orders", (api) =>
+    d(api)(
+      st("context", "", 1, "both", {
+        foundations: "expanded",
+        orders: "collapsed",
+      }),
+    ),
+  );
+  add("diagram", "events-partnership-lines", (api) =>
+    d(api)(
+      st("context", "fulfillment", 1, "both", { foundations: "expanded" }),
+    ),
+  );
+  add("diagram", "events-aggregates-level", (api) =>
+    d(api)(st("aggregate", "checkout", 1, "both", { foundations: "expanded" })),
+  );
   add("diagram", "child-labels-off", (api) => {
     api.DIAGRAM.child_labels = false;
     try {
@@ -617,6 +669,33 @@ add("attributes", "aggregate-tips", (api) => {
   };
 });
 
+// The tooltip of a box lists the names of the events it publishes and
+// consumes; an attribute_tooltips of false takes the rows away.
+add("attributes", "event-tips", (api) => {
+  const off = (fn) => {
+    api.DIAGRAM.attribute_tooltips = false;
+    try {
+      return fn();
+    } finally {
+      api.DIAGRAM.attribute_tooltips = true;
+    }
+  };
+  const aggregate = (id, name) =>
+    api.aggregateTipEntries(
+      api.contextById[id].aggregates.find((a) => a.name === name),
+    );
+  return {
+    "context-checkout": api.boxTipEntries(api.contextById.checkout),
+    "context-search": api.boxTipEntries(api.contextById.search),
+    "domain-orders": api.boxTipEntries(api.domainById.orders),
+    "single-domain-identity": api.boxTipEntries(api.domainById.identity),
+    "aggregate-order": aggregate("checkout", "Order"),
+    "aggregate-account": aggregate("identity", "Account"),
+    "context-off": off(() => api.boxTipEntries(api.contextById.checkout)),
+    "aggregate-off": off(() => aggregate("checkout", "Order")),
+  };
+});
+
 add("attributes", "tip-entry", (api) =>
   api.tipEntry({
     from: "catalog",
@@ -646,6 +725,17 @@ add("attributes", "tip-entry", (api) =>
     render(api, st("context", "checkout", 1, "both", {}, ["payments"])),
   );
   add("panel", "focus-search", (api) => render(api, st("context", "search")));
+  // Events: an aggregate's two lists are rows of its block, a context's and
+  // a domain's are sections of their own, each only when it has something.
+  add("panel", "focus-orders-events", (api) =>
+    render(api, st("context", "orders")),
+  );
+  add("panel", "focus-identity-events", (api) =>
+    render(api, st("context", "identity")),
+  );
+  add("panel", "focus-browsing-events", (api) =>
+    render(api, st("context", "browsing")),
+  );
   // The aggregates of a bounded context: a single domain has them too, and a
   // reference to another context's aggregate is a link that focuses it.
   add("panel", "focus-payments-aggregates", (api) =>

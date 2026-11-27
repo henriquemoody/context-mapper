@@ -43,6 +43,15 @@
 # on, directly or through a dependency on its domain as a whole, or one it
 # shares a kernel or a partnership with. A violation does not count.
 #
+# An aggregate, a bounded context or a domain can `publishes` events, and
+# `consumes` the ones others publish: names only. `consumes` is a list of
+# addresses, or a map from each address to why the consumer reacts to it (or to
+# nothing). An event has one address, which mirrors where it is published, and
+# what is consumed is always written in full: `context-id/Aggregate/Event` on an aggregate, `context-id/Event` on
+# a bounded context, `domain-id/Event` on a domain that holds contexts. The
+# build allows it only toward what the consumer depends on, as for references,
+# or has a partnership with. A shared kernel and a violation don't count.
+#
 # A dependency can point at a domain when we don't know yet which of its
 # contexts is involved. Move it to the right context once we know.
 #
@@ -76,10 +85,14 @@ context-map:
     description: Accounts and logins. Everyone signs in here.
     attributes:
       service: identity-service
+    publishes: [KeysRotated]                        # a bounded context's event: identity/KeysRotated
     aggregates:
       Account:                                      # an aggregate: a map, or a bare key for a name alone
         description: Who can sign in, and how.
         valueObjects: [Email, PasswordHash]
+        publishes:                                  # an aggregate's event: identity/Account/AccountOpened
+          AccountOpened: Someone signed up, or a guest checked out.
+          AccountClosed:
       Identity:                                     # named like its context, which a page then says once
         description: Who someone is, whoever signs in.
     downstreams:
@@ -98,6 +111,7 @@ context-map:
     aggregates:                                     # a domain no context points at is one itself
       Payment:
         valueObjects: [Amount]
+        publishes: [PaymentCaptured, PaymentRefunded]
     downstreams:
       checkout:
         comment: Charges the payment method and signals whether it went through.
@@ -121,6 +135,9 @@ context-map:
     name: Browsing
     domain: catalog
     attributes: { aggregates: [Session Cart] }      # an attribute named aggregates is still the model's own
+    publishes:
+      SessionEnded: A visitor left, with or without a cart.
+    consumes: [fulfillment/Shipment/ShipmentDispatched]   # the partnership works both ways
     aggregates:
       Session:
         root: Visit                                 # the root is named, not the aggregate
@@ -132,10 +149,16 @@ context-map:
     domain: catalog
     partnerships:
       checkout: Search and Checkout plan the cart together.
+    publishes: [QueryRun]
+    consumes:
+      checkout/Order/OrderPlaced: Opens the search history of the cart.   # across the partnership: neither is upstream
 
   orders:
     name: Orders
     type: core
+    publishes:                                      # a domain's event: orders/OrderSettled
+      OrderSettled: An order was paid and shipped.
+    consumes: [identity/Account/AccountOpened]      # the whole domain, as lifted from its contexts
     downstreams:                                    # a dependency pointing at a whole domain
       crm:
         comment: Reads orders to sync them into the ticket system.
@@ -147,11 +170,18 @@ context-map:
     attributes:
       service: checkout-service
       aggregates: [Order, Cart]
+    publishes: [CartAbandoned]
+    consumes: [identity/KeysRotated, search/QueryRun]
     aggregates:
       Order:
         description: A cart that was paid for.
         entities: [OrderLine]
         valueObjects: [Money, Address]
+        publishes:
+          OrderPlaced: Checkout turned a cart into an order.
+        consumes:
+          identity/Account/AccountOpened: Links the order to the account a guest just got.   # Checkout depends on Identity
+          payments/Payment/PaymentCaptured:           # no reason given
         references:
           - identity/Account                        # Checkout depends on Identity
           - identity/Identity
@@ -161,6 +191,7 @@ context-map:
           CartLine: One product, and how many of it.
           Coupon:
         valueObjects: [Quantity]
+        consumes: [orders/OrderSettled]             # its own domain's event
         references:
           - checkout/Order                          # this context's own, written in full: a bare `Order` says the same
           - browsing/Session                        # Checkout depends on the Catalog domain as a whole
@@ -174,8 +205,14 @@ context-map:
     aggregates:
       Shipment:
         entities: [Package]
+        publishes: [ShipmentDispatched]
+        consumes:
+          payments/Payment/PaymentCaptured: Releases the shipment once it is paid.
+          payments/Payment/PaymentRefunded: Takes the returned goods back.
         references: [payments/Payment]              # Fulfillment depends on Payments, and shares a kernel with it
       Return:
+        consumes:
+          browsing/SessionEnded: Picks up where the visitor left off.
         references: [Shipment, browsing/Session]    # Browsing is Fulfillment's partner, with no direction between them
     sharedKernels:                                  # beside a dependency: Fulfillment still depends on Payments
       payments: Both use the same payment and refund types.
@@ -183,9 +220,13 @@ context-map:
   crm:
     name: CRM
     type: supporting
+    consumes:                                                 # the dependency on the Orders domain covers both
+      orders/OrderSettled: Syncs the order into the ticket system.
+      checkout/Order/OrderPlaced:
     aggregates:
       Ticket:
         entities: [Note]
+        consumes: [identity/Account/AccountClosed]
         references:
           - identity/Account
           - checkout/Order                          # CRM depends on the Orders domain as a whole

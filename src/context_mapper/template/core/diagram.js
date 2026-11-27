@@ -11,6 +11,7 @@ import {
 import { GRAPHS, focusSet, descendants, walk } from "./graph.js";
 import { hashFor } from "./state.js";
 import { roleCodes, roleText } from "./roles.js";
+import { eventsTipEntries } from "./events.js";
 
 // Same diagram as mermaid.py's render(): keep the two in step.
 export const nodeId = (id) => id.replace(/\W/g, "_");
@@ -341,7 +342,9 @@ export function mermaidSource(s) {
     entry.via
       .filter((e) => e.comment || roleText(e))
       .map(tipEntry)
-      .concat(entry.kernel ? entry.kernel.via.map(linkTipEntry) : []);
+      .concat(entry.kernel ? entry.kernel.via.map(linkTipEntry) : [])
+      // The events that go through it, whichever dependency they are of.
+      .concat(eventsTipEntries(entry.via));
   const roleMarks = []; // `index=upstream>downstream`, for the page's script
   const kernelMarks = []; // the index of each edge that shares a kernel
 
@@ -448,7 +451,7 @@ export function mermaidSource(s) {
       : "";
     lines.push(`  ${nodeId(entry.b)} ${info.link}${label} ${nodeId(entry.a)}`);
     (byStyle[entry.kind] = byStyle[entry.kind] || []).push(tips.length);
-    tips.push(entry.via.map(linkTipEntry));
+    tips.push(entry.via.map(linkTipEntry).concat(eventsTipEntries(entry.via)));
   });
   // The references come last, so the arrows above keep their indexes:
   // everything the page's script counts is where it says, and what a

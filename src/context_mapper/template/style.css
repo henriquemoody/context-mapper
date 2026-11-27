@@ -161,6 +161,12 @@ main {
   color: rgba(255, 255, 255, 0.6);
   margin-right: 2px;
 }
+/* The events that cross an arrow: one per line when consumers say why they consume them. */
+#tip p.events,
+#tip p.attr.multi {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
 aside {
   border-left: 1px solid var(--line);
   background: var(--panel);
@@ -186,6 +192,10 @@ aside ul {
 aside h4 {
   font-size: 14px;
   margin: 12px 0 2px;
+}
+/* An event address is one long word: it wraps where it must, instead of widening the panel. */
+aside li {
+  overflow-wrap: anywhere;
 }
 /* A list attribute in the panel: its items under the label, a touch apart. */
 aside li ul {
